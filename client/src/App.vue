@@ -27,10 +27,11 @@ const nextSteps = [
             <VaCardTitle>
               <VaIcon class="steps-icon" :name="'ion-' + step.icon" />
               {{ step.title }}
-              <VaIcon name="va-arrow-right" size="small" />
+              <VaIcon name="ion-arrow-forward-outline" size="small" />
             </VaCardTitle>
             <VaCardContent>
               {{ step.text }}
+              <VaInput placeholder="Name" label="Name"></VaInput>
             </VaCardContent>
           </VaCard>
         </div>
@@ -78,7 +79,7 @@ const nextSteps = [
 
 @media (max-width: 768px) {
   .steps-row {
-    padding: 1rem;
+    // padding: 1rem;
     grid-template-columns: repeat(1, minmax(0, 1fr));
   }
 }
