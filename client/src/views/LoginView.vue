@@ -10,6 +10,7 @@ const nextSteps = [
 </script>
 
 <template>
+  <div class="login"></div>
   <!-- <div class="app">
     <header>
       <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="300" height="125" />

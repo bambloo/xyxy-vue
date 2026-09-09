@@ -14,4 +14,14 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./client/src', import.meta.url)),
     },
   },
+  server: {
+    host: '0.0.0.0',
+    proxy: {
+      '/wpi': {
+        target: 'http://localhost:1992',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/wpi/, ''),
+      },
+    },
+  },
 })

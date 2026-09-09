@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "serve": "tsx watch ./server/src/app.ts",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
@@ -17,17 +18,22 @@
   },
   "dependencies": {
     "@vuestic/tailwind": "^0.1.5",
+    "express": "^5.2.1",
     "ionicons": "^8.1.0",
+    "mongodb": "^7.6.0",
     "pinia": "^4.0.2",
     "sass": "^1.103.1",
     "vue": "^3.5.40",
     "vue-router": "^5.2.0",
-    "vuestic-ui": "^1.10.3"
+    "vuestic-ui": "^1.10.3",
+    "walk": "^2.3.15"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",
+    "@types/express": "^5.0.6",
     "@types/jsdom": "^28.0.3",
     "@types/node": "^24.13.3",
+    "@types/walk": "^2.3.4",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitejs/plugin-vue-jsx": "^5.1.6",
     "@vitest/eslint-plugin": "^1.6.23",
