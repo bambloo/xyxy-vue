@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "serve": "tsx watch ./server/src/app.ts",
+    "dev:client": "vite",
+    "dev:server": "tsx watch ./server/src/app.ts",
+    "dev": "run-p dev:client dev:server",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
