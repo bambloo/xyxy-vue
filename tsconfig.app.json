@@ -6,6 +6,7 @@
     "src/**/*.vue",
     "client/**/*",
     "client/**/*.vue",
+    "common/**/*.ts",
   ],
   "exclude": [
     "src/**/__tests__/*"

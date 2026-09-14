@@ -1,3 +1,4 @@
+import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { mongo_helper } from '../../util/mongo-helper'
 import { Mutex } from '../../util/mutex'
 
@@ -22,13 +23,19 @@ export class user_manager {
   private initialized: boolean = false
 
   private initialize(): Promise<this> {
-    return
+    return Promise.resolve(this)
   }
 
-  public get_user(key: user_key) {
-    return mongo_helper.ddo((db) => {
-      return db.collection('user').findOne({ id: 'abcdefg' })
-    })
+  public get(key: user_key) {
+    if (key.id) {
+      return mongo_helper.get('user', { id: key.id })
+    } else if (key.phone) {
+      return mongo_helper.get('user', { phone: key.phone })
+    } else {
+      return Promise.reject(
+        new BamblooError(BamblooStatusCode.BadRequest, '必须提供 id 或 phone 作为查询条件'),
+      )
+    }
   }
 
   // public static add_user(user: user) {

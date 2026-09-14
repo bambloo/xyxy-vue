@@ -1,17 +1,11 @@
 import { Response } from 'express'
-import { BamblooStatusCode } from '../status'
-
-export interface ResponsePacket {
-  code: BamblooStatusCode
-  msg?: string
-  data?: { [key: string]: unknown }
-}
+import { BamblooStatusCode, ResponsePacket } from '../../../common/status'
 
 export function response(
   r: Response,
   code: BamblooStatusCode | ResponsePacket,
   msg?: string,
-  data?: { [key: string]: unknown },
+  data?: { [key: string]: unknown } | object,
 ) {
   r.header('Content-Type', 'application/json; charset=utf-8')
   if (typeof code == 'object') {

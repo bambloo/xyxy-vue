@@ -1,5 +1,5 @@
 // import { NextFunction } from 'express'
-import { BamblooStatusCode } from '../../status'
+import { BamblooStatusCode } from '../../../../common/status'
 import { generate_key_pair } from '../../util/crypto-util'
 import { response } from '../../util/secretary'
 import { Request, Response } from 'express'

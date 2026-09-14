@@ -3,7 +3,7 @@ import { walk } from 'walk'
 import path from 'path'
 import { logout } from './logger-helper'
 import { response } from './secretary'
-import { BamblooError } from '../status'
+import { BamblooError } from '../../../common/status'
 
 export function proxy_router(express: Express, base: string) {
   return new Promise<void>((resolve) => {

@@ -1,16 +1,17 @@
 import http from 'http'
 import https from 'https'
 import zlib from 'zlib'
-import { BamblooError, BamblooStatusCode } from '../status'
+import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import { errout } from './logger-helper'
 import { Transform } from 'node:stream'
 import FormData from 'form-data'
-import { response } from './secretary'
+// import { response } from './secretary'
+import { OutgoingHttpHeaders } from 'node:http2'
 
 export function get_hostname(url: string) {
   try {
     return new URL(url).hostname
-  } catch (err) {
+  } catch {
     return ''
   }
 }
@@ -23,14 +24,14 @@ export function request_website(uri: string) {
     if (uri.startsWith('https')) {
       req = https.get(uri, {
         headers: {
-          'accept-encoding': 'gzip'
-        }
+          'accept-encoding': 'gzip',
+        },
       })
     } else {
       req = http.get(uri, {
         headers: {
-          'accept-encoding': 'gzip'
-        }
+          'accept-encoding': 'gzip',
+        },
       })
     }
     const bufs: Buffer[] = []
@@ -39,7 +40,7 @@ export function request_website(uri: string) {
       reject(new BamblooError(BamblooStatusCode.Timeout, `${uri} req timedout.`))
     }, REQUEST_TIMEOUT)
 
-    const error_handler = (error: any, type: string) => {
+    const error_handler = (error: NodeJS.ErrnoException, type: string) => {
       if (error.code == 'ENOBUFS') {
         errout(`${uri} ENOBUFS`)
       }
@@ -47,8 +48,8 @@ export function request_website(uri: string) {
       reject(
         new BamblooError(
           BamblooStatusCode.NetworkInvalid,
-          `${uri} ${type} ${error.code || error.message}`
-        )
+          `${uri} ${type} ${error.code || error.message}`,
+        ),
       )
     }
 
@@ -63,8 +64,8 @@ export function request_website(uri: string) {
           return reject(
             new BamblooError(
               BamblooStatusCode.FormatError,
-              `${uri} content-type ${res.headers['content-type']} skip`
-            )
+              `${uri} content-type ${res.headers['content-type']} skip`,
+            ),
           )
         }
 
@@ -106,14 +107,14 @@ export function request_website(uri: string) {
     }
     const bufs: Buffer[] = []
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       decoder.write(data.buffer)
       decoder.end()
 
       decoder.on('data', (data) => {
         bufs.push(data)
       })
-      decoder.on('error', (err) => {
+      decoder.on('error', () => {
         resolve(Buffer.concat(bufs).toString())
       })
       decoder.on('end', () => {
@@ -123,12 +124,12 @@ export function request_website(uri: string) {
   })
 }
 
-export function upload_file(url: string, buf: Buffer, cookies?: any) {
+export function upload_file(url: string, buf: Buffer, cookies?: unknown) {
   return new Promise((resolve, reject) => {
     const form_data = new FormData()
     form_data.append('userListFile', buf, {
       filename: 'userListFile.xlsx',
-      knownLength: buf.byteLength
+      knownLength: buf.byteLength,
     })
 
     const headers = form_data.getHeaders()
@@ -141,12 +142,15 @@ export function upload_file(url: string, buf: Buffer, cookies?: any) {
       url,
       {
         method: 'POST',
-        headers: headers
+        headers: headers,
       },
       (response) => {
         if (response.statusCode != 200) {
           return reject(
-            new BamblooError(BamblooStatusCode.NetworkInvalid, `服务器返回值${response.statusCode}`)
+            new BamblooError(
+              BamblooStatusCode.NetworkInvalid,
+              `服务器返回值${response.statusCode}`,
+            ),
           )
         }
         const bufs: Buffer[] = []
@@ -156,7 +160,7 @@ export function upload_file(url: string, buf: Buffer, cookies?: any) {
         response.on('data', (data) => {
           bufs.push(data)
         })
-      }
+      },
     )
     req.on('error', (err) => {
       reject(new BamblooError(BamblooStatusCode.NetworkInvalid, err.message))
@@ -166,10 +170,10 @@ export function upload_file(url: string, buf: Buffer, cookies?: any) {
   })
 }
 
-export function post(url: string, data?: any, cookies?: any) {
+export function post(url: string, data?: unknown, cookies?: string[]) {
   return new Promise((resolve, reject) => {
-    const headers: any = {}
-    headers['Cookie'] = cookies
+    const headers: OutgoingHttpHeaders = {}
+    headers.cookie = cookies
     headers['Content-Type'] = data ? 'application/json' : 'text/plain'
     headers['chanid'] = '3'
     const str = data ? JSON.stringify(data) : ''
@@ -180,12 +184,15 @@ export function post(url: string, data?: any, cookies?: any) {
       url,
       {
         method: 'POST',
-        headers: headers
+        headers: headers,
       },
       (response) => {
         if (response.statusCode != 200) {
           return reject(
-            new BamblooError(BamblooStatusCode.NetworkInvalid, `服务器返回值${response.statusCode}`)
+            new BamblooError(
+              BamblooStatusCode.NetworkInvalid,
+              `服务器返回值${response.statusCode}`,
+            ),
           )
         }
         const bufs: Buffer[] = []
@@ -195,7 +202,7 @@ export function post(url: string, data?: any, cookies?: any) {
         response.on('data', (data) => {
           bufs.push(data)
         })
-      }
+      },
     )
     req.on('error', (err) => {
       reject(new BamblooError(BamblooStatusCode.NetworkInvalid, err.message))

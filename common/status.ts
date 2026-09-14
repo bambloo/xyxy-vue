@@ -18,7 +18,15 @@ export enum BamblooStatusCode {
 
   Timeout,
   Retry,
+
   Uncategoried = 10000,
+  BadRequest,
+}
+
+export interface ResponsePacket {
+  code: BamblooStatusCode
+  msg?: string
+  data?: { [key: string]: unknown } | object
 }
 
 export class BamblooError extends Error {
