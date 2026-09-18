@@ -21,11 +21,12 @@ process.on('uncaughtException', (err) => {
 
 const application = express()
 
-proxy_router(application, join(__dirname, 'wpi'))
-
 application.use(body_parser.json())
 application.use(body_parser.urlencoded({ extended: true }))
 application.use(cookie_parser())
+
+proxy_router(application, join(__dirname, 'wpi'))
+
 application.post('/', (req) => {
   console.log(req.url)
 })
