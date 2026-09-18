@@ -104,6 +104,40 @@ function switch_file() {
   need_switch = false
 }
 
+function find_last_log_time() {
+  const files = new Set(fs.readdirSync(base))
+  const times = [...files]
+    .map((file) => file.match(/^(.+)-(?:out|err)\.log$/)?.[1])
+    .filter(
+      (time): time is string =>
+        Boolean(time) && files.has(`${time}-out.log`) && files.has(`${time}-err.log`),
+    )
+    .sort()
+
+  return times.at(-1)
+}
+
+function open_last_log_file() {
+  const time = find_last_log_time()
+  if (!time) {
+    switch_file()
+    return
+  }
+
+  current_stderr_file = fs.createWriteStream(path.join(base, `${time}-err.log`), { flags: 'a' })
+  current_stdout_file = fs.createWriteStream(path.join(base, `${time}-out.log`), { flags: 'a' })
+  current_stdout_file_length = fs.statSync(path.join(base, `${time}-out.log`)).size
+  current_stderr_file_length = fs.statSync(path.join(base, `${time}-err.log`)).size
+
+  timeout_checker = setTimeout(() => {
+    if (current_stderr_file_length > minsize || current_stdout_file_length > minsize) {
+      if (latency_checking) {
+        need_switch = true
+      }
+    }
+  }, interval)
+}
+
 export function proxy_console(params: LoggerParams) {
   base = params.base
   maxsize = params.maxsize || 1024 * 1024
@@ -142,5 +176,5 @@ export function proxy_console(params: LoggerParams) {
     current_stderr_file.write(chunk)
   })
 
-  switch_file()
+  open_last_log_file()
 }
