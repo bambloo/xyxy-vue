@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const statusMessage = ref('')
+const { t } = useI18n()
 
 const preferences = reactive({
-  theme: '浅色',
+  theme: 'light',
   notify: true,
   compactMode: false,
 })
 
 function savePreferencesSettings() {
-  statusMessage.value = '偏好设置已保存'
+  statusMessage.value = t('settings.saved')
 }
 </script>
 
@@ -18,10 +20,10 @@ function savePreferencesSettings() {
   <section class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">功能扩展</p>
-        <h2>其他设置</h2>
+        <p class="eyebrow">{{ t('settings.eyebrow') }}</p>
+        <h2>{{ t('settings.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="savePreferencesSettings">保存偏好</button>
+      <button class="primary-button" type="button" @click="savePreferencesSettings">{{ t('settings.save') }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">
@@ -30,19 +32,19 @@ function savePreferencesSettings() {
 
     <div class="switch-list">
       <label class="switch-row">
-        <span>消息通知</span>
+        <span>{{ t('settings.notifications') }}</span>
         <input v-model="preferences.notify" type="checkbox" />
       </label>
       <label class="switch-row">
-        <span>紧凑模式</span>
+        <span>{{ t('settings.compact') }}</span>
         <input v-model="preferences.compactMode" type="checkbox" />
       </label>
       <label>
-        <span>界面主题</span>
+        <span>{{ t('settings.theme') }}</span>
         <select v-model="preferences.theme">
-          <option value="浅色">浅色</option>
-          <option value="深色">深色</option>
-          <option value="自动">自动</option>
+          <option value="light">{{ t('settings.light') }}</option>
+          <option value="dark">{{ t('settings.dark') }}</option>
+          <option value="auto">{{ t('settings.auto') }}</option>
         </select>
       </label>
     </div>

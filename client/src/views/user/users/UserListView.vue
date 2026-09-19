@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { post } from '../../../scripts/request'
+import { useI18n } from 'vue-i18n'
 
 interface ImportedUser {
   id: string
@@ -13,6 +14,7 @@ interface ImportedUser {
 type QueryField = 'id' | 'account' | 'phone'
 
 const loading = ref(false)
+const { t } = useI18n()
 const queryLoading = ref(false)
 const errorMessage = ref('')
 const users = ref<ImportedUser[]>([])
@@ -43,7 +45,7 @@ async function importSelectedFile(file: File | undefined) {
     users.value = data?.users ?? []
   } catch (error: unknown) {
     const result = error as { msg?: string; message?: string }
-    errorMessage.value = result.msg || result.message || '用户导入失败'
+    errorMessage.value = result.msg || result.message || t('users.importError')
   }
 }
 
@@ -73,7 +75,7 @@ function handleDrop(event: DragEvent) {
 async function queryUser() {
   const value = queryValue.value.trim()
   if (!value) {
-    errorMessage.value = '请输入要查询的用户信息'
+    errorMessage.value = t('users.queryRequired')
     return
   }
 
@@ -84,7 +86,7 @@ async function queryUser() {
     users.value = user ? [user] : []
   } catch (error: unknown) {
     const result = error as { msg?: string; message?: string }
-    errorMessage.value = result.msg || result.message || '用户查询失败'
+    errorMessage.value = result.msg || result.message || t('users.queryError')
     users.value = []
   }
 }
@@ -94,34 +96,34 @@ async function queryUser() {
   <section class="users-view">
     <div class="page-heading">
       <div>
-        <p class="eyebrow">用户列表</p>
-        <h2>导入用户 ID</h2>
-        <p>上传 TXT、XLS 或 XLSX 文件，将列表中的 ID 记录为未激活用户。</p>
+        <p class="eyebrow">{{ t('users.eyebrow') }}</p>
+        <h2>{{ t('users.title') }}</h2>
+        <p>{{ t('users.intro') }}</p>
       </div>
       <input ref="fileInput" class="hidden-input" type="file" accept=".txt,.xls,.xlsx" @change="importFile" />
     </div>
 
     <button class="drop-zone" :class="{ dragging: isDragging, busy: loading }" type="button" :disabled="loading"
-      aria-label="拖拽或选择用户文件上传" @click="openFilePicker" @keydown.enter.prevent="openFilePicker"
+      :aria-label="t('users.uploadAria')" @click="openFilePicker" @keydown.enter.prevent="openFilePicker"
       @keydown.space.prevent="openFilePicker" @dragover="handleDragOver" @dragleave="handleDragLeave"
       @drop="handleDrop">
       <ion-icon name="cloud-upload-outline"></ion-icon>
-      <strong>{{ loading ? '正在导入...' : '拖拽文件到这里' }}</strong>
-      <span>{{ loading ? '请稍候' : '或点击选择 TXT、XLS、XLSX 文件' }}</span>
+      <strong>{{ loading ? t('users.uploading') : t('users.drop') }}</strong>
+      <span>{{ loading ? t('users.wait') : t('users.choose') }}</span>
     </button>
 
     <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
 
     <form class="query-form" @submit.prevent="queryUser">
-      <label for="query-field">查询用户</label>
+      <label for="query-field">{{ t('users.query') }}</label>
       <select id="query-field" v-model="queryField">
-        <option value="id">用户 ID</option>
-        <option value="account">账号</option>
-        <option value="phone">手机号</option>
+        <option value="id">{{ t('users.id') }}</option>
+        <option value="account">{{ t('common.account') }}</option>
+        <option value="phone">{{ t('common.phone') }}</option>
       </select>
-      <input v-model="queryValue" type="search" placeholder="请输入查询内容" />
+      <input v-model="queryValue" type="search" :placeholder="t('users.queryPlaceholder')" />
       <button type="submit" :disabled="queryLoading">
-        {{ queryLoading ? '查询中...' : '查询' }}
+        {{ queryLoading ? t('users.querying') : t('users.queryButton') }}
       </button>
     </form>
 
@@ -129,11 +131,11 @@ async function queryUser() {
       <table>
         <thead>
           <tr>
-            <th>用户 ID</th>
-            <th>账号</th>
-            <th>姓名</th>
-            <th>手机号</th>
-            <th>状态</th>
+            <th>{{ t('users.id') }}</th>
+            <th>{{ t('common.account') }}</th>
+            <th>{{ t('common.name') }}</th>
+            <th>{{ t('common.phone') }}</th>
+            <th>{{ t('common.status') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -142,12 +144,13 @@ async function queryUser() {
             <td>{{ user.account }}</td>
             <td>{{ user.name }}</td>
             <td>{{ user.phone || '-' }}</td>
-            <td><span class="status">{{ user.isActive === false ? '未激活' : '已激活' }}</span></td>
+            <td><span class="status">{{ user.isActive === false ? t('common.inactive') : t('common.active') }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div v-else class="empty-state">选择文件后，导入的用户会显示在这里。</div>
+    <div v-else class="empty-state">{{ t('users.empty') }}</div>
   </section>
 </template>
 

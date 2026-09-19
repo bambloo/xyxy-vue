@@ -2,14 +2,16 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import { toggleLocale } from '../../i18n'
+import { useI18n } from 'vue-i18n'
 
 type TabKey = 'profile' | 'password' | 'security' | 'users'
 
 type TabConfig = {
   key: TabKey
-  label: string
+  labelKey: string
   icon: string
-  description: string
+  descriptionKey: string
   route: string
 }
 
@@ -19,12 +21,13 @@ const props = defineProps<{
 
 const router = useRouter()
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const tabs: TabConfig[] = [
-  { key: 'profile', label: '个人信息', icon: 'person-outline', description: '基本资料', route: 'user-profile' },
-  { key: 'password', label: '修改密码', icon: 'lock-closed-outline', description: '账户安全', route: 'user-password' },
-  { key: 'security', label: '安全设置', icon: 'shield-checkmark-outline', description: '登录保护', route: 'user-security' },
-  { key: 'users', label: '用户列表', icon: 'people-outline', description: '导入待激活用户', route: 'user-users' },
+  { key: 'profile', labelKey: 'user.profile', icon: 'person-outline', descriptionKey: 'user.profileHint', route: 'user-profile' },
+  { key: 'password', labelKey: 'user.password', icon: 'lock-closed-outline', descriptionKey: 'user.passwordHint', route: 'user-password' },
+  { key: 'security', labelKey: 'user.security', icon: 'shield-checkmark-outline', descriptionKey: 'user.securityHint', route: 'user-security' },
+  { key: 'users', labelKey: 'user.users', icon: 'people-outline', descriptionKey: 'user.usersHint', route: 'user-users' },
 ]
 
 const activeTab = computed(() => props.currentTab ?? 'profile')
@@ -46,17 +49,17 @@ async function logout() {
         <div class="brand-mark">B</div>
         <div>
           <p class="brand-name">星语心愿</p>
-          <small>用户中心</small>
+          <small>{{ t('user.center') }}</small>
         </div>
       </div>
 
-      <nav class="side-nav" aria-label="用户管理导航">
+      <nav class="side-nav" :aria-label="t('user.management')">
         <button v-for="tab in tabs" :key="tab.key" type="button"
           :class="['nav-item', { active: activeTab === tab.key }]" @click="goToTab(tab)">
           <ion-icon :name="tab.icon"></ion-icon>
           <span>
-            <strong>{{ tab.label }}</strong>
-            <small>{{ tab.description }}</small>
+            <strong>{{ t(tab.labelKey) }}</strong>
+            <small>{{ t(tab.descriptionKey) }}</small>
           </span>
         </button>
       </nav>
@@ -65,10 +68,13 @@ async function logout() {
     <section class="content-panel">
       <header class="topbar">
         <div>
-          <p class="eyebrow">账户管理</p>
-          <h1>用户信息管理</h1>
+          <p class="eyebrow">{{ t('user.managementKicker') }}</p>
+          <h1>{{ t('user.management') }}</h1>
         </div>
-        <button class="ghost-button" type="button" @click="logout">退出登录</button>
+        <div class="topbar-actions">
+          <button class="locale-button" type="button" @click="toggleLocale">{{ t('common.language') }}</button>
+          <button class="ghost-button" type="button" @click="logout">{{ t('common.logout') }}</button>
+        </div>
       </header>
 
       <slot />
@@ -177,6 +183,23 @@ async function logout() {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.locale-button {
+  border: 1px solid var(--space-line);
+  border-radius: 999px;
+  padding: .45rem .7rem;
+  background: rgba(110, 164, 214, .1);
+  color: var(--space-muted);
+  font: inherit;
+  font-size: .72rem;
+  cursor: pointer;
 }
 
 .eyebrow {

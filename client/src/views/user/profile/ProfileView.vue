@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const statusMessage = ref('')
+const { t } = useI18n()
 
 const user = reactive({
   account: 'admin',
@@ -13,7 +15,7 @@ const user = reactive({
 })
 
 function saveProfile() {
-  statusMessage.value = '个人信息已保存'
+  statusMessage.value = t('profile.saved')
 }
 </script>
 
@@ -21,10 +23,10 @@ function saveProfile() {
   <section class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">基础信息</p>
-        <h2>个人资料</h2>
+        <p class="eyebrow">{{ t('profile.eyebrow') }}</p>
+        <h2>{{ t('profile.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="saveProfile">保存资料</button>
+      <button class="primary-button" type="button" @click="saveProfile">{{ t('profile.save') }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">
@@ -33,27 +35,27 @@ function saveProfile() {
 
     <div class="field-grid">
       <label>
-        <span>账号</span>
+        <span>{{ t('common.account') }}</span>
         <input v-model="user.account" type="text" readonly />
       </label>
       <label>
-        <span>用户名</span>
+        <span>{{ t('profile.username') }}</span>
         <input v-model="user.name" type="text" />
       </label>
       <label>
-        <span>手机号</span>
+        <span>{{ t('common.phone') }}</span>
         <input v-model="user.phone" type="tel" />
       </label>
       <label>
-        <span>邮箱</span>
+        <span>{{ t('profile.email') }}</span>
         <input v-model="user.email" type="email" />
       </label>
       <label>
-        <span>生日</span>
+        <span>{{ t('profile.birthday') }}</span>
         <input v-model="user.birthday" type="date" />
       </label>
       <label class="full-width">
-        <span>兴趣爱好</span>
+        <span>{{ t('profile.hobbies') }}</span>
         <textarea v-model="user.hobbies" rows="4" />
       </label>
     </div>

@@ -7,6 +7,7 @@ import LoginView from '../views/LoginView.vue'
 import { validateAccount, validatePassword } from '../utils/login-validator'
 import { mongo_helper } from '../../../server/src/util/mongo-helper'
 import { user_manager, DEFAULT_ADMIN_ACCOUNT } from '../../../server/src/core/manager/user'
+import { i18n } from '../i18n'
 
 function mountLoginView() {
   setActivePinia(createPinia())
@@ -18,7 +19,7 @@ function mountLoginView() {
 
   return mount(LoginView, {
     global: {
-      plugins: [router],
+      plugins: [router, i18n],
       stubs: ['ion-icon'],
     },
   })

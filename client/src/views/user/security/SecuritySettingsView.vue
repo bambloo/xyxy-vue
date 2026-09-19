@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const statusMessage = ref('')
+const { t } = useI18n()
 
 const securitySettings = reactive({
   twoFactor: true,
   loginAlert: true,
-  sessionTimeout: '30 分钟',
+  sessionTimeout: '30',
 })
 
 function saveSecurity() {
-  statusMessage.value = '安全设置已更新'
+  statusMessage.value = t('security.updated')
 }
 </script>
 
@@ -18,10 +20,10 @@ function saveSecurity() {
   <section class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">安全设置</p>
-        <h2>登录保护</h2>
+        <p class="eyebrow">{{ t('security.eyebrow') }}</p>
+        <h2>{{ t('security.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="saveSecurity">保存设置</button>
+      <button class="primary-button" type="button" @click="saveSecurity">{{ t('security.save') }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">
@@ -30,19 +32,19 @@ function saveSecurity() {
 
     <div class="switch-list">
       <label class="switch-row">
-        <span>双因素认证</span>
+        <span>{{ t('security.twoFactor') }}</span>
         <input v-model="securitySettings.twoFactor" type="checkbox" />
       </label>
       <label class="switch-row">
-        <span>登录异常提醒</span>
+        <span>{{ t('security.loginAlert') }}</span>
         <input v-model="securitySettings.loginAlert" type="checkbox" />
       </label>
       <label>
-        <span>会话超时</span>
+        <span>{{ t('security.timeout') }}</span>
         <select v-model="securitySettings.sessionTimeout">
-          <option value="15 分钟">15 分钟</option>
-          <option value="30 分钟">30 分钟</option>
-          <option value="60 分钟">60 分钟</option>
+          <option value="15">{{ t('security.minutes15') }}</option>
+          <option value="30">{{ t('security.minutes30') }}</option>
+          <option value="60">{{ t('security.minutes60') }}</option>
         </select>
       </label>
     </div>

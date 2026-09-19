@@ -5,9 +5,12 @@ import { hash_password } from '../../../common/util/crypto'
 import { validateAccount, validatePassword } from '../utils/login-validator'
 import { post } from '../scripts/request'
 import { useAuthStore } from '../stores/auth'
+import { toggleLocale } from '../i18n'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { t } = useI18n()
 const account = ref('')
 const password = ref('')
 const rememberMe = ref(true)
@@ -18,10 +21,20 @@ const accountError = ref('')
 const passwordError = ref('')
 
 function validateLoginForm() {
-  accountError.value = validateAccount(account.value)
-  passwordError.value = validatePassword(password.value)
+  accountError.value = translateValidation(validateAccount(account.value))
+  passwordError.value = translateValidation(validatePassword(password.value))
 
   return !accountError.value && !passwordError.value
+}
+
+function translateValidation(message: string) {
+  const messages: Record<string, string> = {
+    '请输入账号': t('validation.accountRequired'),
+    '账号需为 4-20 位字母、数字或下划线，手机号可直接输入 11 位数字': t('validation.accountFormat'),
+    '请输入密码': t('validation.passwordRequired'),
+    '密码需为 8-20 位，且至少包含字母和数字': t('validation.passwordFormat'),
+  }
+  return messages[message] || message
 }
 
 function submitLogin() {
@@ -41,7 +54,7 @@ function submitLogin() {
     })
     .then((packet) => {
       const data = packet.data as { token?: string; account?: string; name?: string } | undefined
-      if (!data?.token) throw new Error('登录凭证缺失')
+      if (!data?.token) throw new Error(t('login.missingToken'))
       auth.login(data.token, {
         account: data.account || account.value.trim(),
         name: data.name,
@@ -50,17 +63,17 @@ function submitLogin() {
     })
     .catch((error: unknown) => {
       const response = error as { msg?: string; message?: string }
-      errorMessage.value = response.msg || response.message || '登录失败，请确认账号和密码'
+      errorMessage.value = response.msg || response.message || t('login.invalid')
     })
 }
 </script>
 
 <template>
   <main class="login-page">
-    <section class="welcome-panel" aria-label="产品介绍">
+    <section class="welcome-panel" :aria-label="t('login.ariaIntro')">
       <div class="brand-mark">B</div>
-      <p class="eyebrow">WELCOME TO YOUR SPACE</p>
-      <h1>遇见同频的人，<br /><em>从这里开始。</em></h1>
+      <p class="eyebrow">{{ t('login.welcome') }}</p>
+      <h1>{{ t('login.headline') }}<br /><em>{{ t('login.headlineAccent') }}</em></h1>
       <div class="orb orb-one"></div>
       <div class="orb orb-two"></div>
       <div class="line-pattern"></div>
@@ -69,27 +82,30 @@ function submitLogin() {
     <section class="form-panel">
       <div class="form-wrap">
         <div class="mobile-brand"><span class="brand-mark">B</span> Bambloo</div>
-        <p class="form-kicker">加入星语心愿</p>
-        <h2>回到你的圈子</h2>
-        <p class="form-intro">和熟悉的人保持联系，也认识新的朋友</p>
+        <button class="locale-button" type="button" @click="toggleLocale">{{ t('common.language') }}</button>
+        <p class="form-kicker">{{ t('login.kicker') }}</p>
+        <h2>{{ t('login.title') }}</h2>
+        <p class="form-intro">{{ t('login.intro') }}</p>
 
         <form class="login-form" @submit.prevent="submitLogin">
-          <label class="field-label" for="account">账号 / 手机号</label>
+          <label class="field-label" for="account">{{ t('login.accountLabel') }}</label>
           <div :class="['input-shell', { error: accountError }]">
             <ion-icon name="person-outline"></ion-icon>
-            <input id="account" v-model="account" type="text" autocomplete="username" placeholder="输入账号或手机号" />
+            <input id="account" v-model="account" type="text" autocomplete="username"
+              :placeholder="t('login.accountPlaceholder')" />
           </div>
           <p v-if="accountError" class="field-error" role="alert">{{ accountError }}</p>
 
           <div class="password-heading">
-            <label class="field-label" for="password">登录密码</label>
-            <a href="#" @click.prevent="errorMessage = '请联系管理员重置密码'">忘记密码？</a>
+            <label class="field-label" for="password">{{ t('login.passwordLabel') }}</label>
+            <a href="#" @click.prevent="errorMessage = t('login.forgotMessage')">{{ t('login.forgot') }}</a>
           </div>
           <div :class="['input-shell', { error: passwordError }]">
             <ion-icon name="lock-closed-outline"></ion-icon>
             <input id="password" v-model="password" :type="showPassword ? 'text' : 'password'"
-              autocomplete="current-password" placeholder="输入你的密码" />
-            <button class="icon-button" type="button" :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+              autocomplete="current-password" :placeholder="t('login.passwordPlaceholder')" />
+            <button class="icon-button" type="button"
+              :aria-label="showPassword ? t('login.hidePassword') : t('login.showPassword')"
               @click="showPassword = !showPassword">
               <ion-icon :name="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
             </button>
@@ -98,21 +114,22 @@ function submitLogin() {
 
           <label class="remember-row">
             <input v-model="rememberMe" type="checkbox" />
-            <span>保持登录状态</span>
+            <span>{{ t('login.remember') }}</span>
           </label>
 
           <p v-if="errorMessage" class="error-message" role="alert">
             <ion-icon name="alert-circle-outline"></ion-icon>{{ errorMessage }}
           </p>
           <button class="submit-button" type="submit" :disabled="loading">
-            <span>{{ loading ? '正在进入...' : '进入星空' }}</span>
+            <span>{{ loading ? t('login.entering') : t('login.enter') }}</span>
             <ion-icon v-if="!loading" name="arrow-forward-outline"></ion-icon>
           </button>
         </form>
 
-        <p class="signup-hint">还没有账号？ <a href="#" @click.prevent="errorMessage = '注册功能即将开放'">创建新账号</a></p>
+        <p class="signup-hint">{{ t('login.signup') }} <a href="#"
+            @click.prevent="errorMessage = t('login.signupMessage')">{{ t('login.signupAction') }}</a></p>
       </div>
-      <p class="copyright">© 2026 Bambloo · 让每一次相遇都值得</p>
+      <p class="copyright">{{ t('login.copyright') }}</p>
     </section>
   </main>
 </template>
@@ -235,6 +252,19 @@ h1 em {
   width: 2rem;
   height: 2rem;
   font-size: 1rem;
+}
+
+.locale-button {
+  display: block;
+  margin: 0 0 1.5rem auto;
+  border: 1px solid var(--space-line);
+  border-radius: 999px;
+  padding: .35rem .7rem;
+  background: rgba(110, 164, 214, .1);
+  color: var(--space-muted);
+  font: inherit;
+  font-size: .72rem;
+  cursor: pointer;
 }
 
 .form-kicker {

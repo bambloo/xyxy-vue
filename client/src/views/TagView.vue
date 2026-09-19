@@ -3,6 +3,7 @@ import { ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { post } from '@/scripts/request'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,6 +12,7 @@ const loading = ref(true)
 const exists = ref(false)
 const qrcodeCanvas = ref(null)
 const tag = route.params.tag as string
+const { t } = useI18n()
 
 onMounted(() => {
   post('/wpi/user/get', loading, { tag })
@@ -32,9 +34,9 @@ onMounted(() => {
   <div class="container">
     <div v-if="!loading">
       <h2>NFC TAG: {{ tag }}</h2>
-      <p>未找到记录，请联系管理员扫码填写信息：</p>
+      <p>{{ t('tag.notFound') }}</p>
       <canvas ref="qrcodeCanvas"></canvas>
-      <p class="tip">手机扫码后填写，即可绑定此TAG</p>
+      <p class="tip">{{ t('tag.tip') }}</p>
     </div>
   </div>
 </template>

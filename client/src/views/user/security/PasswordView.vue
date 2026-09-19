@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const statusMessage = ref('')
+const { t } = useI18n()
 
 const passwordForm = reactive({
   currentPassword: '',
@@ -11,7 +13,7 @@ const passwordForm = reactive({
 
 function changePassword() {
   if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-    statusMessage.value = '请完整填写密码信息'
+    statusMessage.value = t('password.required')
     return
   }
 
@@ -20,16 +22,16 @@ function changePassword() {
     !/[A-Za-z]/.test(passwordForm.newPassword) ||
     !/\d/.test(passwordForm.newPassword)
   ) {
-    statusMessage.value = '新密码需为 8-20 位，且包含字母和数字'
+    statusMessage.value = t('password.format')
     return
   }
 
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    statusMessage.value = '两次输入的新密码不一致'
+    statusMessage.value = t('password.mismatch')
     return
   }
 
-  statusMessage.value = '密码已更新'
+  statusMessage.value = t('password.updated')
   passwordForm.currentPassword = ''
   passwordForm.newPassword = ''
   passwordForm.confirmPassword = ''
@@ -40,10 +42,10 @@ function changePassword() {
   <section class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">账户安全</p>
-        <h2>修改密码</h2>
+        <p class="eyebrow">{{ t('password.eyebrow') }}</p>
+        <h2>{{ t('password.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="changePassword">更新密码</button>
+      <button class="primary-button" type="button" @click="changePassword">{{ t('password.update') }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">
@@ -52,16 +54,16 @@ function changePassword() {
 
     <div class="field-stack">
       <label>
-        <span>当前密码</span>
-        <input v-model="passwordForm.currentPassword" type="password" placeholder="请输入当前密码" />
+        <span>{{ t('password.current') }}</span>
+        <input v-model="passwordForm.currentPassword" type="password" :placeholder="t('password.currentPlaceholder')" />
       </label>
       <label>
-        <span>新密码</span>
-        <input v-model="passwordForm.newPassword" type="password" placeholder="请输入新密码" />
+        <span>{{ t('password.new') }}</span>
+        <input v-model="passwordForm.newPassword" type="password" :placeholder="t('password.newPlaceholder')" />
       </label>
       <label>
-        <span>确认新密码</span>
-        <input v-model="passwordForm.confirmPassword" type="password" placeholder="请再次输入新密码" />
+        <span>{{ t('password.confirm') }}</span>
+        <input v-model="passwordForm.confirmPassword" type="password" :placeholder="t('password.confirmPlaceholder')" />
       </label>
     </div>
   </section>
