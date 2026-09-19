@@ -20,6 +20,7 @@ process.on('uncaughtException', (err) => {
 
 const application = express()
 
+application.set('trust proxy', 'loopback')
 application.use(body_parser.json({ limit: '10mb' }))
 application.use(body_parser.urlencoded({ extended: true }))
 

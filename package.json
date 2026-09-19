@@ -18,6 +18,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "@vuestic/tailwind": "^0.1.5",
     "axios": "^1.20.0",
     "express": "^5.2.1",
