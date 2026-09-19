@@ -1,50 +1,88 @@
-import { Express } from 'express'
-import { walk } from 'walk'
+import type { Express, NextFunction, Request, Response } from 'express'
 import path from 'path'
+import { walk } from 'walk'
+import { BamblooError } from '../../../common/status'
 import { logout } from './logger-helper'
 import { response } from './secretary'
-import { BamblooError } from '../../../common/status'
+import { authorize_wpi, type WpiConfig, type WpiHandler, type WpiRequest } from './wpi-access'
 
-export function proxy_router(express: Express, base: string) {
-  return new Promise<void>((resolve) => {
-    base = base.replaceAll('\\', '/')
-    walk(base).on('file', (parent, stat, next) => {
-      parent = parent.replaceAll('\\', '/')
-      let router_path = path.join(parent, stat.name).replaceAll('\\', '/')
-      let module_path = router_path
-        .replace(base, '')
-        .replace('/index.ts', '')
-        .replace('/index.js', '')
-        .replace('.ts', '')
-        .replace('.js', '')
-      if (module_path.length == 0) {
-        module_path = '/'
-      }
+interface WpiModule {
+  default: WpiHandler
+  config?: WpiConfig
+}
 
-      if (process.platform == 'win32') {
-        router_path = 'file://' + router_path
-      }
+export function proxy_router(application: Express, base: string) {
+  const normalizedBase = normalize_path(base)
 
-      import(router_path).then((module) => {
-        const mod = module.default
-        logout(module_path)
+  return new Promise<void>((resolve, reject) => {
+    const imports: Promise<void>[] = []
+    const walker = walk(normalizedBase)
 
-        express.use(module_path, (req, res, next) => {
-          const params = {}
-          Object.assign(params, req.body)
-          Object.assign(params, req.query)
-          logout(module_path, params)
-          const mod_res = mod(params, req, res, next)
-          if (mod_res instanceof Promise) {
-            mod_res.catch((err: BamblooError) => {
-              response(res, err.code, err.message)
-            })
-          }
-        })
-        resolve()
-      })
-
+    walker.on('file', (parent, stat, next) => {
+      const filePath = normalize_path(path.join(parent, stat.name))
+      imports.push(register_module(application, normalizedBase, filePath))
       next()
     })
+    walker.on('end', () => {
+      Promise.all(imports)
+        .then(() => resolve())
+        .catch(reject)
+    })
+    // walker.on('error', reject)
   })
+}
+
+async function register_module(application: Express, base: string, filePath: string) {
+  const modulePath = get_module_path(base, filePath)
+  const loaded = (await import(to_module_url(filePath))) as WpiModule
+  const config = loaded.config || {}
+
+  logout(modulePath)
+  application.use(modulePath, (req, res, next) => {
+    void handle_request(loaded.default, config, modulePath, req, res, next)
+  })
+}
+
+async function handle_request(
+  handler: WpiHandler,
+  config: WpiConfig,
+  modulePath: string,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const params = collect_params(req)
+  logout(modulePath, params)
+
+  try {
+    const authorized = await authorize_wpi(config, req as WpiRequest, res)
+    if (!authorized) return
+    await handler(params, req as WpiRequest, res, next)
+  } catch (error) {
+    const err = error as BamblooError
+    response(res, err.code, err.message || '接口处理失败')
+  }
+}
+
+function collect_params(req: Request): Record<string, unknown> {
+  return {
+    ...req.body,
+    ...req.query,
+  }
+}
+
+function get_module_path(base: string, filePath: string) {
+  const relativePath = filePath
+    .replace(base, '')
+    .replace(/\/index\.(ts|js)$/, '')
+    .replace(/\.(ts|js)$/, '')
+  return relativePath || '/'
+}
+
+function normalize_path(value: string) {
+  return value.replaceAll('\\', '/')
+}
+
+function to_module_url(filePath: string) {
+  return process.platform === 'win32' ? `file://${filePath}` : filePath
 }

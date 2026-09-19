@@ -3,6 +3,8 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 
+export const config = { access: 'private' as const }
+
 export default function handler(
   params: { [key: string]: string },
   _req: Request,

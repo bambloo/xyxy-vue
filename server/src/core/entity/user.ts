@@ -8,6 +8,7 @@ export interface UserProfile {
   hobbies?: string
   isAdmin?: boolean
   isActive?: boolean
+  permissions?: string[]
   email?: string
   avatar?: string
   createdAt?: string

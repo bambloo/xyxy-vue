@@ -5,6 +5,8 @@ import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { refresh_session } from '../../util/session'
 
+export const config = { access: 'private' as const, permissions: ['users.import'] }
+
 function parseIds(fileName: string, content: Buffer) {
   if (fileName.toLowerCase().endsWith('.txt')) {
     return content
