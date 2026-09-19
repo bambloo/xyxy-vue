@@ -1,8 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import type { UserQuery } from '../../../../common/entity/user'
+import { hash_password } from '../../../../common/util/crypto'
 import type { UserProfile } from '../entity/user'
 import { mongo_helper } from '../../util/mongo-helper'
 import { Mutex } from '../../util/mutex'
+
+export const DEFAULT_ADMIN_ACCOUNT = 'admin'
+export const DEFAULT_ADMIN_PASSWORD = 'Admin123456'
 
 export class user_manager {
   private static global_instance: user_manager = new user_manager()
@@ -20,7 +25,34 @@ export class user_manager {
   private initialized: boolean = false
 
   private initialize(): Promise<this> {
-    return Promise.resolve(this)
+    return this.ensureAdmin().then(() => {
+      this.initialized = true
+      return this
+    })
+  }
+
+  public async ensureAdmin(): Promise<UserProfile> {
+    try {
+      const existing = await this.get({ account: DEFAULT_ADMIN_ACCOUNT })
+      return existing
+    } catch {
+      const passwordHash = await hash_password(DEFAULT_ADMIN_PASSWORD)
+      const adminUser: UserProfile = {
+        id: randomUUID(),
+        account: DEFAULT_ADMIN_ACCOUNT,
+        passwordHash,
+        name: '管理员',
+        isAdmin: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      await mongo_helper.ddo((db) => {
+        return db.collection('user').insertOne(adminUser)
+      })
+
+      return adminUser
+    }
   }
 
   public get(key: UserQuery): Promise<UserProfile> {
