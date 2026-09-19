@@ -7,6 +7,7 @@ import { post } from '../scripts/request'
 import { useAuthStore } from '../stores/auth'
 import { toggleLocale } from '../i18n'
 import { useI18n } from 'vue-i18n'
+import type { UserPublicProfile } from '../../../common/entity/user'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -53,12 +54,10 @@ function submitLogin() {
       })
     })
     .then((packet) => {
-      const data = packet.data as { token?: string; account?: string; name?: string } | undefined
-      if (!data?.token) throw new Error(t('login.missingToken'))
-      auth.login(data.token, {
-        account: data.account || account.value.trim(),
-        name: data.name,
-      })
+      const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
+      if (!data?.token || !data.account || !data.tag) throw new Error(t('login.missingToken'))
+      const { token, ...profile } = data
+      auth.login(token, profile)
       router.push('/user')
     })
     .catch((error: unknown) => {

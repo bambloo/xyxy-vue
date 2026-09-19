@@ -3,6 +3,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { response } from '../../util/secretary'
 import { refresh_session } from '../../util/session'
 import { user_manager } from '../../core/manager/user'
+import { to_public_user } from '../../core/entity/public-user'
 
 export default function handler(
   _params: { [key: string]: unknown },
@@ -17,9 +18,8 @@ export default function handler(
     .instance()
     .then((manager) => manager.get({ tag: result.payload.userTag }))
     .then((user) => {
-      const { passwordHash: _passwordHash, ...safeUser } = user
       return response(res, BamblooStatusCode.Success, '会话有效', {
-        ...safeUser,
+        ...to_public_user(user),
         token: result.token,
       })
     })

@@ -3,10 +3,12 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { mongo_helper } from '../../util/mongo-helper'
+import { issue_session } from '../../util/session'
+import { to_public_user } from '../../core/entity/public-user'
 
 export const config = { access: 'public' as const }
 
-export default function handler(params: { [key: string]: unknown }, _req: Request, res: Response) {
+export default function handler(params: { [key: string]: unknown }, req: Request, res: Response) {
   const tag = typeof params.tag === 'string' ? params.tag.trim() : ''
   const name = typeof params.name === 'string' ? params.name.trim() : ''
   if (!tag || !name) {
@@ -36,7 +38,16 @@ export default function handler(params: { [key: string]: unknown }, _req: Reques
       if (!result.matchedCount) {
         return response(res, BamblooStatusCode.EntityExists, 'Tag 已激活')
       }
-      return response(res, BamblooStatusCode.Success, 'Tag 激活成功')
+      return user_manager
+        .instance()
+        .then((manager) => manager.get({ tag }))
+        .then((user) => {
+          const token = issue_session(req, res, user)
+          return response(res, BamblooStatusCode.Success, 'Tag 激活成功', {
+            ...to_public_user(user),
+            token,
+          })
+        })
     })
     .catch(() => response(res, BamblooStatusCode.EntityNonexist, 'Tag 不存在或已激活'))
 }

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
+import { to_public_user } from '../../core/entity/public-user'
 
 export const config = { access: 'private' as const }
 
@@ -29,8 +30,7 @@ export default function handler(
       }
 
       return manager.get(query).then((user) => {
-        const { passwordHash: _passwordHash, ...safeUser } = user
-        return response(res, BamblooStatusCode.Success, '获取用户信息成功', safeUser)
+        return response(res, BamblooStatusCode.Success, '获取用户信息成功', to_public_user(user))
       })
     })
     .catch((err) => {

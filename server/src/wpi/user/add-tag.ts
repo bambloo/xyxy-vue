@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
+import { to_public_user } from '../../core/entity/public-user'
 
 export const config = { access: 'private' as const, permissions: ['users.import'] }
 
@@ -13,8 +14,7 @@ export default function handler(params: { [key: string]: unknown }, _req: Reques
     .instance()
     .then((manager) => manager.importInactiveTags([tag]))
     .then(([user]) => {
-      const { passwordHash: _passwordHash, ...safeUser } = user
-      return response(res, BamblooStatusCode.Success, 'Tag 添加成功', safeUser)
+      return response(res, BamblooStatusCode.Success, 'Tag 添加成功', to_public_user(user))
     })
     .catch(() => response(res, BamblooStatusCode.BadRequest, 'Tag 添加失败'))
 }

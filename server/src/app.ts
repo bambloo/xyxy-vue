@@ -29,7 +29,7 @@ application.post('/', (req) => {
   console.log(req.url)
 })
 application
-  .listen(1992)
+  .listen(Number(process.env.PORT) || 1992)
   .on('listening', () => {
     logout('Server Listening')
   })

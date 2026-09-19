@@ -1,11 +1,9 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { post } from '../scripts/request'
+import type { UserPublicProfile } from '../../../common/entity/user'
 
-interface AuthUser {
-  account: string
-  name?: string
-}
+export type AuthUser = UserPublicProfile
 
 const STORAGE_KEY = 'bambloo-auth'
 
@@ -27,13 +25,14 @@ export const useAuthStore = defineStore('auth', () => {
 
     hydrationPromise = post('/wpi/user/check', ref(false))
       .then((packet) => {
-        const data = packet.data as { token?: string; account?: string; name?: string } | undefined
-        if (!data?.token || !data.account) {
+        const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
+        if (!data?.token || !data.account || !data.tag) {
           throw new Error('Invalid session response')
         }
-        localStorage.setItem(STORAGE_KEY, data.token)
+        const { token, ...profile } = data
+        localStorage.setItem(STORAGE_KEY, token)
         isLoggedIn.value = true
-        user.value = { account: data.account, name: data.name }
+        user.value = profile
       })
       .catch(() => {
         clearLocalState()
@@ -50,7 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = !!localStorage.getItem(STORAGE_KEY)
   }
 
-  function login(token: string, nextUser?: AuthUser) {
+  function login(token: string, nextUser: AuthUser) {
     localStorage.setItem(STORAGE_KEY, token)
     user.value = nextUser ?? null
     isLoggedIn.value = true

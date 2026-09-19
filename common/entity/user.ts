@@ -5,7 +5,6 @@ export interface UserPublicProfile {
   phone?: string
   birthday?: string
   hobbies?: string
-  isAdmin?: boolean
   isActive?: boolean
   email?: string
   avatar?: string

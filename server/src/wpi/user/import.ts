@@ -4,6 +4,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { refresh_session } from '../../util/session'
+import { to_public_user } from '../../core/entity/public-user'
 
 export const config = { access: 'private' as const, permissions: ['users.import'] }
 
@@ -59,7 +60,7 @@ export default function handler(params: { [key: string]: unknown }, req: Request
       }
       return manager.importInactiveTags(tags).then((users) =>
         response(res, BamblooStatusCode.Success, '用户导入成功', {
-          users: users.map(({ passwordHash: _passwordHash, ...user }) => user),
+          users: users.map(to_public_user),
           count: users.length,
         }),
       )

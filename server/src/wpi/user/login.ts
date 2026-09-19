@@ -4,6 +4,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { issue_session } from '../../util/session'
+import { to_public_user } from '../../core/entity/public-user'
 
 function same_hash(actual: string, expected: string) {
   const actualBuffer = Buffer.from(actual, 'hex')
@@ -30,8 +31,10 @@ export default function handler(params: { [key: string]: unknown }, req: Request
       }
 
       const token = issue_session(req, res, user)
-      const { passwordHash: _passwordHash, ...safeUser } = user
-      return response(res, BamblooStatusCode.Success, '登录成功', { ...safeUser, token })
+      return response(res, BamblooStatusCode.Success, '登录成功', {
+        ...to_public_user(user),
+        token,
+      })
     })
     .catch(() => response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误'))
 }

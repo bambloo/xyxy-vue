@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
 import TagActivationView from './TagActivationView.vue'
 
 const route = useRoute()
+const router = useRouter()
 
 const loading = ref(true)
 const exists = ref(false)
@@ -16,6 +18,7 @@ onMounted(() => {
     .then((packet) => {
       exists.value = true
       active.value = (packet.data as { isActive?: boolean } | undefined)?.isActive === true
+      if (active.value) void router.replace({ name: 'home' })
     })
 })
 </script>

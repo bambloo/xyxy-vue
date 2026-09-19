@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
+import { useAuthStore } from '@/stores/auth'
+import type { UserPublicProfile } from '../../../common/entity/user'
 
 const props = defineProps<{ tag: string }>()
 const { t } = useI18n()
+const router = useRouter()
+const auth = useAuthStore()
 const loading = ref(false)
 const message = ref('')
 const completed = ref(false)
@@ -20,8 +25,12 @@ const user = reactive({
 async function activate() {
   message.value = ''
   try {
-    await post('/wpi/user/activate', loading, { tag: props.tag, ...user })
-    completed.value = true
+    const packet = await post('/wpi/user/activate', loading, { tag: props.tag, ...user })
+    const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
+    if (!data?.token || !data.account || !data.tag) throw new Error(t('tag.activateError'))
+    const { token, ...profile } = data
+    auth.login(token, profile)
+    await router.replace({ name: 'home' })
   } catch (error: unknown) {
     const result = error as { msg?: string; message?: string }
     message.value = result.msg || result.message || t('tag.activateError')
