@@ -1,20 +1,32 @@
-// import { NextFunction } from 'express'
-
-import { Response } from 'express'
+import type { Request, Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 
 export default function handler(
   params: { [key: string]: string },
-  req: Request,
+  _req: Request,
   res: Response,
   // next: NextFunction,
 ) {
   user_manager
     .instance()
     .then((manager) => {
-      return manager.get({ id: params.id }).then((user) => {
+      const query = params.id
+        ? { id: params.id }
+        : params.account
+          ? { account: params.account }
+          : params.phone
+            ? { phone: params.phone }
+            : null
+      if (!query) {
+        return Promise.reject({
+          code: BamblooStatusCode.BadRequest,
+          msg: '请输入 id、account 或 phone',
+        })
+      }
+
+      return manager.get(query).then((user) => {
         const { passwordHash: _passwordHash, ...safeUser } = user
         return response(res, BamblooStatusCode.Success, '获取用户信息成功', safeUser)
       })

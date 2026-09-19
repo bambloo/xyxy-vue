@@ -85,9 +85,9 @@ export class user_manager {
         const now = new Date().toISOString()
         const user: UserProfile = {
           id,
-          account: id,
+          account: '',
           passwordHash: '',
-          name: id,
+          name: '',
           isActive: false,
           createdAt: now,
           updatedAt: now,
