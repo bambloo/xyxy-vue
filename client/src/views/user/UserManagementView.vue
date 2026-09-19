@@ -4,9 +4,7 @@ import UserLayout from './UserLayout.vue'
 import ProfileView from './profile/ProfileView.vue'
 import PasswordView from './security/PasswordView.vue'
 import SecuritySettingsView from './security/SecuritySettingsView.vue'
-import SettingsView from './settings/SettingsView.vue'
-
-type TabKey = 'profile' | 'password' | 'security' | 'preferences'
+type TabKey = 'profile' | 'password' | 'security'
 
 const currentTab = ref<TabKey>('profile')
 
@@ -16,8 +14,6 @@ const activeView = computed(() => {
       return PasswordView
     case 'security':
       return SecuritySettingsView
-    case 'preferences':
-      return SettingsView
     case 'profile':
     default:
       return ProfileView

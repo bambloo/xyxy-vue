@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router'
 import { hash_password } from '../../../common/util/crypto'
 import { validateAccount, validatePassword } from '../utils/login-validator'
 import { post } from '../scripts/request'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const account = ref('')
 const password = ref('')
 const rememberMe = ref(true)
@@ -37,7 +39,13 @@ function submitLogin() {
         remember: rememberMe.value,
       })
     })
-    .then(() => router.push('/user'))
+    .then(() => {
+      auth.login({
+        account: account.value.trim(),
+        name: account.value.trim(),
+      })
+      router.push('/user')
+    })
     .catch((error: unknown) => {
       const response = error as { msg?: string; message?: string }
       errorMessage.value = response.msg || response.message || '登录失败，请检查账号或密码'

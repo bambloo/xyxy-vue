@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
 
-type TabKey = 'profile' | 'password' | 'security' | 'preferences'
+type TabKey = 'profile' | 'password' | 'security'
 
 const props = defineProps<{
   currentTab?: TabKey
@@ -11,17 +13,24 @@ const emit = defineEmits<{
   (event: 'tab-change', value: TabKey): void
 }>()
 
+const router = useRouter()
+const auth = useAuthStore()
+
 const tabs: Array<{ key: TabKey; label: string; icon: string; description: string }> = [
   { key: 'profile', label: '个人信息', icon: 'person-outline', description: '基本资料' },
   { key: 'password', label: '修改密码', icon: 'lock-closed-outline', description: '账户安全' },
   { key: 'security', label: '安全设置', icon: 'shield-checkmark-outline', description: '登录保护' },
-  { key: 'preferences', label: '其他设置', icon: 'settings-outline', description: '偏好与扩展' },
 ]
 
 const activeTab = computed(() => props.currentTab ?? 'profile')
 
 function setTab(tab: TabKey) {
   emit('tab-change', tab)
+}
+
+function logout() {
+  auth.logout()
+  router.push('/login')
 }
 </script>
 
@@ -54,7 +63,7 @@ function setTab(tab: TabKey) {
           <p class="eyebrow">账户管理</p>
           <h1>用户信息管理</h1>
         </div>
-        <button class="ghost-button" type="button">退出登录</button>
+        <button class="ghost-button" type="button" @click="logout">退出登录</button>
       </header>
 
       <slot />
