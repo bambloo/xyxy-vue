@@ -13,11 +13,13 @@ const SESSION_TTL = 7 * 24 * 60 * 60 * 1000
 const sessionSecret = createHash('sha256')
   .update(process.env.BAMBLOO_SESSION_SECRET || randomBytes(32))
   .digest()
+const sessionSalt = randomBytes(32).toString('base64url')
 
 interface SessionPayload {
   userId: string
   account: string
   ip: string
+  salt: string
   issuedAt: number
   lastSeenAt: number
 }
@@ -57,10 +59,14 @@ function decode(token: string, req: Request): SessionPayload | null {
     const currentIp = clientIp(req)
     const account = typeof payload.account === 'string' ? payload.account : ''
     const ip = typeof payload.ip === 'string' ? payload.ip : ''
+    const salt = typeof payload.salt === 'string' ? payload.salt : ''
+    const expectedSalt = Buffer.from(sessionSalt)
     if (
       !payload.userId ||
       !account ||
       !ip ||
+      Buffer.byteLength(salt) !== expectedSalt.length ||
+      !timingSafeEqual(Buffer.from(salt), expectedSalt) ||
       !Number.isFinite(payload.lastSeenAt) ||
       Date.now() - payload.lastSeenAt > SESSION_TTL ||
       Buffer.byteLength(ip) !== Buffer.byteLength(currentIp) ||
@@ -80,6 +86,7 @@ export function issue_session(req: Request, res: Response, user: UserProfile) {
     userId: user.id,
     account: user.account,
     ip: clientIp(req),
+    salt: sessionSalt,
     issuedAt: now,
     lastSeenAt: now,
   })

@@ -32,8 +32,8 @@ function goToTab(tab: TabConfig) {
   router.push({ name: tab.route })
 }
 
-function logout() {
-  auth.logout()
+async function logout() {
+  await auth.logout()
   router.push('/login')
 }
 </script>

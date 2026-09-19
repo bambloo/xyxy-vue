@@ -56,7 +56,12 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = true
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await post('/wpi/user/logout', ref(false))
+    } catch {
+      // Local credentials must still be cleared when the server is unavailable.
+    }
     clearLocalState()
     resetHydration()
   }
