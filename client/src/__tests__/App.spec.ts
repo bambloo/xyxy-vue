@@ -1,10 +1,28 @@
 import { describe, it, expect, vi } from 'vitest'
 
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import { validateAccount, validatePassword } from '../utils/login-validator'
 import { mongo_helper } from '../../../server/src/util/mongo-helper'
 import { user_manager, DEFAULT_ADMIN_ACCOUNT } from '../../../server/src/core/manager/user'
+
+function mountLoginView() {
+  setActivePinia(createPinia())
+
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/login', name: 'login', component: { template: '<div />' } }],
+  })
+
+  return mount(LoginView, {
+    global: {
+      plugins: [router],
+      stubs: ['ion-icon'],
+    },
+  })
+}
 
 describe('login form validation', () => {
   it('validates account format', () => {
@@ -22,7 +40,7 @@ describe('login form validation', () => {
   })
 
   it('shows format errors when submitting invalid values', async () => {
-    const wrapper = mount(LoginView)
+    const wrapper = mountLoginView()
 
     await wrapper.find('#account').setValue('ab')
     await wrapper.find('#password').setValue('123')

@@ -1,32 +1,27 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import UserLayout from './UserLayout.vue'
-import ProfileView from './profile/ProfileView.vue'
-import PasswordView from './security/PasswordView.vue'
-import SecuritySettingsView from './security/SecuritySettingsView.vue'
+
 type TabKey = 'profile' | 'password' | 'security'
 
-const currentTab = ref<TabKey>('profile')
+const route = useRoute()
 
-const activeView = computed(() => {
-  switch (currentTab.value) {
-    case 'password':
-      return PasswordView
-    case 'security':
-      return SecuritySettingsView
-    case 'profile':
+const currentTab = computed<TabKey>(() => {
+  switch (route.name) {
+    case 'user-password':
+      return 'password'
+    case 'user-security':
+      return 'security'
+    case 'user-profile':
     default:
-      return ProfileView
+      return 'profile'
   }
 })
-
-function setTab(tab: TabKey) {
-  currentTab.value = tab
-}
 </script>
 
 <template>
-  <UserLayout :current-tab="currentTab" @tab-change="setTab">
-    <component :is="activeView" />
+  <UserLayout :current-tab="currentTab">
+    <RouterView />
   </UserLayout>
 </template>

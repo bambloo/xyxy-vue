@@ -5,27 +5,31 @@ import { useAuthStore } from '../../stores/auth'
 
 type TabKey = 'profile' | 'password' | 'security'
 
+type TabConfig = {
+  key: TabKey
+  label: string
+  icon: string
+  description: string
+  route: string
+}
+
 const props = defineProps<{
   currentTab?: TabKey
-}>()
-
-const emit = defineEmits<{
-  (event: 'tab-change', value: TabKey): void
 }>()
 
 const router = useRouter()
 const auth = useAuthStore()
 
-const tabs: Array<{ key: TabKey; label: string; icon: string; description: string }> = [
-  { key: 'profile', label: '个人信息', icon: 'person-outline', description: '基本资料' },
-  { key: 'password', label: '修改密码', icon: 'lock-closed-outline', description: '账户安全' },
-  { key: 'security', label: '安全设置', icon: 'shield-checkmark-outline', description: '登录保护' },
+const tabs: TabConfig[] = [
+  { key: 'profile', label: '个人信息', icon: 'person-outline', description: '基本资料', route: 'user-profile' },
+  { key: 'password', label: '修改密码', icon: 'lock-closed-outline', description: '账户安全', route: 'user-password' },
+  { key: 'security', label: '安全设置', icon: 'shield-checkmark-outline', description: '登录保护', route: 'user-security' },
 ]
 
 const activeTab = computed(() => props.currentTab ?? 'profile')
 
-function setTab(tab: TabKey) {
-  emit('tab-change', tab)
+function goToTab(tab: TabConfig) {
+  router.push({ name: tab.route })
 }
 
 function logout() {
@@ -47,7 +51,7 @@ function logout() {
 
       <nav class="side-nav" aria-label="用户管理导航">
         <button v-for="tab in tabs" :key="tab.key" type="button"
-          :class="['nav-item', { active: activeTab === tab.key }]" @click="setTab(tab.key)">
+          :class="['nav-item', { active: activeTab === tab.key }]" @click="goToTab(tab)">
           <ion-icon :name="tab.icon"></ion-icon>
           <span>
             <strong>{{ tab.label }}</strong>
