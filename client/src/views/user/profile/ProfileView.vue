@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { is_at_least_five_years_old, is_valid_phone } from '../../../utils/user-validator'
 
 const statusMessage = ref('')
 const { t } = useI18n()
@@ -15,6 +16,16 @@ const user = reactive({
 })
 
 function saveProfile() {
+  if (!is_valid_phone(user.phone)) {
+    statusMessage.value = t('profile.phoneFormat')
+    return
+  }
+
+  if (!is_at_least_five_years_old(user.birthday)) {
+    statusMessage.value = t('profile.birthdayFormat')
+    return
+  }
+
   statusMessage.value = t('profile.saved')
 }
 </script>
@@ -44,7 +55,7 @@ function saveProfile() {
       </label>
       <label>
         <span>{{ t('common.phone') }}</span>
-        <input v-model="user.phone" type="tel" />
+        <input v-model="user.phone" type="tel" inputmode="numeric" maxlength="11" required />
       </label>
       <label>
         <span>{{ t('profile.email') }}</span>
@@ -52,7 +63,7 @@ function saveProfile() {
       </label>
       <label>
         <span>{{ t('profile.birthday') }}</span>
-        <input v-model="user.birthday" type="date" />
+        <input v-model="user.birthday" type="date" required />
       </label>
       <label class="full-width">
         <span>{{ t('profile.hobbies') }}</span>

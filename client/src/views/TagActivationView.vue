@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import type { UserPublicProfile } from '../../../common/entity/user'
+import { is_at_least_five_years_old, is_valid_phone } from '../utils/user-validator'
 
 const props = defineProps<{ tag: string }>()
 const { t } = useI18n()
@@ -24,6 +25,16 @@ const user = reactive({
 
 async function activate() {
   message.value = ''
+  if (!is_valid_phone(user.phone)) {
+    message.value = t('profile.phoneFormat')
+    return
+  }
+
+  if (!is_at_least_five_years_old(user.birthday)) {
+    message.value = t('profile.birthdayFormat')
+    return
+  }
+
   try {
     const packet = await post('/wpi/user/activate', loading, { tag: props.tag, ...user })
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
@@ -46,9 +57,10 @@ async function activate() {
       <p class="tag-value">{{ t('tag.tagLabel') }}: {{ tag }}</p>
       <form @submit.prevent="activate">
         <label><span>{{ t('common.name') }}</span><input v-model="user.name" required type="text" /></label>
-        <label><span>{{ t('common.phone') }}</span><input v-model="user.phone" type="tel" /></label>
+        <label><span>{{ t('common.phone') }}</span><input v-model="user.phone" type="tel" inputmode="numeric"
+            maxlength="11" required /></label>
         <label><span>{{ t('profile.email') }}</span><input v-model="user.email" type="email" /></label>
-        <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" /></label>
+        <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" required /></label>
         <label class="full-width"><span>{{ t('profile.hobbies') }}</span><textarea v-model="user.hobbies"
             rows="4" /></label>
         <label class="full-width"><span>{{ t('tag.avatar') }}</span><input v-model="user.avatar" type="url" /></label>

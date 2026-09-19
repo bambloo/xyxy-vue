@@ -95,6 +95,8 @@ const messages = {
       email: '邮箱',
       birthday: '生日',
       hobbies: '兴趣爱好',
+      phoneFormat: '手机号必须是 11 位数字',
+      birthdayFormat: '出生日期对应年龄必须满 5 周岁',
     },
     password: {
       eyebrow: '账户安全',
@@ -240,6 +242,8 @@ const messages = {
       email: 'Email',
       birthday: 'Birthday',
       hobbies: 'Interests',
+      phoneFormat: 'The phone number must contain exactly 11 digits',
+      birthdayFormat: 'The birth date must indicate an age of at least 5 years',
     },
     password: {
       eyebrow: 'ACCOUNT SECURITY',
