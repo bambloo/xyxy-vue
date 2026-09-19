@@ -18,7 +18,7 @@ const router = createRouter({
       component: LoginView,
     },
     {
-      path: '/user',
+      path: '/admin',
       component: UserManagementView,
       meta: { requiresAuth: true },
       children: [
@@ -41,25 +41,23 @@ const router = createRouter({
     },
     {
       path: '/:pathMatch(.*)*',
-      redirect: '/user/profile',
+      redirect: '/admin/profile',
     },
   ],
 })
 
-router.beforeEach(async (to, _from, next) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.hydrate()
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    next('/login')
-    return
+    return '/login'
   }
 
   if (to.path === '/login' && auth.isLoggedIn) {
-    next('/user/profile')
-    return
+    return '/admin/profile'
   }
 
-  next()
+  return true
 })
 
 export default router

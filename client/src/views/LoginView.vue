@@ -58,7 +58,7 @@ function submitLogin() {
       if (!data?.token || !data.account || !data.tag) throw new Error(t('login.missingToken'))
       const { token, ...profile } = data
       auth.login(token, profile)
-      router.push('/user')
+      router.push('/admin')
     })
     .catch((error: unknown) => {
       const response = error as { msg?: string; message?: string }
