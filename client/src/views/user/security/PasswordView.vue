@@ -70,9 +70,10 @@ function changePassword() {
 <style scoped lang="scss">
 .panel {
   padding: 1.5rem;
-  border: 1px solid rgba(27, 92, 88, 0.08);
+  border: 1px solid var(--space-line);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--space-panel);
+  backdrop-filter: blur(16px);
   box-shadow: 0 14px 30px rgba(23, 34, 34, 0.04);
 }
 
@@ -86,7 +87,7 @@ function changePassword() {
 
 .eyebrow {
   margin: 0 0 0.4rem;
-  color: #d28f2d;
+  color: var(--space-gold);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -103,8 +104,8 @@ h2 {
   border: 0;
   border-radius: 10px;
   padding: 0.8rem 1.2rem;
-  background: #1d5d59;
-  color: white;
+  background: var(--space-gold);
+  color: #091728;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -114,8 +115,8 @@ h2 {
   margin-bottom: 1rem;
   padding: 0.9rem 1rem;
   border-radius: 12px;
-  background: rgba(35, 122, 114, 0.1);
-  color: #184f4d;
+  background: rgba(92, 171, 218, .14);
+  color: #b9d9f2;
   font-weight: 600;
 }
 
@@ -128,7 +129,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  color: #334341;
+  color: #c3d5e7;
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -136,11 +137,11 @@ label {
 input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d7ddd8;
+  border: 1px solid var(--space-line);
   border-radius: 10px;
   padding: 0.8rem 0.85rem;
   font: inherit;
-  background: white;
-  color: #172222;
+  background: rgba(13, 38, 67, .72);
+  color: var(--space-text);
 }
 </style>

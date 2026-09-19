@@ -50,7 +50,7 @@ function submitLogin() {
     })
     .catch((error: unknown) => {
       const response = error as { msg?: string; message?: string }
-      errorMessage.value = response.msg || response.message || '登录失败，请检查账号或密码'
+      errorMessage.value = response.msg || response.message || '登录失败，请确认账号和密码'
     })
 }
 </script>
@@ -59,8 +59,8 @@ function submitLogin() {
   <main class="login-page">
     <section class="welcome-panel" aria-label="产品介绍">
       <div class="brand-mark">B</div>
-      <p class="eyebrow">WELCOME BACK</p>
-      <h1>让每一次工作，<br /><em>从容开始。</em></h1>
+      <p class="eyebrow">WELCOME TO YOUR SPACE</p>
+      <h1>遇见同频的人，<br /><em>从这里开始。</em></h1>
       <div class="orb orb-one"></div>
       <div class="orb orb-two"></div>
       <div class="line-pattern"></div>
@@ -69,26 +69,26 @@ function submitLogin() {
     <section class="form-panel">
       <div class="form-wrap">
         <div class="mobile-brand"><span class="brand-mark">B</span> Bambloo</div>
-        <p class="form-kicker">账户登录</p>
-        <h2>欢迎回来</h2>
-        <p class="form-intro">请输入你的账户信息以继续</p>
+        <p class="form-kicker">加入星语心愿</p>
+        <h2>回到你的圈子</h2>
+        <p class="form-intro">和熟悉的人保持联系，也认识新的朋友</p>
 
         <form class="login-form" @submit.prevent="submitLogin">
-          <label class="field-label" for="account">账号</label>
+          <label class="field-label" for="account">账号 / 手机号</label>
           <div :class="['input-shell', { error: accountError }]">
             <ion-icon name="person-outline"></ion-icon>
-            <input id="account" v-model="account" type="text" autocomplete="username" placeholder="请输入账号或手机号" />
+            <input id="account" v-model="account" type="text" autocomplete="username" placeholder="输入账号或手机号" />
           </div>
           <p v-if="accountError" class="field-error" role="alert">{{ accountError }}</p>
 
           <div class="password-heading">
-            <label class="field-label" for="password">密码</label>
+            <label class="field-label" for="password">登录密码</label>
             <a href="#" @click.prevent="errorMessage = '请联系管理员重置密码'">忘记密码？</a>
           </div>
           <div :class="['input-shell', { error: passwordError }]">
             <ion-icon name="lock-closed-outline"></ion-icon>
             <input id="password" v-model="password" :type="showPassword ? 'text' : 'password'"
-              autocomplete="current-password" placeholder="请输入密码" />
+              autocomplete="current-password" placeholder="输入你的密码" />
             <button class="icon-button" type="button" :aria-label="showPassword ? '隐藏密码' : '显示密码'"
               @click="showPassword = !showPassword">
               <ion-icon :name="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
@@ -98,21 +98,21 @@ function submitLogin() {
 
           <label class="remember-row">
             <input v-model="rememberMe" type="checkbox" />
-            <span>记住我</span>
+            <span>保持登录状态</span>
           </label>
 
           <p v-if="errorMessage" class="error-message" role="alert">
             <ion-icon name="alert-circle-outline"></ion-icon>{{ errorMessage }}
           </p>
           <button class="submit-button" type="submit" :disabled="loading">
-            <span>{{ loading ? '正在登录...' : '登录' }}</span>
+            <span>{{ loading ? '正在进入...' : '进入星空' }}</span>
             <ion-icon v-if="!loading" name="arrow-forward-outline"></ion-icon>
           </button>
         </form>
 
-        <p class="signup-hint">还没有账户？ <a href="#" @click.prevent="errorMessage = '注册功能即将开放'">立即注册</a></p>
+        <p class="signup-hint">还没有账号？ <a href="#" @click.prevent="errorMessage = '注册功能即将开放'">创建新账号</a></p>
       </div>
-      <p class="copyright">© 2026 Bambloo · 让协作更简单</p>
+      <p class="copyright">© 2026 Bambloo · 让每一次相遇都值得</p>
     </section>
   </main>
 </template>
@@ -410,6 +410,85 @@ input[type='checkbox'] {
   bottom: 1.5rem;
   color: #9ba5a0;
   font-size: .7rem;
+}
+
+.login-page {
+  background: transparent;
+  color: var(--space-text);
+}
+
+.welcome-panel {
+  background: linear-gradient(145deg, rgba(7, 25, 48, .92), rgba(12, 53, 86, .68));
+  border-right: 1px solid var(--space-line);
+  backdrop-filter: blur(10px);
+}
+
+.brand-mark {
+  color: #102846;
+  background: var(--space-gold);
+}
+
+.eyebrow,
+.form-kicker,
+h1 em {
+  color: var(--space-gold);
+}
+
+.welcome-copy,
+.form-intro,
+.remember-row,
+.copyright,
+.signup-hint {
+  color: var(--space-muted);
+}
+
+.form-panel {
+  background: rgba(5, 16, 31, .44);
+  backdrop-filter: blur(14px);
+}
+
+h2 {
+  color: var(--space-text);
+}
+
+.field-label {
+  color: #c3d5e7;
+}
+
+.input-shell {
+  border-color: var(--space-line);
+  background: rgba(13, 38, 67, .72);
+}
+
+.input-shell:focus-within {
+  border-color: #6aa8dc;
+  box-shadow: 0 0 0 3px rgba(106, 168, 220, .14);
+}
+
+.input-shell>ion-icon,
+.icon-button {
+  color: #91b3d2;
+}
+
+input:not([type='checkbox']) {
+  color: var(--space-text);
+}
+
+input::placeholder {
+  color: #7894af;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--space-gold);
+}
+
+.submit-button {
+  color: #091728;
+  background: var(--space-gold);
+}
+
+.submit-button:hover:not(:disabled) {
+  background: #ffd98e;
 }
 
 @media (max-width: 700px) {

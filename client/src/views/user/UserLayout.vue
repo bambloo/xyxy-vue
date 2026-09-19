@@ -45,7 +45,7 @@ async function logout() {
       <div class="brand-wrap">
         <div class="brand-mark">B</div>
         <div>
-          <p class="brand-name">Bambloo</p>
+          <p class="brand-name">星语心愿</p>
           <small>用户中心</small>
         </div>
       </div>
@@ -79,22 +79,24 @@ async function logout() {
 <style scoped lang="scss">
 :global(body) {
   margin: 0;
-  background: #f4f3ee;
+  background: var(--space-ink);
 }
 
 .user-management-page {
   display: grid;
   grid-template-columns: 290px minmax(0, 1fr);
   min-height: 100vh;
-  background: linear-gradient(135deg, #f6f3ee, #edf3f2);
-  color: #172222;
+  background: linear-gradient(135deg, rgba(6, 16, 32, .72), rgba(12, 35, 63, .58));
+  color: var(--space-text);
   font-family: 'DM Sans', sans-serif;
 }
 
 .sidebar {
   padding: 2rem 1.25rem;
-  background: rgba(21, 63, 61, 0.96);
-  color: #f7f1e7;
+  border-right: 1px solid var(--space-line);
+  background: rgba(5, 18, 36, .82);
+  color: var(--space-text);
+  backdrop-filter: blur(18px);
 }
 
 .brand-wrap {
@@ -110,8 +112,8 @@ async function logout() {
   width: 2.7rem;
   height: 2.7rem;
   border-radius: 50%;
-  background: #e9b45e;
-  color: #153f3d;
+  background: var(--space-gold);
+  color: #102846;
   font-weight: 700;
 }
 
@@ -122,7 +124,7 @@ async function logout() {
 }
 
 .brand-wrap small {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--space-muted);
 }
 
 .side-nav {
@@ -156,16 +158,17 @@ async function logout() {
 }
 
 .nav-item small {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--space-muted);
 }
 
 .nav-item.active {
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(233, 180, 94, 0.35);
+  background: rgba(91, 151, 211, .14);
+  box-shadow: inset 0 0 0 1px rgba(240, 189, 99, .42);
 }
 
 .content-panel {
   padding: clamp(1.5rem, 3vw, 2.5rem);
+  background: rgba(7, 20, 38, .3);
 }
 
 .topbar {
@@ -178,7 +181,7 @@ async function logout() {
 
 .eyebrow {
   margin: 0 0 0.4rem;
-  color: #d28f2d;
+  color: var(--space-gold);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -192,11 +195,11 @@ h1 {
 }
 
 .ghost-button {
-  border: 0;
+  border: 1px solid var(--space-line);
   border-radius: 10px;
   padding: 0.75rem 1.1rem;
-  background: rgba(21, 63, 61, 0.08);
-  color: #153f3d;
+  background: rgba(110, 164, 214, .1);
+  color: var(--space-text);
   font: inherit;
   font-weight: 600;
   cursor: pointer;

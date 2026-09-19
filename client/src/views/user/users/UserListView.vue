@@ -166,7 +166,7 @@ async function queryUser() {
 
 .eyebrow {
   margin: 0 0 .45rem;
-  color: #d28f2d;
+  color: var(--space-gold);
   font-size: .72rem;
   font-weight: 700;
   letter-spacing: .16em;
@@ -175,13 +175,13 @@ async function queryUser() {
 
 h2 {
   margin: 0;
-  color: #172222;
+  color: var(--space-text);
   font-size: 2rem;
 }
 
 .page-heading p:not(.eyebrow) {
   margin: .6rem 0 0;
-  color: #71817d;
+  color: var(--space-muted);
 }
 
 .hidden-input {
@@ -195,10 +195,11 @@ h2 {
   width: 100%;
   margin-bottom: 1.5rem;
   padding: 2.5rem 1rem;
-  border: 1.5px dashed rgba(21, 63, 61, .35);
+  border: 1.5px dashed rgba(151, 197, 237, .34);
   border-radius: 14px;
-  background: rgba(255, 255, 255, .52);
-  color: #153f3d;
+  background: var(--space-panel-soft);
+  color: var(--space-text);
+  backdrop-filter: blur(14px);
   font: inherit;
   cursor: pointer;
   transition: border-color .2s ease, background .2s ease, transform .2s ease;
@@ -206,7 +207,7 @@ h2 {
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #d28f2d;
+  border-color: var(--space-gold);
   background: rgba(233, 180, 94, .14);
   transform: translateY(-1px);
 }
@@ -217,7 +218,7 @@ h2 {
 }
 
 .drop-zone ion-icon {
-  color: #d28f2d;
+  color: var(--space-gold);
   font-size: 2rem;
 }
 
@@ -226,7 +227,7 @@ h2 {
 }
 
 .drop-zone span {
-  color: #71817d;
+  color: var(--space-muted);
   font-size: .85rem;
 }
 
@@ -244,11 +245,12 @@ h2 {
   margin-bottom: 1.5rem;
   padding: 1rem;
   border-radius: 12px;
-  background: rgba(255, 255, 255, .72);
+  background: var(--space-panel);
+  backdrop-filter: blur(14px);
 }
 
 .query-form label {
-  color: #153f3d;
+  color: var(--space-text);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -257,10 +259,10 @@ h2 {
 .query-form input {
   min-width: 0;
   padding: .7rem .8rem;
-  border: 1px solid rgba(21, 63, 61, .2);
+  border: 1px solid var(--space-line);
   border-radius: 8px;
-  background: #fff;
-  color: #172222;
+  background: rgba(13, 38, 67, .72);
+  color: var(--space-text);
   font: inherit;
 }
 
@@ -272,8 +274,8 @@ h2 {
   border: 0;
   border-radius: 8px;
   padding: .7rem 1.1rem;
-  background: #153f3d;
-  color: #fff;
+  background: var(--space-gold);
+  color: #091728;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -288,7 +290,8 @@ h2 {
 .user-table-wrap {
   overflow: auto;
   border-radius: 12px;
-  background: rgba(255, 255, 255, .72);
+  background: var(--space-panel);
+  backdrop-filter: blur(14px);
 }
 
 table {
@@ -304,7 +307,7 @@ td {
 }
 
 th {
-  color: #71817d;
+  color: var(--space-muted);
   font-size: .8rem;
 }
 
