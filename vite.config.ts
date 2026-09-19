@@ -16,6 +16,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['.localhost', 'xingyanxingyu.com', '.xingyanxingyu.com'],
     proxy: {
       '/wpi': {
         target: 'http://localhost:1992',
