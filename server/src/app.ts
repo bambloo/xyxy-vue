@@ -20,7 +20,7 @@ process.on('uncaughtException', (err) => {
 
 const application = express()
 
-application.use(body_parser.json())
+application.use(body_parser.json({ limit: '10mb' }))
 application.use(body_parser.urlencoded({ extended: true }))
 
 proxy_router(application, join(__dirname, 'wpi'))

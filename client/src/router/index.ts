@@ -5,6 +5,7 @@ import UserManagementView from '@/views/user/UserManagementView.vue'
 import ProfileView from '@/views/user/profile/ProfileView.vue'
 import PasswordView from '@/views/user/security/PasswordView.vue'
 import SecuritySettingsView from '@/views/user/security/SecuritySettingsView.vue'
+import UserListView from '@/views/user/users/UserListView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,6 +26,7 @@ const router = createRouter({
         { path: 'profile', name: 'user-profile', component: ProfileView },
         { path: 'password', name: 'user-password', component: PasswordView },
         { path: 'security', name: 'user-security', component: SecuritySettingsView },
+        { path: 'users', name: 'user-users', component: UserListView },
       ],
     },
     {

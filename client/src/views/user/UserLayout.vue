@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
-type TabKey = 'profile' | 'password' | 'security'
+type TabKey = 'profile' | 'password' | 'security' | 'users'
 
 type TabConfig = {
   key: TabKey
@@ -24,6 +24,7 @@ const tabs: TabConfig[] = [
   { key: 'profile', label: '个人信息', icon: 'person-outline', description: '基本资料', route: 'user-profile' },
   { key: 'password', label: '修改密码', icon: 'lock-closed-outline', description: '账户安全', route: 'user-password' },
   { key: 'security', label: '安全设置', icon: 'shield-checkmark-outline', description: '登录保护', route: 'user-security' },
+  { key: 'users', label: '用户列表', icon: 'people-outline', description: '导入待激活用户', route: 'user-users' },
 ]
 
 const activeTab = computed(() => props.currentTab ?? 'profile')

@@ -7,6 +7,7 @@ export interface UserProfile {
   birthday?: string
   hobbies?: string
   isAdmin?: boolean
+  isActive?: boolean
   email?: string
   avatar?: string
   createdAt?: string

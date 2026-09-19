@@ -29,7 +29,8 @@
     "vue": "^3.5.40",
     "vue-router": "^5.2.0",
     "vuestic-ui": "^1.10.3",
-    "walk": "^2.3.15"
+    "walk": "^2.3.15",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",

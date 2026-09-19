@@ -72,4 +72,31 @@ export class user_manager {
       new BamblooError(BamblooStatusCode.BadRequest, '必须提供 id、account 或 phone 作为查询条件'),
     )
   }
+
+  public async importInactiveIds(ids: string[]) {
+    const imported: UserProfile[] = []
+    const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+
+    for (const id of uniqueIds) {
+      try {
+        imported.push(await this.get({ id }))
+        continue
+      } catch {
+        const now = new Date().toISOString()
+        const user: UserProfile = {
+          id,
+          account: id,
+          passwordHash: '',
+          name: id,
+          isActive: false,
+          createdAt: now,
+          updatedAt: now,
+        }
+        await mongo_helper.ddo((db) => db.collection('user').insertOne(user))
+        imported.push(user)
+      }
+    }
+
+    return imported
+  }
 }
