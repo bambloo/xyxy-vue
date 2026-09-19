@@ -16,7 +16,7 @@ const sessionSecret = createHash('sha256')
 const sessionSalt = randomBytes(32).toString('base64url')
 
 interface SessionPayload {
-  userId: string
+  userTag: string
   account: string
   ip: string
   salt: string
@@ -83,7 +83,7 @@ function decode(token: string, req: Request): SessionPayload | null {
 export function issue_session(req: Request, res: Response, user: UserProfile) {
   const now = Date.now()
   const token = encode({
-    userId: user.id,
+    userTag: user.tag,
     account: user.account,
     ip: clientIp(req),
     salt: sessionSalt,

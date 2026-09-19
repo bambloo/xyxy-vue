@@ -1,5 +1,5 @@
 export interface UserPublicProfile {
-  id: string
+  tag: string
   account: string
   name: string
   phone?: string
@@ -14,7 +14,7 @@ export interface UserPublicProfile {
 }
 
 export interface UserQuery {
-  id?: string
+  tag?: string
   account?: string
   name?: string
   phone?: string

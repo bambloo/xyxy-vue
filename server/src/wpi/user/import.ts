@@ -7,13 +7,13 @@ import { refresh_session } from '../../util/session'
 
 export const config = { access: 'private' as const, permissions: ['users.import'] }
 
-function parseIds(fileName: string, content: Buffer) {
+function parseTags(fileName: string, content: Buffer) {
   if (fileName.toLowerCase().endsWith('.txt')) {
     return content
       .toString('utf8')
       .split(/[\s,;，；]+/)
-      .map((id) => id.trim())
-      .filter((id) => id && !/^(id|user_?id|用户id)$/i.test(id))
+      .map((tag) => tag.trim())
+      .filter((tag) => tag && !/^(tag|user_?tag|用户tag)$/i.test(tag))
   }
 
   const workbook = read(content, { type: 'buffer', cellDates: false })
@@ -25,7 +25,7 @@ function parseIds(fileName: string, content: Buffer) {
   return values
     .flat()
     .map((value) => String(value).trim())
-    .filter((id) => id && !/^(id|user_?id|用户id)$/i.test(id))
+    .filter((tag) => tag && !/^(tag|user_?tag|用户tag)$/i.test(tag))
 }
 
 export default function handler(params: { [key: string]: unknown }, req: Request, res: Response) {
@@ -38,26 +38,26 @@ export default function handler(params: { [key: string]: unknown }, req: Request
     return response(res, BamblooStatusCode.FormatError, '仅支持 TXT、XLS 或 XLSX 文件')
   }
 
-  let ids: string[]
+  let tags: string[]
   try {
-    ids = parseIds(fileName, Buffer.from(contentBase64, 'base64'))
+    tags = parseTags(fileName, Buffer.from(contentBase64, 'base64'))
   } catch {
     return response(res, BamblooStatusCode.FormatError, '文件解析失败')
   }
-  if (ids.length === 0) {
-    return response(res, BamblooStatusCode.FormatError, '文件中没有找到用户 ID')
+  if (tags.length === 0) {
+    return response(res, BamblooStatusCode.FormatError, '文件中没有找到用户 Tag')
   }
 
   return user_manager
     .instance()
     .then((manager) =>
-      manager.get({ id: session.payload.userId }).then((operator) => ({ manager, operator })),
+      manager.get({ tag: session.payload.userTag }).then((operator) => ({ manager, operator })),
     )
     .then(({ manager, operator }) => {
       if (!operator.isAdmin) {
         return response(res, BamblooStatusCode.Unauthorized, '只有管理员可以导入用户')
       }
-      return manager.importInactiveIds(ids).then((users) =>
+      return manager.importInactiveTags(tags).then((users) =>
         response(res, BamblooStatusCode.Success, '用户导入成功', {
           users: users.map(({ passwordHash: _passwordHash, ...user }) => user),
           count: users.length,

@@ -14,8 +14,8 @@ export default function handler(
   user_manager
     .instance()
     .then((manager) => {
-      const query = params.id
-        ? { id: params.id }
+      const query = params.tag
+        ? { tag: params.tag }
         : params.account
           ? { account: params.account }
           : params.phone
@@ -24,7 +24,7 @@ export default function handler(
       if (!query) {
         return Promise.reject({
           code: BamblooStatusCode.BadRequest,
-          msg: '请输入 id、account 或 phone',
+          msg: '请输入 tag、account 或 phone',
         })
       }
 

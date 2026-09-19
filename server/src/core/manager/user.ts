@@ -38,7 +38,7 @@ export class user_manager {
     } catch {
       const passwordHash = await hash_password(DEFAULT_ADMIN_PASSWORD)
       const adminUser: UserProfile = {
-        id: randomUUID(),
+        tag: randomUUID(),
         account: DEFAULT_ADMIN_ACCOUNT,
         passwordHash,
         name: '管理员',
@@ -56,8 +56,8 @@ export class user_manager {
   }
 
   public get(key: UserQuery): Promise<UserProfile> {
-    if (key.id) {
-      return mongo_helper.get('user', { id: key.id })
+    if (key.tag) {
+      return mongo_helper.get('user', { tag: key.tag })
     }
 
     if (key.account) {
@@ -69,22 +69,22 @@ export class user_manager {
     }
 
     return Promise.reject(
-      new BamblooError(BamblooStatusCode.BadRequest, '必须提供 id、account 或 phone 作为查询条件'),
+      new BamblooError(BamblooStatusCode.BadRequest, '必须提供 tag、account 或 phone 作为查询条件'),
     )
   }
 
-  public async importInactiveIds(ids: string[]) {
+  public async importInactiveTags(tags: string[]) {
     const imported: UserProfile[] = []
-    const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+    const uniqueTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))]
 
-    for (const id of uniqueIds) {
+    for (const tag of uniqueTags) {
       try {
-        imported.push(await this.get({ id }))
+        imported.push(await this.get({ tag }))
         continue
       } catch {
         const now = new Date().toISOString()
         const user: UserProfile = {
-          id,
+          tag,
           account: '',
           passwordHash: '',
           name: '',

@@ -13,7 +13,7 @@ export default function handler(params: { [key: string]: string }, _req: Request
 
   user_manager
     .instance()
-    .then((manager) => manager.get({ id: params.tag }))
+    .then((manager) => manager.get({ tag: params.tag }))
     .then(() => response(res, BamblooStatusCode.Success))
     .catch(() => response(res, BamblooStatusCode.EntityNonexist, 'Tag 不存在'))
 }

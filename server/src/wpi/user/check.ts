@@ -15,7 +15,7 @@ export default function handler(
 
   return user_manager
     .instance()
-    .then((manager) => manager.get({ id: result.payload.userId }))
+    .then((manager) => manager.get({ tag: result.payload.userTag }))
     .then((user) => {
       const { passwordHash: _passwordHash, ...safeUser } = user
       return response(res, BamblooStatusCode.Success, '会话有效', {

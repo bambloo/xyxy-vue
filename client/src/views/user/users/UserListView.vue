@@ -4,22 +4,23 @@ import { post } from '../../../scripts/request'
 import { useI18n } from 'vue-i18n'
 
 interface ImportedUser {
-  id: string
+  tag: string
   account: string
   name: string
   phone?: string
   isActive?: boolean
 }
 
-type QueryField = 'id' | 'account' | 'phone'
+type QueryField = 'tag' | 'account' | 'phone'
 
 const loading = ref(false)
 const { t } = useI18n()
 const queryLoading = ref(false)
 const errorMessage = ref('')
 const users = ref<ImportedUser[]>([])
-const queryField = ref<QueryField>('id')
+const queryField = ref<QueryField>('tag')
 const queryValue = ref('')
+const newTag = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
 
@@ -90,6 +91,25 @@ async function queryUser() {
     users.value = []
   }
 }
+
+async function addTag() {
+  const tag = newTag.value.trim()
+  if (!tag) {
+    errorMessage.value = t('users.tagRequired')
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    const packet = await post('/wpi/user/add-tag', queryLoading, { tag })
+    const user = packet.data as ImportedUser | undefined
+    if (user) users.value = [user, ...users.value.filter((item) => item.tag !== user.tag)]
+    newTag.value = ''
+  } catch (error: unknown) {
+    const result = error as { msg?: string; message?: string }
+    errorMessage.value = result.msg || result.message || t('users.addTagError')
+  }
+}
 </script>
 
 <template>
@@ -102,6 +122,12 @@ async function queryUser() {
       </div>
       <input ref="fileInput" class="hidden-input" type="file" accept=".txt,.xls,.xlsx" @change="importFile" />
     </div>
+
+    <form class="query-form add-tag-form" @submit.prevent="addTag">
+      <label for="new-tag">{{ t('users.addTag') }}</label>
+      <input id="new-tag" v-model="newTag" type="search" :placeholder="t('users.tagPlaceholder')" />
+      <button type="submit" :disabled="queryLoading">{{ t('users.addTagButton') }}</button>
+    </form>
 
     <button class="drop-zone" :class="{ dragging: isDragging, busy: loading }" type="button" :disabled="loading"
       :aria-label="t('users.uploadAria')" @click="openFilePicker" @keydown.enter.prevent="openFilePicker"
@@ -117,7 +143,7 @@ async function queryUser() {
     <form class="query-form" @submit.prevent="queryUser">
       <label for="query-field">{{ t('users.query') }}</label>
       <select id="query-field" v-model="queryField">
-        <option value="id">{{ t('users.id') }}</option>
+        <option value="tag">{{ t('users.tag') }}</option>
         <option value="account">{{ t('common.account') }}</option>
         <option value="phone">{{ t('common.phone') }}</option>
       </select>
@@ -131,7 +157,7 @@ async function queryUser() {
       <table>
         <thead>
           <tr>
-            <th>{{ t('users.id') }}</th>
+            <th>{{ t('users.tag') }}</th>
             <th>{{ t('common.account') }}</th>
             <th>{{ t('common.name') }}</th>
             <th>{{ t('common.phone') }}</th>
@@ -139,8 +165,8 @@ async function queryUser() {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in users" :key="user.id">
-            <td>{{ user.id }}</td>
+          <tr v-for="user in users" :key="user.tag">
+            <td>{{ user.tag }}</td>
             <td>{{ user.account }}</td>
             <td>{{ user.name }}</td>
             <td>{{ user.phone || '-' }}</td>

@@ -13,7 +13,7 @@ export interface WpiConfig {
 
 export interface WpiRequest extends Request {
   auth?: {
-    userId: string
+    userTag: string
     account: string
     ip: string
     salt: string
@@ -39,7 +39,7 @@ export async function authorize_wpi(
   if (config.access !== 'private' || !config.permissions?.length) return true
 
   const user = await user_manager.instance().then((manager) => {
-    return manager.get({ id: session.payload.userId })
+    return manager.get({ tag: session.payload.userTag })
   })
   const hasPermission =
     user.isAdmin || config.permissions.every((permission) => user.permissions?.includes(permission))

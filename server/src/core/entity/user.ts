@@ -1,5 +1,5 @@
 export interface UserProfile {
-  id: string
+  tag: string
   account: string
   passwordHash: string
   name: string
