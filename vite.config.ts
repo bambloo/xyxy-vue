@@ -26,7 +26,8 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    allowedHosts: ['.localhost', 'xingyanxingyu.com', '.xingyanxingyu.com'],
+    allowedHosts: ['.localhost', 'xingyanxingyu.com', '.xingyanxingyu.com', '127.0.0.1'],
+    port: 5002,
     proxy: {
       '/wpi': {
         target: 'http://localhost:1992',

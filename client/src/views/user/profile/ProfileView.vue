@@ -64,12 +64,7 @@ function saveProfile() {
 
 <style scoped lang="scss">
 .panel {
-  padding: 1.5rem;
-  border: 1px solid var(--space-line);
-  border-radius: 20px;
-  background: var(--space-panel);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, .16);
-  backdrop-filter: blur(16px);
+  padding: 0;
 }
 
 .section-head {

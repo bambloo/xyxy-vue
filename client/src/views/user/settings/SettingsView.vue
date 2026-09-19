@@ -53,11 +53,7 @@ function savePreferencesSettings() {
 
 <style scoped lang="scss">
 .panel {
-  padding: 1.5rem;
-  border: 1px solid rgba(27, 92, 88, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: 0 14px 30px rgba(23, 34, 34, 0.04);
+  padding: 0;
 }
 
 .section-head {
