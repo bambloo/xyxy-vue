@@ -18,6 +18,11 @@ const router = createRouter({
       component: LoginView,
     },
     {
+      path: '/empty-page',
+      name: 'empty-page',
+      component: TagView,
+    },
+    {
       path: '/admin',
       component: UserManagementView,
       meta: { requiresAuth: true },
@@ -49,6 +54,10 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.hydrate()
+  if (to.name === 'home' && !auth.isLoggedIn) {
+    return { name: 'empty-page' }
+  }
+
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
     return '/login'
   }

@@ -11,12 +11,15 @@ export const config = { access: 'public' as const }
 export default function handler(params: { [key: string]: unknown }, req: Request, res: Response) {
   const tag = typeof params.tag === 'string' ? params.tag.trim() : ''
   const name = typeof params.name === 'string' ? params.name.trim() : ''
-  if (!tag || !name) {
-    return response(res, BamblooStatusCode.FormatError, 'Tag 和姓名不能为空')
+  const passwordHash = typeof params.passwordHash === 'string' ? params.passwordHash.trim() : ''
+  if (!tag || !name || !/^[a-f0-9]{64}$/i.test(passwordHash)) {
+    return response(res, BamblooStatusCode.FormatError, 'Tag、姓名和密码格式错误')
   }
 
   const profile = {
+    account: tag,
     name,
+    passwordHash,
     phone: typeof params.phone === 'string' ? params.phone.trim() : '',
     email: typeof params.email === 'string' ? params.email.trim() : '',
     birthday: typeof params.birthday === 'string' ? params.birthday.trim() : '',

@@ -2,10 +2,18 @@
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { hash_password } from '../../../common/util/crypto'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
+import { validatePassword } from '../utils/login-validator'
 import type { UserPublicProfile } from '../../../common/entity/user'
-import { is_at_least_five_years_old, is_valid_phone } from '../utils/user-validator'
+import {
+  is_at_least_five_years_old,
+  is_valid_email,
+  is_valid_name,
+  is_valid_phone,
+  is_valid_url,
+} from '../utils/user-validator'
 
 const props = defineProps<{ tag: string }>()
 const { t } = useI18n()
@@ -16,6 +24,8 @@ const message = ref('')
 const completed = ref(false)
 const user = reactive({
   name: '',
+  password: '',
+  confirmPassword: '',
   phone: '',
   email: '',
   birthday: '',
@@ -25,8 +35,23 @@ const user = reactive({
 
 async function activate() {
   message.value = ''
+  if (!is_valid_name(user.name)) {
+    message.value = t('profile.nameRequired')
+    return
+  }
+
   if (!is_valid_phone(user.phone)) {
     message.value = t('profile.phoneFormat')
+    return
+  }
+
+  if (!is_valid_email(user.email)) {
+    message.value = t('profile.emailFormat')
+    return
+  }
+
+  if (!is_valid_url(user.avatar)) {
+    message.value = t('profile.avatarFormat')
     return
   }
 
@@ -35,8 +60,27 @@ async function activate() {
     return
   }
 
+  const passwordError = validatePassword(user.password)
+  if (passwordError) {
+    message.value = t('validation.passwordFormat')
+    return
+  }
+
+  if (user.password !== user.confirmPassword) {
+    message.value = t('password.mismatch')
+    return
+  }
+
   try {
-    const packet = await post('/wpi/user/activate', loading, { tag: props.tag, ...user })
+    const passwordHash = await hash_password(user.password)
+    const { password, confirmPassword, ...profileData } = user
+
+    console.log(user, profileData)
+    const packet = await post('/wpi/user/activate', loading, {
+      tag: props.tag,
+      ...profileData,
+      passwordHash,
+    })
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
     if (!data?.token || !data.account || !data.tag) throw new Error(t('tag.activateError'))
     const { token, ...profile } = data
@@ -54,11 +98,17 @@ async function activate() {
     <template v-if="!completed">
       <p class="eyebrow">{{ t('tag.activateEyebrow') }}</p>
       <h1>{{ t('tag.activateTitle') }}</h1>
-      <p class="tag-value">{{ t('tag.tagLabel') }}: {{ tag }}</p>
       <form @submit.prevent="activate">
-        <label><span>{{ t('common.name') }}</span><input v-model="user.name" required type="text" /></label>
+        <label class="full-width"><span>{{ t('tag.tagLabel') }}</span><input :value="tag" type="text" readonly
+            aria-readonly="true" /></label>
+        <label><span>{{ t('common.name') }}</span><input v-model="user.name" required type="text"
+            maxlength="100" /></label>
         <label><span>{{ t('common.phone') }}</span><input v-model="user.phone" type="tel" inputmode="numeric"
             maxlength="11" required /></label>
+        <label><span>{{ t('login.passwordLabel') }}</span><input v-model="user.password" required type="password"
+            autocomplete="new-password" :placeholder="t('login.passwordPlaceholder')" /></label>
+        <label><span>{{ t('password.confirm') }}</span><input v-model="user.confirmPassword" required type="password"
+            autocomplete="new-password" :placeholder="t('password.confirmPlaceholder')" /></label>
         <label><span>{{ t('profile.email') }}</span><input v-model="user.email" type="email" /></label>
         <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" required /></label>
         <label class="full-width"><span>{{ t('profile.hobbies') }}</span><textarea v-model="user.hobbies"
@@ -123,6 +173,12 @@ textarea {
   background: rgba(13, 38, 67, .72);
   color: var(--space-text);
   font: inherit;
+}
+
+input[readonly] {
+  background: rgba(5, 18, 36, .62);
+  color: var(--space-muted);
+  cursor: not-allowed;
 }
 
 .full-width,

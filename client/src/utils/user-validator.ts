@@ -2,6 +2,25 @@ export function is_valid_phone(phone: string) {
   return /^\d{11}$/.test(phone.trim())
 }
 
+export function is_valid_name(name: string) {
+  return name.trim().length > 0
+}
+
+export function is_valid_email(email: string) {
+  return !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+}
+
+export function is_valid_url(url: string) {
+  if (!url.trim()) return true
+
+  try {
+    const parsed = new URL(url.trim())
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function is_at_least_five_years_old(birthday: string, today = new Date()) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthday)
   if (!match) return false

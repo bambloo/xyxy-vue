@@ -24,7 +24,12 @@ export default function handler(params: { [key: string]: unknown }, req: Request
 
   return user_manager
     .instance()
-    .then((manager) => manager.get({ account }).catch(() => manager.get({ phone: account })))
+    .then((manager) =>
+      manager
+        .get({ account })
+        .catch(() => manager.get({ phone: account }))
+        .catch(() => manager.get({ tag: account })),
+    )
     .then((user) => {
       if (typeof user.passwordHash !== 'string' || !same_hash(passwordHash, user.passwordHash)) {
         return response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误')

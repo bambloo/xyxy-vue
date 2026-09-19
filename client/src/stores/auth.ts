@@ -45,6 +45,11 @@ export const useAuthStore = defineStore('auth', () => {
     hydrationPromise = null
   }
 
+  function clear() {
+    clearLocalState()
+    resetHydration()
+  }
+
   function loadCachedState() {
     isLoggedIn.value = !!localStorage.getItem(STORAGE_KEY)
   }
@@ -72,6 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     login,
     logout,
+    clear,
     hydrate,
   }
 })
