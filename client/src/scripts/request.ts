@@ -1,6 +1,9 @@
 import axios, { AxiosError, AxiosHeaders } from 'axios'
-import { Ref } from 'vue'
-import { BamblooStatusCode, ResponsePacket } from '../../../common/status'
+import type { Ref } from 'vue'
+import { BamblooStatusCode } from '../../../common/status'
+import type { ResponsePacket } from '../../../common/status'
+
+const AUTH_STORAGE_KEY = 'bambloo-auth'
 
 // type ResponseCallback = (packet: ResponsePacket) => unknown
 
@@ -18,10 +21,15 @@ export function post(
   raw?: Buffer,
 ): Promise<ResponsePacket> {
   loading.value = true
+  const token = localStorage.getItem(AUTH_STORAGE_KEY)
   return axios(url, {
     method: 'post',
     data: data,
-    headers: headers,
+    headers: {
+      ...headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    withCredentials: true,
     responseType: raw ? 'blob' : 'json',
   })
     .then((response) => {

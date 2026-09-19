@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { post } from '../scripts/request'
 
 interface AuthUser {
   account: string
@@ -11,51 +12,56 @@ const STORAGE_KEY = 'bambloo-auth'
 export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
   const user = ref<AuthUser | null>(null)
+  let hydrationPromise: Promise<void> | null = null
 
   const currentUser = computed(() => user.value)
 
-  function hydrate() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) {
-        isLoggedIn.value = false
-        user.value = null
-        return
-      }
-
-      const parsed = JSON.parse(raw) as { isLoggedIn?: boolean; user?: AuthUser | null }
-      isLoggedIn.value = !!parsed.isLoggedIn
-      user.value = parsed.user ?? null
-    } catch {
-      isLoggedIn.value = false
-      user.value = null
-      localStorage.removeItem(STORAGE_KEY)
-    }
-  }
-
-  function persist() {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        isLoggedIn: isLoggedIn.value,
-        user: user.value,
-      }),
-    )
-  }
-
-  function login(nextUser: AuthUser) {
-    user.value = nextUser
-    isLoggedIn.value = true
-    persist()
-  }
-
-  function logout() {
-    user.value = null
+  function clearLocalState() {
     isLoggedIn.value = false
+    user.value = null
     localStorage.removeItem(STORAGE_KEY)
   }
 
-  hydrate()
+  function hydrate() {
+    if (hydrationPromise) return hydrationPromise
+
+    hydrationPromise = post('/wpi/user/check', ref(false))
+      .then((packet) => {
+        const data = packet.data as { token?: string; account?: string; name?: string } | undefined
+        if (!data?.token || !data.account) {
+          throw new Error('Invalid session response')
+        }
+        localStorage.setItem(STORAGE_KEY, data.token)
+        isLoggedIn.value = true
+        user.value = { account: data.account, name: data.name }
+      })
+      .catch(() => {
+        clearLocalState()
+      })
+
+    return hydrationPromise
+  }
+
+  function resetHydration() {
+    hydrationPromise = null
+  }
+
+  function loadCachedState() {
+    isLoggedIn.value = !!localStorage.getItem(STORAGE_KEY)
+  }
+
+  function login(token: string, nextUser?: AuthUser) {
+    localStorage.setItem(STORAGE_KEY, token)
+    user.value = nextUser ?? null
+    isLoggedIn.value = true
+  }
+
+  function logout() {
+    clearLocalState()
+    resetHydration()
+  }
+
+  loadCachedState()
 
   return {
     isLoggedIn,

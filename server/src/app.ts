@@ -3,7 +3,6 @@ import { errout, logout, proxy_console } from './util/logger-helper'
 import { proxy_router } from './util/router-proxy'
 import { dirname, join } from 'path'
 import body_parser from 'body-parser'
-import cookie_parser from 'express'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -23,7 +22,6 @@ const application = express()
 
 application.use(body_parser.json())
 application.use(body_parser.urlencoded({ extended: true }))
-application.use(cookie_parser())
 
 proxy_router(application, join(__dirname, 'wpi'))
 

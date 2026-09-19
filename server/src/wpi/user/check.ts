@@ -1,19 +1,27 @@
-// import { NextFunction } from 'express'
-import { BamblooStatusCode } from '../../../../common/status'
-import { generate_key_pair } from '../../util/crypto-util'
-import { response } from '../../util/secretary'
 import { Request, Response } from 'express'
+import { BamblooStatusCode } from '../../../../common/status'
+import { response } from '../../util/secretary'
+import { refresh_session } from '../../util/session'
+import { user_manager } from '../../core/manager/user'
 
 export default function handler(
-  params: [string: string],
+  _params: { [key: string]: unknown },
   req: Request,
   res: Response,
   // next: NextFunction,
 ) {
-  return generate_key_pair().then((pair) => {
-    return response(res, BamblooStatusCode.Success, '获取用户信息成功', {
-      pub: pair.publicKey,
-      pri: pair.privateKey,
+  const result = refresh_session(req, res)
+  if (!result) return response(res, BamblooStatusCode.Unauthorized, '登录已失效')
+
+  return user_manager
+    .instance()
+    .then((manager) => manager.get({ id: result.payload.userId }))
+    .then((user) => {
+      const { passwordHash: _passwordHash, ...safeUser } = user
+      return response(res, BamblooStatusCode.Success, '会话有效', {
+        ...safeUser,
+        token: result.token,
+      })
     })
-  })
+    .catch(() => response(res, BamblooStatusCode.Unauthorized, '登录已失效'))
 }

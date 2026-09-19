@@ -3,6 +3,7 @@ import { Request, Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
+import { issue_session } from '../../util/session'
 
 function same_hash(actual: string, expected: string) {
   const actualBuffer = Buffer.from(actual, 'hex')
@@ -12,7 +13,7 @@ function same_hash(actual: string, expected: string) {
   )
 }
 
-export default function handler(params: { [key: string]: unknown }, _req: Request, res: Response) {
+export default function handler(params: { [key: string]: unknown }, req: Request, res: Response) {
   const account = typeof params.account === 'string' ? params.account.trim() : ''
   const passwordHash = typeof params.passwordHash === 'string' ? params.passwordHash : ''
 
@@ -28,8 +29,9 @@ export default function handler(params: { [key: string]: unknown }, _req: Reques
         return response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误')
       }
 
+      const token = issue_session(req, res, user)
       const { passwordHash: _passwordHash, ...safeUser } = user
-      return response(res, BamblooStatusCode.Success, '登录成功', safeUser)
+      return response(res, BamblooStatusCode.Success, '登录成功', { ...safeUser, token })
     })
     .catch(() => response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误'))
 }

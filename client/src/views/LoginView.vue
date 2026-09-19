@@ -39,10 +39,12 @@ function submitLogin() {
         remember: rememberMe.value,
       })
     })
-    .then(() => {
-      auth.login({
-        account: account.value.trim(),
-        name: account.value.trim(),
+    .then((packet) => {
+      const data = packet.data as { token?: string; account?: string; name?: string } | undefined
+      if (!data?.token) throw new Error('登录凭证缺失')
+      auth.login(data.token, {
+        account: data.account || account.value.trim(),
+        name: data.name,
       })
       router.push('/user')
     })
