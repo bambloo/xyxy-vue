@@ -2,8 +2,9 @@ import type { Express, NextFunction, Request, Response } from 'express'
 import path from 'path'
 import { walk } from 'walk'
 import { BamblooError } from '../../../common/status'
-import { logout } from './logger-helper'
+import { cookie_info, logout } from './logger-helper'
 import { response } from './secretary'
+import { SESSION_COOKIE } from './session'
 import { authorize_wpi, type WpiConfig, type WpiHandler, type WpiRequest } from './wpi-access'
 
 interface WpiModule {
@@ -52,7 +53,8 @@ async function handle_request(
   next: NextFunction,
 ) {
   const params = collect_params(req)
-  logout(modulePath, params)
+  const cookie = cookie_info(req.headers.cookie, [SESSION_COOKIE])
+  logout(modulePath, params, ...(cookie ? [{ cookie }] : []))
 
   try {
     const authorized = await authorize_wpi(config, req as WpiRequest, res)

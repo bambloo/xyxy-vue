@@ -8,7 +8,7 @@ import {
 import type { Request, Response } from 'express'
 import type { UserProfile } from '../core/entity/user'
 
-const SESSION_COOKIE = 'bambloo_session'
+export const SESSION_COOKIE = 'bambloo_session'
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000
 const sessionSecret = createHash('sha256')
   .update(process.env.BAMBLOO_SESSION_SECRET || randomBytes(32))

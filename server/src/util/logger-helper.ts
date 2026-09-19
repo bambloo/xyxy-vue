@@ -10,6 +10,29 @@ const explainer = new TimeExplainer()
 export const logout = console.log.bind(console, '%s', explainer)
 export const errout = console.error.bind(console, '%s', explainer)
 
+export function cookie_info(cookieHeader: string | undefined, allowedNames: readonly string[]) {
+  if (!cookieHeader?.trim()) return undefined
+
+  const allowed = new Set(allowedNames)
+  const cookies: Record<string, string> = {}
+  for (const part of cookieHeader.split(';')) {
+    const separator = part.indexOf('=')
+    if (separator <= 0) continue
+
+    const name = part.slice(0, separator).trim()
+    const value = part.slice(separator + 1).trim()
+    if (!name || !allowed.has(name)) continue
+    cookies[name] = value.length > 4 ? `***${value.slice(-4)}` : '***'
+  }
+
+  if (!Object.keys(cookies).length) return undefined
+
+  return {
+    names: Object.keys(cookies),
+    values: cookies,
+  }
+}
+
 // type ConsoleLogType = 'log' | 'info' | 'warn' | 'error'
 // const writers = {
 //   log: {
