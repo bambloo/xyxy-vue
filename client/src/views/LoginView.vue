@@ -37,7 +37,7 @@ function submitLogin() {
         remember: rememberMe.value,
       })
     })
-    .then(() => router.push('/'))
+    .then(() => router.push('/user'))
     .catch((error: unknown) => {
       const response = error as { msg?: string; message?: string }
       errorMessage.value = response.msg || response.message || '登录失败，请检查账号或密码'
