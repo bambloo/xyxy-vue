@@ -62,7 +62,7 @@ function decode(token: string, req: Request): SessionPayload | null {
     const salt = typeof payload.salt === 'string' ? payload.salt : ''
     const expectedSalt = Buffer.from(sessionSalt)
     if (
-      !payload.userId ||
+      !payload.userTag ||
       !account ||
       !ip ||
       Buffer.byteLength(salt) !== expectedSalt.length ||

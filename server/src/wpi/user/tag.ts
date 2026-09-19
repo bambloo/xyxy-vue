@@ -14,6 +14,8 @@ export default function handler(params: { [key: string]: string }, _req: Request
   user_manager
     .instance()
     .then((manager) => manager.get({ tag: params.tag }))
-    .then(() => response(res, BamblooStatusCode.Success))
+    .then((user) =>
+      response(res, BamblooStatusCode.Success, undefined, { isActive: user.isActive === true }),
+    )
     .catch(() => response(res, BamblooStatusCode.EntityNonexist, 'Tag 不存在'))
 }

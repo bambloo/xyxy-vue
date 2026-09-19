@@ -138,6 +138,14 @@ const messages = {
     tag: {
       notFound: '未找到记录，请联系管理员扫码填写信息：',
       tip: '手机扫码后填写，即可绑定此 TAG',
+      activateEyebrow: 'TAG 激活',
+      activateTitle: '请填写用户信息',
+      tagLabel: 'Tag',
+      avatar: '头像地址',
+      activateButton: '激活 Tag',
+      activating: '正在激活...',
+      activateSuccess: 'Tag 激活成功，感谢填写。',
+      activateError: 'Tag 激活失败',
     },
   },
   'en-US': {
@@ -275,6 +283,14 @@ const messages = {
     tag: {
       notFound: 'No record found. Ask an administrator to scan and complete the details:',
       tip: 'Scan with your phone to bind this TAG',
+      activateEyebrow: 'TAG ACTIVATION',
+      activateTitle: 'Complete your profile',
+      tagLabel: 'Tag',
+      avatar: 'Avatar URL',
+      activateButton: 'Activate Tag',
+      activating: 'Activating...',
+      activateSuccess: 'Tag activated successfully. Thank you.',
+      activateError: 'Failed to activate Tag',
     },
   },
 }
