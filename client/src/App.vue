@@ -42,7 +42,7 @@ body {
 .starfield,
 .starfield::before,
 .starfield::after {
-  position: absolute;
+  position: fixed;
   inset: 0;
   pointer-events: none;
 }
