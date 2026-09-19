@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { hash_password } from '../../../common/util/crypto'
+import { validateAccount, validatePassword } from '../utils/login-validator'
 import { post } from '../scripts/request'
 
 const router = useRouter()
@@ -10,26 +12,36 @@ const rememberMe = ref(true)
 const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+const accountError = ref('')
+const passwordError = ref('')
 
-async function submitLogin() {
+function validateLoginForm() {
+  accountError.value = validateAccount(account.value)
+  passwordError.value = validatePassword(password.value)
+
+  return !accountError.value && !passwordError.value
+}
+
+function submitLogin() {
   errorMessage.value = ''
 
-  if (!account.value.trim() || !password.value) {
-    errorMessage.value = '请输入账号和密码'
+  if (!validateLoginForm()) {
     return
   }
 
-  try {
-    await post('/user/login', loading, {
-      account: account.value.trim(),
-      password: password.value,
-      remember: rememberMe.value,
+  hash_password(password.value)
+    .then((passwordHash) => {
+      return post('/wpi/user/login', loading, {
+        account: account.value.trim(),
+        passwordHash,
+        remember: rememberMe.value,
+      })
     })
-    await router.push('/')
-  } catch (error: unknown) {
-    const response = error as { msg?: string; message?: string }
-    errorMessage.value = response.msg || response.message || '登录失败，请检查账号或密码'
-  }
+    .then(() => router.push('/'))
+    .catch((error: unknown) => {
+      const response = error as { msg?: string; message?: string }
+      errorMessage.value = response.msg || response.message || '登录失败，请检查账号或密码'
+    })
 }
 </script>
 
@@ -53,16 +65,17 @@ async function submitLogin() {
 
         <form class="login-form" @submit.prevent="submitLogin">
           <label class="field-label" for="account">账号</label>
-          <div class="input-shell">
+          <div :class="['input-shell', { error: accountError }]">
             <ion-icon name="person-outline"></ion-icon>
             <input id="account" v-model="account" type="text" autocomplete="username" placeholder="请输入账号或手机号" />
           </div>
+          <p v-if="accountError" class="field-error" role="alert">{{ accountError }}</p>
 
           <div class="password-heading">
             <label class="field-label" for="password">密码</label>
             <a href="#" @click.prevent="errorMessage = '请联系管理员重置密码'">忘记密码？</a>
           </div>
-          <div class="input-shell">
+          <div :class="['input-shell', { error: passwordError }]">
             <ion-icon name="lock-closed-outline"></ion-icon>
             <input id="password" v-model="password" :type="showPassword ? 'text' : 'password'"
               autocomplete="current-password" placeholder="请输入密码" />
@@ -71,6 +84,7 @@ async function submitLogin() {
               <ion-icon :name="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
             </button>
           </div>
+          <p v-if="passwordError" class="field-error" role="alert">{{ passwordError }}</p>
 
           <label class="remember-row">
             <input v-model="rememberMe" type="checkbox" />
@@ -282,6 +296,11 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(44, 130, 122, .1);
 }
 
+.input-shell.error {
+  border-color: #bb4b43;
+  box-shadow: 0 0 0 3px rgba(187, 75, 67, .08);
+}
+
 .input-shell>ion-icon {
   color: #8a9994;
   font-size: 1.1rem;
@@ -328,13 +347,18 @@ input[type='checkbox'] {
   accent-color: #237a72;
 }
 
+.field-error,
 .error-message {
   display: flex;
   align-items: center;
   gap: .45rem;
-  margin: -1rem 0 1rem;
+  margin: .5rem 0 0;
   color: #bb4b43;
   font-size: .78rem;
+}
+
+.error-message {
+  margin: -1rem 0 1rem;
 }
 
 .submit-button {

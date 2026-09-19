@@ -24,7 +24,7 @@ export class mongo_helper {
     })
   }
 
-  public static ddo<ReturnType>(callback: (database: Db) => ReturnType) {
+  public static ddo<ReturnType>(callback: (database: Db) => ReturnType | Promise<ReturnType>) {
     return this.get_db().then((db) => {
       return callback(db)
     })
@@ -36,14 +36,17 @@ export class mongo_helper {
     })
   }
 
-  public static get(collection: string, key: { [key: string]: unknown }) {
-    return this.ddo((db) => {
+  public static get<ReturnType>(
+    collection: string,
+    key: { [key: string]: unknown },
+  ): Promise<ReturnType> {
+    return this.ddo<ReturnType>((db) => {
       return db
         .collection(collection)
         .findOne(key)
         .then((doc) => {
           if (doc) {
-            return doc
+            return doc as ReturnType
           } else {
             throw new BamblooError(
               BamblooStatusCode.Uncategoried,

@@ -1,7 +1,6 @@
-export interface UserProfile {
+export interface UserPublicProfile {
   id: string
   account: string
-  passwordHash: string
   name: string
   phone?: string
   birthday?: string
@@ -13,4 +12,9 @@ export interface UserProfile {
   updatedAt?: string
 }
 
-export default UserProfile
+export interface UserQuery {
+  id?: string
+  account?: string
+  name?: string
+  phone?: string
+}

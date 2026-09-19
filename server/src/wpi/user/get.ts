@@ -2,7 +2,7 @@
 
 import { Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
-import { user_manager } from '../../core/manager/user-manager'
+import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 
 export default function handler(
@@ -15,7 +15,8 @@ export default function handler(
     .instance()
     .then((manager) => {
       return manager.get({ id: params.id }).then((user) => {
-        return response(res, BamblooStatusCode.Success, '获取用户信息成功', user)
+        const { passwordHash: _passwordHash, ...safeUser } = user
+        return response(res, BamblooStatusCode.Success, '获取用户信息成功', safeUser)
       })
     })
     .catch((err) => {
