@@ -73,6 +73,17 @@ export class user_manager {
     )
   }
 
+  public updatePassword(tag: string, passwordHash: string) {
+    return mongo_helper.ddo(async (db) => {
+      const result = await db
+        .collection('user')
+        .updateOne({ tag }, { $set: { passwordHash, updatedAt: new Date().toISOString() } })
+      if (!result.matchedCount) {
+        throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
+      }
+    })
+  }
+
   public async importInactiveTags(tags: string[]) {
     const imported: UserProfile[] = []
     const uniqueTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))]

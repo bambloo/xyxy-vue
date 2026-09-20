@@ -115,6 +115,7 @@ const messages = {
       format: '新密码需为 8-20 位，且包含字母和数字',
       mismatch: '两次输入的新密码不一致',
       updated: '密码已更新',
+      failed: '密码更新失败',
     },
     security: {
       eyebrow: '安全设置',
@@ -265,6 +266,7 @@ const messages = {
       format: 'The new password must be 8-20 characters with letters and numbers',
       mismatch: 'The new passwords do not match',
       updated: 'Password updated',
+      failed: 'Password update failed',
     },
     security: {
       eyebrow: 'SECURITY SETTINGS',

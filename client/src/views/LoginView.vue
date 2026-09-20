@@ -446,6 +446,16 @@ input[type='checkbox'] {
   color: var(--space-text);
 }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px rgba(13, 38, 67, .72) inset !important;
+  -webkit-text-fill-color: var(--space-text, #fff) !important;
+  transition: background-color 5000s ease-in-out 0s;
+  border-radius: 4px;
+}
+
 .welcome-panel {
   background: linear-gradient(145deg, rgba(7, 25, 48, .92), rgba(12, 53, 86, .68));
   border-right: 1px solid var(--space-line);

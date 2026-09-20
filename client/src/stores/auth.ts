@@ -41,6 +41,11 @@ export const useAuthStore = defineStore('auth', () => {
     return hydrationPromise
   }
 
+  function refresh() {
+    hydrationPromise = null
+    return hydrate()
+  }
+
   function resetHydration() {
     hydrationPromise = null
   }
@@ -79,5 +84,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     clear,
     hydrate,
+    refresh,
   }
 })

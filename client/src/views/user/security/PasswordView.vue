@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { hash_password } from '../../../../../common/util/crypto'
+import { post } from '../../../scripts/request'
 
 const statusMessage = ref('')
+const loading = ref(false)
 const { t } = useI18n()
 
 const passwordForm = reactive({
@@ -11,7 +14,7 @@ const passwordForm = reactive({
   confirmPassword: '',
 })
 
-function changePassword() {
+async function changePassword() {
   if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
     statusMessage.value = t('password.required')
     return
@@ -31,10 +34,20 @@ function changePassword() {
     return
   }
 
-  statusMessage.value = t('password.updated')
-  passwordForm.currentPassword = ''
-  passwordForm.newPassword = ''
-  passwordForm.confirmPassword = ''
+  try {
+    const [currentPasswordHash, newPasswordHash] = await Promise.all([
+      hash_password(passwordForm.currentPassword),
+      hash_password(passwordForm.newPassword),
+    ])
+    await post('/wpi/user/password', loading, { currentPasswordHash, newPasswordHash })
+    statusMessage.value = t('password.updated')
+    passwordForm.currentPassword = ''
+    passwordForm.newPassword = ''
+    passwordForm.confirmPassword = ''
+  } catch (error) {
+    const message = error as { msg?: string }
+    statusMessage.value = message.msg || t('password.failed')
+  }
 }
 </script>
 
@@ -45,7 +58,8 @@ function changePassword() {
         <p class="eyebrow">{{ t('password.eyebrow') }}</p>
         <h2>{{ t('password.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="changePassword">{{ t('password.update') }}</button>
+      <button class="primary-button" type="button" :disabled="loading" @click="changePassword">{{ t('password.update')
+        }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">

@@ -1,19 +1,31 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../../../stores/auth'
 import { is_at_least_five_years_old, is_valid_phone } from '../../../utils/user-validator'
 
 const statusMessage = ref('')
 const { t } = useI18n()
+const auth = useAuthStore()
 
 const user = reactive({
-  account: 'admin',
-  name: '管理员',
-  phone: '13800000000',
-  email: 'admin@bambloo.com',
-  birthday: '1990-01-01',
-  hobbies: '读书、旅行、技术',
+  account: '',
+  name: '',
+  phone: '',
+  email: '',
+  birthday: '',
+  hobbies: '',
 })
+
+watch(() => auth.currentUser, (currentUser) => {
+  if (!currentUser) return
+  user.account = currentUser.account
+  user.name = currentUser.name
+  user.phone = currentUser.phone || ''
+  user.email = currentUser.email || ''
+  user.birthday = currentUser.birthday || ''
+  user.hobbies = currentUser.hobbies || ''
+}, { immediate: true })
 
 function saveProfile() {
   if (!is_valid_phone(user.phone)) {
