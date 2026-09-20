@@ -1081,8 +1081,8 @@ onMounted(() => {
     }
   }
 
-  const WANDER_SPEED = 0.0015;       // 每帧移动量
-  const WANDER_JITTER = 0.0002;      // 方向随机扰动
+  const WANDER_SPEED = 0.0033;       // 每帧移动量
+  const WANDER_JITTER = 0.001;      // 方向随机扰动
 
   let wanderVX = (Math.random() - 0.5) * 0.01;
   let wanderVY = (Math.random() - 0.5) * 0.01;
@@ -1133,7 +1133,7 @@ onMounted(() => {
       const d2x = dx * dx
       const d2y = dy * dy
 
-      if (d2x + d2y > (Math.random() * 12 + 8)) {
+      if (d2x + d2y > (Math.random() * 5 + 20)) {
         updatePointerMoveData(pointer, posX, posY, pointer.color);
         lastX = posX
         lastY = posY
