@@ -27,10 +27,7 @@ export function cookie_info(cookieHeader: string | undefined, allowedNames: read
 
   if (!Object.keys(cookies).length) return undefined
 
-  return {
-    names: Object.keys(cookies),
-    values: cookies,
-  }
+  return cookies
 }
 
 // type ConsoleLogType = 'log' | 'info' | 'warn' | 'error'
