@@ -69,15 +69,15 @@ const props = withDefaults(defineProps<SplashCursorProps>(), {
   SIM_RESOLUTION: 128,
   DYE_RESOLUTION: 1440,
   CAPTURE_RESOLUTION: 512,
-  DENSITY_DISSIPATION: 3.5,
+  DENSITY_DISSIPATION: 1.2,
   VELOCITY_DISSIPATION: 2,
-  PRESSURE: 0.1,
+  PRESSURE: 0.2,
   PRESSURE_ITERATIONS: 20,
   CURL: 3,
   SPLAT_RADIUS: 0.2,
   SPLAT_FORCE: 6000,
   SHADING: true,
-  COLOR_UPDATE_SPEED: 10,
+  COLOR_UPDATE_SPEED: 3,
   BACK_COLOR: () => ({ r: 0.5, g: 0, b: 0 }),
   TRANSPARENT: true,
   RAINBOW_MODE: true,
@@ -103,7 +103,20 @@ function pointerPrototype(): Pointer {
   };
 }
 
+let global_int: number = 0
 onMounted(() => {
+
+  let acount = 0
+  let pcount = 0
+  clearInterval(global_int)
+  global_int = setInterval(() => {
+    console.log(`Auto splashing count: ${acount}`);
+    console.log(`Poiter splashing count: ${pcount}`);
+
+    acount = 0;
+    pcount = 0;
+  }, 1000);
+
   const canvas = canvasRef.value as HTMLCanvasElement;
   if (!canvas) return;
 
@@ -400,6 +413,7 @@ onMounted(() => {
         float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
         c *= diffuse;
       #endif
+      c = c / (1.0 + max(c, vec3(0.0)));
       float a = max(c.r, max(c.g, c.b));
       gl_FragColor = vec4(c, a);
     }
@@ -917,17 +931,17 @@ onMounted(() => {
     dye.swap();
   }
 
-  function splatPointer(pointer: Pointer) {
-    const dx = pointer.deltaX * config.SPLAT_FORCE;
-    const dy = pointer.deltaY * config.SPLAT_FORCE;
+  function splatPointer(pointer: Pointer, forceScale = 1) {
+    const dx = pointer.deltaX * config.SPLAT_FORCE * forceScale;
+    const dy = pointer.deltaY * config.SPLAT_FORCE * forceScale;
     splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
   }
 
   function clickSplat(pointer: Pointer) {
     const color = generateColor();
-    color.r *= 10;
-    color.g *= 10;
-    color.b *= 10;
+    color.r *= 4;
+    color.g *= 4;
+    color.b *= 4;
     const dx = 10 * (Math.random() - 0.5);
     const dy = 30 * (Math.random() - 0.5);
     splat(pointer.texcoordX, pointer.texcoordY, dx, dy, color);
@@ -1062,16 +1076,19 @@ onMounted(() => {
     for (const p of pointers) {
       if (p.moved) {
         p.moved = false;
-        splatPointer(p);
+        splatPointer(p, auto_splashing_count > 1000 ? 0.6 : 1);
       }
     }
   }
 
   const WANDER_SPEED = 0.0015;       // 每帧移动量
-  const WANDER_JITTER = 0.0001;      // 方向随机扰动
+  const WANDER_JITTER = 0.0002;      // 方向随机扰动
 
   let wanderVX = (Math.random() - 0.5) * 0.01;
   let wanderVY = (Math.random() - 0.5) * 0.01;
+
+  let lastX = 0;
+  let lastY = 0;
 
   function updateFrame() {
     const dt = calcDeltaTime();
@@ -1083,14 +1100,14 @@ onMounted(() => {
 
     animFrameId = requestAnimationFrame(updateFrame);
 
-    if (++auto_splashing_count > 180 && auto_splashing_count % 2 == 0) {
+    if (++auto_splashing_count > 500 && auto_splashing_count % 2 == 0) {
 
+      acount++
       const pointer = pointers[0] as Pointer;
 
       wanderVX += (Math.random() - 0.5) * WANDER_JITTER;
       wanderVY += (Math.random() - 0.5) * WANDER_JITTER;
 
-      // 归一化速度方向，保持恒定速率
       const len = Math.sqrt(wanderVX * wanderVX + wanderVY * wanderVY) || 1;
       wanderVX = (wanderVX / len) * WANDER_SPEED;
       wanderVY = (wanderVY / len) * WANDER_SPEED;
@@ -1102,7 +1119,6 @@ onMounted(() => {
       wanderY += wanderVY;
 
 
-      // 边界反弹
       if (wanderX <= 0.05) { wanderX = 0.05; wanderVX = Math.abs(wanderVX); }
       if (wanderX >= 0.95) { wanderX = 0.95; wanderVX = -Math.abs(wanderVX); }
       if (wanderY <= 0.05) { wanderY = 0.05; wanderVY = Math.abs(wanderVY); }
@@ -1111,7 +1127,17 @@ onMounted(() => {
       const posX = scaleByPixelRatio(canvas.clientWidth * wanderX);
       const posY = scaleByPixelRatio(canvas.clientHeight * wanderY);
 
-      updatePointerMoveData(pointer, posX, posY, pointer.color);
+      const dx = (posX - lastX)
+      const dy = (posY - lastY)
+
+      const d2x = dx * dx
+      const d2y = dy * dy
+
+      if (d2x + d2y > (Math.random() * 12 + 8)) {
+        updatePointerMoveData(pointer, posX, posY, pointer.color);
+        lastX = posX
+        lastY = posY
+      }
     }
   }
 
@@ -1123,6 +1149,7 @@ onMounted(() => {
     const posY = scaleByPixelRatio(e.clientY);
     updatePointerDownData(pointer, -1, posX, posY);
     auto_splashing_count = 0
+
     clickSplat(pointer);
   };
 
@@ -1131,6 +1158,7 @@ onMounted(() => {
     const posX = scaleByPixelRatio(e.clientX);
     const posY = scaleByPixelRatio(e.clientY);
     auto_splashing_count = 0
+    pcount += 1
     updatePointerMoveData(pointer, posX, posY, pointer.color);
   };
 
