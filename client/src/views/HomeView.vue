@@ -1,14 +1,19 @@
 <script setup lang="ts">
-// import { useRoute } from 'vue-router';
-import SplashCursor from '../components/SplashCursor.vue';
+import { useAuthStore } from '../stores/auth'
+import SplashCursor from '../components/SplashCursor.vue'
 
-// const token = useRoute().query.token
-// console.log(token)
-
+const auth = useAuthStore()
 </script>
 
 <template>
-  <SplashCursor />
-  <main>
+  <main v-if="auth.isLoggedIn">
+    <SplashCursor />
   </main>
+  <main v-else class="empty-page" aria-hidden="true"></main>
 </template>
+
+<style scoped>
+.empty-page {
+  min-height: 100vh;
+}
+</style>

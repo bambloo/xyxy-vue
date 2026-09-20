@@ -1,6 +1,6 @@
 import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
-import TagView from '@/views/TagView.vue'
+import TagUserView from '@/views/TagUserView.vue'
 import UserManagementView from '@/views/user/UserManagementView.vue'
 import ProfileView from '@/views/user/profile/ProfileView.vue'
 import PasswordView from '@/views/user/security/PasswordView.vue'
@@ -18,11 +18,6 @@ const router = createRouter({
       component: LoginView,
     },
     {
-      path: '/empty-page',
-      name: 'empty-page',
-      component: TagView,
-    },
-    {
       path: '/admin',
       component: UserManagementView,
       meta: { requiresAuth: true },
@@ -35,14 +30,18 @@ const router = createRouter({
       ],
     },
     {
-      path: '/:tag',
-      name: 'tag',
-      component: TagView,
+      path: '/home',
+      name: 'home',
+      component: HomeView,
     },
     {
       path: '/',
-      name: 'home',
-      component: HomeView,
+      redirect: { name: 'home' },
+    },
+    {
+      path: '/:tag(.*)*',
+      name: 'tag',
+      component: TagUserView,
     },
     {
       path: '/:pathMatch(.*)*',
@@ -54,10 +53,6 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.hydrate()
-  if (to.name === 'home' && !auth.isLoggedIn) {
-    return { name: 'empty-page' }
-  }
-
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
     return '/login'
   }
