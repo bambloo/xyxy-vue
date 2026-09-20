@@ -1,19 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { toggleLocale } from '../../i18n'
 import { useI18n } from 'vue-i18n'
-
-type TabKey = 'profile' | 'password' | 'security' | 'users'
-
-type TabConfig = {
-  key: TabKey
-  labelKey: string
-  icon: string
-  descriptionKey: string
-  route: string
-}
+import { canAccessMenu, userMenuItems, type TabKey, type UserMenuItem } from './menu-config'
 
 const props = defineProps<{
   currentTab?: TabKey
@@ -55,19 +46,21 @@ onBeforeUnmount(() => {
   window.removeEventListener('orientationchange', syncMenuWithOrientation)
 })
 
-const tabs: TabConfig[] = [
-  { key: 'profile', labelKey: 'user.profile', icon: 'person-outline', descriptionKey: 'user.profileHint', route: 'user-profile' },
-  { key: 'password', labelKey: 'user.password', icon: 'lock-closed-outline', descriptionKey: 'user.passwordHint', route: 'user-password' },
-  // { key: 'security', labelKey: 'user.security', icon: 'shield-checkmark-outline', descriptionKey: 'user.securityHint', route: 'user-security' },
-  { key: 'users', labelKey: 'user.users', icon: 'people-outline', descriptionKey: 'user.usersHint', route: 'user-users' },
-]
+const tabs = computed(() => userMenuItems.filter((tab) => canAccessMenu(auth.currentUser, tab)))
 
 const activeTab = computed(() => props.currentTab ?? 'profile')
 
-function goToTab(tab: TabConfig) {
+function goToTab(tab: UserMenuItem) {
   syncSidebarState()
   router.push({ name: tab.route })
 }
+
+watch(tabs, (availableTabs) => {
+  if (!availableTabs.length) return
+  if (!availableTabs.some((tab) => tab.key === activeTab.value)) {
+    void router.replace({ name: availableTabs[0].route })
+  }
+}, { immediate: true })
 
 async function logout() {
   await auth.logout()

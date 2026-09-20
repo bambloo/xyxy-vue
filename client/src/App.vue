@@ -15,12 +15,18 @@ const tag = computed(() => {
   if (Array.isArray(routeTag)) return routeTag.join('/')
   return typeof routeTag === 'string' ? routeTag : undefined
 })
+const isLoginRoute = computed(() => route.name === 'login')
 const isTagRoute = computed(() => route.name === 'tag' && Boolean(tag.value))
 const tagState = ref<TagState>('loading')
 const tagLoading = ref(false)
 const appState = ref<AppState>('loading')
 
 async function loadTagState() {
+  if (isLoginRoute.value) {
+    appState.value = 'ready'
+    return
+  }
+
   if (!isTagRoute.value || !tag.value) {
     tagState.value = 'loading'
     appState.value = 'loading'
@@ -43,7 +49,7 @@ async function loadTagState() {
   }
 }
 
-watch([isTagRoute, tag], loadTagState, { immediate: true })
+watch([isLoginRoute, isTagRoute, tag], loadTagState, { immediate: true })
 </script>
 
 <template>

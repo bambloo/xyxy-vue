@@ -134,7 +134,7 @@ onMounted(async () => {
   if (!props.active) return
 
   try {
-    const packet = await post('/wpi/user/check', sessionLoading)
+    const packet = await post('/wpi/user/check', sessionLoading, { tag: props.tag })
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
     if (!data?.token || !data.account || !data.tag) throw new Error('Invalid session response')
     const { token, ...profile } = data
