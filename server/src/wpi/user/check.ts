@@ -3,7 +3,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { response } from '../../util/secretary'
 import { refresh_session } from '../../util/session'
 import { user_manager } from '../../core/manager/user'
-import { to_public_user } from '../../core/entity/public-user'
+import { to_public_user } from '../../core/entity/user'
 
 export default function handler(
   params: { [key: string]: unknown },

@@ -4,7 +4,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { issue_session } from '../../util/session'
-import { to_public_user } from '../../core/entity/public-user'
+import { to_public_user } from '../../core/entity/user'
 
 function same_hash(actual: string, expected: string) {
   const actualBuffer = Buffer.from(actual, 'hex')

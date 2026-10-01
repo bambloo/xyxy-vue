@@ -35,6 +35,10 @@ export class GalaxyScene {
     this.manager?.wheel(event)
   }
 
+  resetView() {
+    this.manager?.resetView()
+  }
+
   destroy() {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()

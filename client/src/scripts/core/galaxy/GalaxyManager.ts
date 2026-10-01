@@ -81,12 +81,23 @@ export class GalaxyManager {
     )
   }
 
+  resetView() {
+    this.targetRotationX = 0
+    this.targetRotationY = 0
+    this.options.camera.position.set(0, 260, 720)
+    this.options.camera.lookAt(0, 0, 0)
+  }
+
   update(time: number) {
     const { galaxy } = this.options
     galaxy.rotation.y += (this.targetRotationY - galaxy.rotation.y) * 0.08 + 0.0018
     galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
     this.wormholes.forEach((wormhole) => wormhole.update(time))
     this.stars.forEach((star) => star.update(time))
+    if (this.selectionMarker) {
+      const pulse = 1 + Math.sin(time * 0.008) * 0.14
+      this.selectionMarker.scale.setScalar(pulse)
+    }
   }
 
   destroy() {
@@ -135,11 +146,12 @@ export class GalaxyManager {
     )
     if (!this.selectedStar) {
       this.selectedStar = star
-      const markerGeometry = new THREE.SphereGeometry(10, 12, 8)
+      const markerGeometry = new THREE.TorusGeometry(13, 1.8, 8, 32)
       const markerMaterial = new THREE.MeshBasicMaterial({
-        color: 0xf6cf75,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.86,
+        blending: THREE.AdditiveBlending,
       })
       this.selectionMarker = new THREE.Mesh(markerGeometry, markerMaterial)
       this.selectionMarker.position.copy(star.position)

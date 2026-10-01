@@ -4,7 +4,7 @@ import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { mongo_helper } from '../../util/mongo-helper'
 import { issue_session } from '../../util/session'
-import { to_public_user } from '../../core/entity/public-user'
+import { to_public_user } from '../../core/entity/user'
 
 export const config = { access: 'public' as const }
 

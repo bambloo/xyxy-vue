@@ -4,7 +4,7 @@ import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
 import { refresh_session } from '../../util/session'
-import { to_public_user } from '../../core/entity/public-user'
+import { to_public_user } from '../../core/entity/user'
 
 export const config = { access: 'private' as const, permissions: ['users.import'] }
 
