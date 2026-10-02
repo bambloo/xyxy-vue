@@ -90,10 +90,7 @@ export class GalaxyManager {
     galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
     this.stars.forEach((star) => star.update(time))
     this.links.forEach((link) => link.update(time))
-    if (this.selectionMarker) {
-      const pulse = 1 + Math.sin(time * 0.008) * 0.14
-      this.selectionMarker.scale.setScalar(pulse)
-    }
+    this.updateSelectionMarker()
   }
 
   destroy() {
@@ -175,6 +172,31 @@ export class GalaxyManager {
     galaxy.add(this.selectionMarker)
     this.options.geometries.push(markerGeometry)
     this.options.materials.push(markerMaterial)
+  }
+
+  private updateSelectionMarker() {
+    const { galaxy, camera, renderer } = this.options
+    const marker = this.selectionMarker
+    const star = this.selectedStar
+    if (!marker || !star) return
+
+    galaxy.updateMatrixWorld(true)
+    camera.updateMatrixWorld(true)
+    marker.position.copy(star.position)
+
+    const worldPosition = galaxy.localToWorld(star.position.clone())
+    const cameraPosition = camera.worldToLocal(worldPosition.clone())
+    const depth = Math.max(camera.near, -cameraPosition.z)
+    const viewportHeight = renderer.domElement.clientHeight
+    if (viewportHeight <= 0) return
+
+    const viewHeight = 2 * depth * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5))
+    const ringDiameter = 2 * (13 + 1.8)
+    marker.scale.setScalar((viewHeight * 36) / (viewportHeight * ringDiameter))
+
+    const galaxyRotation = galaxy.getWorldQuaternion(new THREE.Quaternion()).invert()
+    const cameraRotation = camera.getWorldQuaternion(new THREE.Quaternion())
+    marker.quaternion.copy(galaxyRotation.multiply(cameraRotation))
   }
 
   private clearSelection(galaxy: THREE.Group) {
