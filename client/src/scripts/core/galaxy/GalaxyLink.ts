@@ -69,7 +69,7 @@ export class GalaxyLink {
     geometries.push(geometry)
     materials.push(this.glowMaterial, this.coreMaterial)
 
-    this.travelerGeometry = new THREE.ConeGeometry(1.8, 6, 6)
+    this.travelerGeometry = new THREE.ConeGeometry(1.3, 4.5, 6)
     geometries.push(this.travelerGeometry)
     for (let index = 0; index < 2; index += 1) {
       const material = new THREE.MeshBasicMaterial({
@@ -92,7 +92,7 @@ export class GalaxyLink {
     this.glowMaterial.opacity = 0.08 + pulse * 0.12
     this.coreMaterial.opacity = 0.3 + pulse * 0.28
     this.travelers.forEach((traveler, index) => {
-      const cycle = (time * 0.00022 + this.phase / (Math.PI * 2) + index * 0.5) % 2
+      const cycle = (time * 0.00012 + this.phase / (Math.PI * 2) + index * 0.5) % 2
       const progress = cycle <= 1 ? cycle : 2 - cycle
       const position = this.curve.getPointAt(progress)
       const tangent = this.curve.getTangentAt(progress).normalize()
@@ -100,7 +100,7 @@ export class GalaxyLink {
       traveler.position.copy(position)
       traveler.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent)
       this.travelerMaterials[index]?.color.copy(this.startColor).lerp(this.endColor, progress)
-      traveler.scale.setScalar(0.8 + pulse * 0.35)
+      traveler.scale.setScalar(0.65 + pulse * 0.24)
       if (this.travelerMaterials[index]) this.travelerMaterials[index].opacity = 0.55 + pulse * 0.4
     })
   }

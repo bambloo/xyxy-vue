@@ -68,7 +68,7 @@ export class GalaxyScene {
     const context = canvas.getContext('2d')
     if (!context) return
     context.globalCompositeOperation = 'lighter'
-    const halo = context.createRadialGradient(78, 56, 2, 78, 56, 50)
+    const halo = context.createRadialGradient(64, 64, 2, 64, 64, 50)
     halo.addColorStop(0, 'rgba(255,255,255,1)')
     halo.addColorStop(0.12, 'rgba(231,249,255,.98)')
     halo.addColorStop(0.34, 'rgba(111,207,255,.72)')
@@ -76,15 +76,15 @@ export class GalaxyScene {
     halo.addColorStop(1, 'rgba(30,98,255,0)')
     context.fillStyle = halo
     context.beginPath()
-    context.arc(78, 56, 50, 0, Math.PI * 2)
+    context.arc(64, 64, 50, 0, Math.PI * 2)
     context.fill()
-    const core = context.createRadialGradient(76, 54, 0, 76, 54, 17)
+    const core = context.createRadialGradient(64, 64, 0, 64, 64, 17)
     core.addColorStop(0, '#ffffff')
     core.addColorStop(0.35, 'rgba(255,255,255,.98)')
     core.addColorStop(1, 'rgba(182,235,255,0)')
     context.fillStyle = core
     context.beginPath()
-    context.arc(76, 54, 17, 0, Math.PI * 2)
+    context.arc(64, 64, 17, 0, Math.PI * 2)
     context.fill()
     this.starTexture = new THREE.CanvasTexture(canvas)
     this.starTexture.colorSpace = THREE.SRGBColorSpace
