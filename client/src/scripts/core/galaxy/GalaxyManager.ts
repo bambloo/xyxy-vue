@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { GalaxyLink } from './GalaxyLink'
 import { GalaxyStar } from './GalaxyStar'
 
 type GalaxyManagerOptions = {
@@ -17,7 +18,9 @@ const planetColors: [string, string, string] = ['#7ec8ff', '#a7e8ff', '#ffd27d']
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
+  private readonly links: GalaxyLink[] = []
   private selectionMarker?: THREE.Mesh
+  private selectedStar?: GalaxyStar
   private pointerStartX = 0
   private pointerStartY = 0
   private pointerRotationX = 0
@@ -90,6 +93,7 @@ export class GalaxyManager {
     galaxy.rotation.y += (this.targetRotationY - galaxy.rotation.y) * 0.08 + 0.0018
     galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
     this.stars.forEach((star) => star.update(time))
+    this.links.forEach((link) => link.update(time))
     if (this.selectionMarker) {
       const pulse = 1 + Math.sin(time * 0.008) * 0.14
       this.selectionMarker.scale.setScalar(pulse)
@@ -101,6 +105,9 @@ export class GalaxyManager {
       this.options.galaxy.remove(this.selectionMarker)
       this.selectionMarker = undefined
     }
+    this.links.forEach((link) => link.destroy(this.options.galaxy))
+    this.links.length = 0
+    this.selectedStar = undefined
     this.stars.clear()
   }
 
@@ -149,6 +156,20 @@ export class GalaxyManager {
       nearest.index,
       planetColors[fieldIndex % planetColors.length] ?? planetColors[0],
     )
+    if (!this.selectedStar) {
+      this.selectedStar = star
+      this.showSelectionMarker(galaxy, star)
+      return
+    }
+    if (this.selectedStar === star) {
+      this.clearSelection(galaxy)
+      return
+    }
+    this.addLink(this.selectedStar, star, galaxy)
+    this.clearSelection(galaxy)
+  }
+
+  private showSelectionMarker(galaxy: THREE.Group, star: GalaxyStar) {
     if (this.selectionMarker) galaxy.remove(this.selectionMarker)
     this.selectionMarker = undefined
     const markerGeometry = new THREE.TorusGeometry(13, 1.8, 8, 32)
@@ -163,5 +184,17 @@ export class GalaxyManager {
     galaxy.add(this.selectionMarker)
     this.options.geometries.push(markerGeometry)
     this.options.materials.push(markerMaterial)
+  }
+
+  private clearSelection(galaxy: THREE.Group) {
+    if (this.selectionMarker) galaxy.remove(this.selectionMarker)
+    this.selectionMarker = undefined
+    this.selectedStar = undefined
+  }
+
+  private addLink(start: GalaxyStar, end: GalaxyStar, galaxy: THREE.Group) {
+    this.links.push(
+      new GalaxyLink(start, end, galaxy, this.options.geometries, this.options.materials),
+    )
   }
 }
