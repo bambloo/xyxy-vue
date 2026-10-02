@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { GalaxyManager } from './GalaxyManager'
+import type { StarDistribution } from './distribution/StarDistribution'
+import { GaussianCloudDistribution } from './distribution/GaussianCloudDistribution'
 
 export class GalaxyScene {
   private readonly host: HTMLElement
@@ -13,6 +15,7 @@ export class GalaxyScene {
   private geometries: THREE.BufferGeometry[] = []
   private materials: THREE.Material[] = []
   private starTexture?: THREE.CanvasTexture
+  private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
   constructor(host: HTMLElement) {
     this.host = host
@@ -87,21 +90,12 @@ export class GalaxyScene {
     this.starTexture.colorSpace = THREE.SRGBColorSpace
   }
 
-  private makeStars(count: number, radius: number, spread: number, size: number, opacity: number) {
+  private makeStars(count: number, radius: number, size: number, opacity: number) {
     const geometry = new THREE.BufferGeometry()
     const positions: number[] = []
-    for (let index = 0; index < count; index += 1) {
-      const distance = Math.pow(Math.random(), 0.7) * radius
-      const armIndex = index % 5
-      const angle = armIndex * ((Math.PI * 2) / 5) + distance * 0.014 + (Math.random() - 0.5) * 0.72
-      const armWidth = spread * (0.08 + (distance / radius) * 0.18)
-      const offset = (Math.random() - 0.5) * armWidth
-      positions.push(
-        Math.cos(angle) * distance + offset,
-        (Math.random() - 0.5) * spread * 0.55,
-        Math.sin(angle) * distance + offset,
-      )
-    }
+    this.starDistribution.generate({ count, radius }).forEach((position) => {
+      positions.push(position.x, position.y, position.z)
+    })
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     const options: THREE.PointsMaterialParameters = {
       color: 0xd8efff,
@@ -130,9 +124,9 @@ export class GalaxyScene {
     this.host.appendChild(this.renderer.domElement)
 
     this.galaxy = new THREE.Group()
-    const distantStars = this.makeStars(4800, 980, 520, 2.4, 0.78)
-    const spiralStars = this.makeStars(2600, 520, 190, 3.8, 0.92)
-    const innerStars = this.makeStars(1000, 250, 90, 5.2, 0.95)
+    const distantStars = this.makeStars(4800, 980, 2.4, 0.78)
+    const spiralStars = this.makeStars(2600, 520, 3.8, 0.92)
+    const innerStars = this.makeStars(1000, 250, 5.2, 0.95)
     const starFields = [distantStars, spiralStars, innerStars]
     this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
