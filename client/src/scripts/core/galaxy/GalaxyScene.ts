@@ -60,17 +60,29 @@ export class GalaxyScene {
 
   private makeStarTexture() {
     const canvas = document.createElement('canvas')
-    canvas.width = 64
-    canvas.height = 64
+    canvas.width = 128
+    canvas.height = 128
     const context = canvas.getContext('2d')
     if (!context) return
-    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32)
-    gradient.addColorStop(0, 'rgba(255,255,255,1)')
-    gradient.addColorStop(0.12, 'rgba(232,247,255,1)')
-    gradient.addColorStop(0.36, 'rgba(136,204,255,.65)')
-    gradient.addColorStop(1, 'rgba(54,137,255,0)')
-    context.fillStyle = gradient
-    context.fillRect(0, 0, 64, 64)
+    context.globalCompositeOperation = 'lighter'
+    const halo = context.createRadialGradient(78, 56, 2, 78, 56, 50)
+    halo.addColorStop(0, 'rgba(255,255,255,1)')
+    halo.addColorStop(0.12, 'rgba(231,249,255,.98)')
+    halo.addColorStop(0.34, 'rgba(111,207,255,.72)')
+    halo.addColorStop(0.7, 'rgba(62,157,255,.18)')
+    halo.addColorStop(1, 'rgba(30,98,255,0)')
+    context.fillStyle = halo
+    context.beginPath()
+    context.arc(78, 56, 50, 0, Math.PI * 2)
+    context.fill()
+    const core = context.createRadialGradient(76, 54, 0, 76, 54, 17)
+    core.addColorStop(0, '#ffffff')
+    core.addColorStop(0.35, 'rgba(255,255,255,.98)')
+    core.addColorStop(1, 'rgba(182,235,255,0)')
+    context.fillStyle = core
+    context.beginPath()
+    context.arc(76, 54, 17, 0, Math.PI * 2)
+    context.fill()
     this.starTexture = new THREE.CanvasTexture(canvas)
     this.starTexture.colorSpace = THREE.SRGBColorSpace
   }
@@ -122,15 +134,13 @@ export class GalaxyScene {
     const spiralStars = this.makeStars(2600, 520, 190, 3.8, 0.92)
     const innerStars = this.makeStars(1000, 250, 90, 5.2, 0.95)
     const starFields = [distantStars, spiralStars, innerStars]
-    const connectionGroup = new THREE.Group()
-    this.galaxy.add(distantStars, spiralStars, innerStars, connectionGroup)
+    this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
     this.manager = new GalaxyManager({
       host: this.host,
       renderer: this.renderer,
       camera: this.camera,
       galaxy: this.galaxy,
-      connectionGroup,
       starFields,
       starTexture: this.starTexture!,
       geometries: this.geometries,

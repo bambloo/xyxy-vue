@@ -6,11 +6,12 @@ export class GalaxyStar {
   readonly index: number
   readonly position: THREE.Vector3
   readonly color: string
-  private connections = 0
   private readonly sprite: THREE.Sprite
   private readonly material: THREE.SpriteMaterial
   private readonly label?: THREE.Sprite
   private readonly labelMaterial?: THREE.SpriteMaterial
+  private readonly size: number
+  private readonly phase: number
 
   private static readonly labels = [
     '星河',
@@ -36,6 +37,8 @@ export class GalaxyStar {
     this.field = field
     this.index = index
     this.color = color
+    this.size = 3.2 + (((index * 37) % 100) / 100) * 4.8
+    this.phase = (index * 2.417) % (Math.PI * 2)
     this.position = new THREE.Vector3().fromBufferAttribute(
       field.geometry.attributes.position as THREE.BufferAttribute,
       index,
@@ -50,6 +53,7 @@ export class GalaxyStar {
     })
     this.sprite = new THREE.Sprite(this.material)
     this.sprite.position.copy(this.position)
+    this.sprite.material.rotation = this.phase
     galaxy.add(this.sprite)
     materials.push(this.material)
     if (index % 29 === 0) {
@@ -71,23 +75,14 @@ export class GalaxyStar {
     this.update()
   }
 
-  connect() {
-    this.connections += 1
-    this.update()
-  }
-
   update(time = 0) {
-    const tier = this.getTier()
-    const sizes = [4, 6, 8.5, 11.5, 15]
-    const brightness = [0.28, 0.42, 0.58, 0.76, 0.98]
-    const pulse = tier === 0 ? 1 : 1 + Math.sin(time * 0.006 + this.index) * 0.08
-    const size = sizes[tier] ?? 4
-    const opacity = brightness[tier] ?? 0.28
-    this.sprite.scale.setScalar(size * pulse)
+    const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
+    const opacity = 0.38 + Math.sin(time * 0.003 + this.phase) * 0.12
+    this.sprite.scale.setScalar(this.size * pulse)
     this.material.opacity = opacity
     this.material.color.set(this.color)
     if (this.label && this.labelMaterial) {
-      this.labelMaterial.opacity = 0.48 + (tier > 0 ? 0.2 : 0)
+      this.labelMaterial.opacity = 0.48
       this.label.scale.set(72, 18, 1 + Math.sin(time * 0.004 + this.index) * 0.025)
     }
   }
@@ -108,13 +103,5 @@ export class GalaxyStar {
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     return texture
-  }
-
-  private getTier() {
-    if (this.connections === 0) return 0
-    if (this.connections === 1) return 1
-    if (this.connections === 2) return 2
-    if (this.connections <= 4) return 3
-    return 4
   }
 }

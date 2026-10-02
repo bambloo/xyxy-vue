@@ -1,13 +1,11 @@
 import * as THREE from 'three'
 import { GalaxyStar } from './GalaxyStar'
-import { GalaxyWormhole } from './GalaxyWormhole'
 
 type GalaxyManagerOptions = {
   host: HTMLElement
   renderer: THREE.WebGLRenderer
   camera: THREE.PerspectiveCamera
   galaxy: THREE.Group
-  connectionGroup: THREE.Group
   starFields: THREE.Points[]
   starTexture: THREE.CanvasTexture
   geometries: THREE.BufferGeometry[]
@@ -19,10 +17,7 @@ const planetColors: [string, string, string] = ['#7ec8ff', '#a7e8ff', '#ffd27d']
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
-  private readonly wormholes: GalaxyWormhole[] = []
-  private readonly glowGeometry = new THREE.CylinderGeometry(1, 1, 1, 8)
   private selectionMarker?: THREE.Mesh
-  private selectedStar?: GalaxyStar
   private pointerStartX = 0
   private pointerStartY = 0
   private pointerRotationX = 0
@@ -34,15 +29,17 @@ export class GalaxyManager {
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
-    options.geometries.push(this.glowGeometry)
     const [spiralStars] = options.starFields.slice(1, 2)
     if (spiralStars) {
       const position = spiralStars.geometry.attributes.position
       if (position) {
         for (let index = 0; index < position.count; index += 1) {
-          this.getOrCreateStar(spiralStars, index, planetColors[1])
+          this.getOrCreateStar(
+            spiralStars,
+            index,
+            planetColors[(index * 7) % planetColors.length] ?? planetColors[1],
+          )
         }
-        this.createRandomConnections(spiralStars)
       }
     }
   }
@@ -92,7 +89,6 @@ export class GalaxyManager {
     const { galaxy } = this.options
     galaxy.rotation.y += (this.targetRotationY - galaxy.rotation.y) * 0.08 + 0.0018
     galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
-    this.wormholes.forEach((wormhole) => wormhole.update(time))
     this.stars.forEach((star) => star.update(time))
     if (this.selectionMarker) {
       const pulse = 1 + Math.sin(time * 0.008) * 0.14
@@ -105,9 +101,7 @@ export class GalaxyManager {
       this.options.galaxy.remove(this.selectionMarker)
       this.selectionMarker = undefined
     }
-    this.wormholes.length = 0
     this.stars.clear()
-    this.glowGeometry.dispose()
   }
 
   private getOrCreateStar(field: THREE.Points, index: number, color: string) {
@@ -127,75 +121,47 @@ export class GalaxyManager {
   }
 
   private selectStar(event: PointerEvent) {
-    const { renderer, camera, galaxy, connectionGroup, starFields } = this.options
+    const { renderer, camera, galaxy, starFields } = this.options
     const bounds = renderer.domElement.getBoundingClientRect()
-    const pointer = new THREE.Vector2(
-      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
-      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
-    )
-    const raycaster = new THREE.Raycaster()
-    raycaster.params.Points.threshold = 16
-    raycaster.setFromCamera(pointer, camera)
-    const hit = raycaster.intersectObjects(starFields, false)[0]
-    if (!hit || hit.index === undefined || !(hit.object instanceof THREE.Points)) return
-    const fieldIndex = Math.max(0, starFields.indexOf(hit.object))
+    galaxy.updateMatrixWorld(true)
+    const clickX = event.clientX - bounds.left
+    const clickY = event.clientY - bounds.top
+    let nearest: { field: THREE.Points; index: number; distance: number } | undefined
+    const projected = new THREE.Vector3()
+
+    starFields.forEach((field) => {
+      const position = field.geometry.attributes.position
+      if (!position) return
+      for (let index = 0; index < position.count; index += 1) {
+        projected.fromBufferAttribute(position as THREE.BufferAttribute, index)
+        projected.applyMatrix4(field.matrixWorld).project(camera)
+        const screenX = (projected.x + 1) * 0.5 * bounds.width
+        const screenY = (1 - projected.y) * 0.5 * bounds.height
+        const distance = Math.hypot(screenX - clickX, screenY - clickY)
+        if (!nearest || distance < nearest.distance) nearest = { field, index, distance }
+      }
+    })
+
+    if (!nearest || nearest.distance > 32) return
+    const fieldIndex = Math.max(0, starFields.indexOf(nearest.field))
     const star = this.getOrCreateStar(
-      hit.object,
-      hit.index,
+      nearest.field,
+      nearest.index,
       planetColors[fieldIndex % planetColors.length] ?? planetColors[0],
     )
-    if (!this.selectedStar) {
-      this.selectedStar = star
-      const markerGeometry = new THREE.TorusGeometry(13, 1.8, 8, 32)
-      const markerMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.86,
-        blending: THREE.AdditiveBlending,
-      })
-      this.selectionMarker = new THREE.Mesh(markerGeometry, markerMaterial)
-      this.selectionMarker.position.copy(star.position)
-      galaxy.add(this.selectionMarker)
-      this.options.geometries.push(markerGeometry)
-      this.options.materials.push(markerMaterial)
-      return
-    }
-    if (this.selectedStar !== star) this.addWormhole(this.selectedStar, star, 10)
     if (this.selectionMarker) galaxy.remove(this.selectionMarker)
-    this.selectedStar = undefined
     this.selectionMarker = undefined
-  }
-
-  private addWormhole(start: GalaxyStar, end: GalaxyStar, rayCount: number) {
-    const wormhole = new GalaxyWormhole(
-      start.position,
-      end.position,
-      rayCount,
-      this.options.connectionGroup,
-      {
-        geometry: this.glowGeometry,
-        geometries: this.options.geometries,
-        materials: this.options.materials,
-      },
-      start,
-      end,
-    )
-    this.wormholes.push(wormhole)
-  }
-
-  private createRandomConnections(field: THREE.Points) {
-    const position = field.geometry.attributes.position
-    if (!position) return
-    const indexes = Array.from({ length: position.count }, (_, index) => index)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, Math.ceil(position.count * 0.5))
-    for (let index = 0; index + 1 < indexes.length; index += 2) {
-      const startIndex = indexes[index]
-      const endIndex = indexes[index + 1]
-      if (startIndex === undefined || endIndex === undefined) continue
-      const start = this.getOrCreateStar(field, startIndex, planetColors[2])
-      const end = this.getOrCreateStar(field, endIndex, planetColors[2])
-      this.addWormhole(start, end, 1)
-    }
+    const markerGeometry = new THREE.TorusGeometry(13, 1.8, 8, 32)
+    const markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.86,
+      blending: THREE.AdditiveBlending,
+    })
+    this.selectionMarker = new THREE.Mesh(markerGeometry, markerMaterial)
+    this.selectionMarker.position.copy(star.position)
+    galaxy.add(this.selectionMarker)
+    this.options.geometries.push(markerGeometry)
+    this.options.materials.push(markerMaterial)
   }
 }
