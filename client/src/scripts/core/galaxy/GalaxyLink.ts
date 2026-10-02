@@ -21,22 +21,30 @@ export class GalaxyLink {
     bend.normalize().multiplyScalar(Math.min(42, direction.length() * 0.18))
     const control = start.position.clone().add(end.position).multiplyScalar(0.5).add(bend)
     const curve = new THREE.QuadraticBezierCurve3(start.position, control, end.position)
-    const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(28))
-    const color = new THREE.Color(start.color).lerp(new THREE.Color(end.color), 0.5)
+    const points = curve.getPoints(28)
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    const startColor = new THREE.Color(start.color)
+    const endColor = new THREE.Color(end.color)
+    const colors: number[] = []
+    points.forEach((_, index) => {
+      const color = startColor.clone().lerp(endColor, index / (points.length - 1))
+      colors.push(color.r, color.g, color.b)
+    })
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
 
     this.glowMaterial = new THREE.LineBasicMaterial({
-      color,
       transparent: true,
       opacity: 0.16,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      vertexColors: true,
     })
     this.coreMaterial = new THREE.LineBasicMaterial({
-      color: 0xd9f5ff,
       transparent: true,
       opacity: 0.42,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      vertexColors: true,
     })
     this.glow = new THREE.Line(geometry, this.glowMaterial)
     this.core = new THREE.Line(geometry, this.coreMaterial)

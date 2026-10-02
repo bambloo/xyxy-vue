@@ -13,7 +13,7 @@ type GalaxyManagerOptions = {
   materials: THREE.Material[]
 }
 
-const planetColors: [string, string, string] = ['#7ec8ff', '#a7e8ff', '#ffd27d']
+const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
 
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
@@ -37,11 +37,7 @@ export class GalaxyManager {
       const position = spiralStars.geometry.attributes.position
       if (position) {
         for (let index = 0; index < position.count; index += 1) {
-          this.getOrCreateStar(
-            spiralStars,
-            index,
-            planetColors[(index * 7) % planetColors.length] ?? planetColors[1],
-          )
+          this.getOrCreateStar(spiralStars, index, this.getRandomStarColor())
         }
       }
     }
@@ -150,12 +146,7 @@ export class GalaxyManager {
     })
 
     if (!nearest || nearest.distance > 32) return
-    const fieldIndex = Math.max(0, starFields.indexOf(nearest.field))
-    const star = this.getOrCreateStar(
-      nearest.field,
-      nearest.index,
-      planetColors[fieldIndex % planetColors.length] ?? planetColors[0],
-    )
+    const star = this.getOrCreateStar(nearest.field, nearest.index, this.getRandomStarColor())
     if (!this.selectedStar) {
       this.selectedStar = star
       this.showSelectionMarker(galaxy, star)
@@ -196,5 +187,9 @@ export class GalaxyManager {
     this.links.push(
       new GalaxyLink(start, end, galaxy, this.options.geometries, this.options.materials),
     )
+  }
+
+  private getRandomStarColor(): string {
+    return starColors[Math.floor(Math.random() * starColors.length)] ?? (starColors[0] as string)
   }
 }
