@@ -11,6 +11,7 @@ type AppState = 'loading' | 'ready' | 'empty'
 const route = useRoute()
 const auth = useAuthStore()
 const isHomeRoute = computed(() => route.name === 'home')
+const isGalaxyRoute = computed(() => route.name === 'galaxy')
 const tag = computed(() => {
   const routeTag = route.params.tag
   if (Array.isArray(routeTag)) return routeTag.join('/')
@@ -30,7 +31,7 @@ async function loadTagState() {
 
   if (!isTagRoute.value || !tag.value) {
     tagState.value = 'loading'
-    if (isHomeRoute.value) {
+    if (isHomeRoute.value || isGalaxyRoute.value) {
       appState.value = 'ready'
       return
     }
@@ -54,7 +55,7 @@ async function loadTagState() {
   }
 }
 
-watch([isLoginRoute, isHomeRoute, isTagRoute, tag], loadTagState, { immediate: true })
+watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, { immediate: true })
 </script>
 
 <template>

@@ -32,15 +32,6 @@ export class GalaxyManager {
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
-    const [spiralStars] = options.starFields.slice(1, 2)
-    if (spiralStars) {
-      const position = spiralStars.geometry.attributes.position
-      if (position) {
-        for (let index = 0; index < position.count; index += 1) {
-          this.getOrCreateStar(spiralStars, index, this.getRandomStarColor())
-        }
-      }
-    }
   }
 
   pointerDown(event: PointerEvent) {
@@ -129,18 +120,20 @@ export class GalaxyManager {
     let nearest: { field: THREE.Points; index: number; distance: number } | undefined
     const projected = new THREE.Vector3()
 
-    starFields.forEach((field) => {
-      const position = field.geometry.attributes.position
-      if (!position) return
-      for (let index = 0; index < position.count; index += 1) {
-        projected.fromBufferAttribute(position as THREE.BufferAttribute, index)
-        projected.applyMatrix4(field.matrixWorld).project(camera)
-        const screenX = (projected.x + 1) * 0.5 * bounds.width
-        const screenY = (1 - projected.y) * 0.5 * bounds.height
-        const distance = Math.hypot(screenX - clickX, screenY - clickY)
-        if (!nearest || distance < nearest.distance) nearest = { field, index, distance }
-      }
-    })
+    starFields
+      .filter((field) => field.userData.selectable === true)
+      .forEach((field) => {
+        const position = field.geometry.attributes.position
+        if (!position) return
+        for (let index = 0; index < position.count; index += 1) {
+          projected.fromBufferAttribute(position as THREE.BufferAttribute, index)
+          projected.applyMatrix4(field.matrixWorld).project(camera)
+          const screenX = (projected.x + 1) * 0.5 * bounds.width
+          const screenY = (1 - projected.y) * 0.5 * bounds.height
+          const distance = Math.hypot(screenX - clickX, screenY - clickY)
+          if (!nearest || distance < nearest.distance) nearest = { field, index, distance }
+        }
+      })
 
     if (!nearest || nearest.distance > 32) return
     const star = this.getOrCreateStar(nearest.field, nearest.index, this.getRandomStarColor())
