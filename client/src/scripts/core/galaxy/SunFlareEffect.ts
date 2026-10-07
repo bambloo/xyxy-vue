@@ -32,20 +32,17 @@ export class SunFlareEffect {
         vec2 r = u_res;
         vec2 p = (FC * 2.0 - r) / r.y;
         vec3 c = vec3(0.0);
-                  float a = i / 1.5 + t * 0.5;
-          vec2 q = p;
-          q.x = q.x + sin(q.y * 19.0 + t * 2.0 + i)
-            * 29.0 * (1.0 - smoothstep(-2.0, 0.0, q.y));
+        c += length(p - vec2(0, 0) * t) * 0.2;
 
-          float d = length(q - vec2(cos(a), sin(a))
-            * (0.4 * smoothstep(0.0, 0.5, -q.y)));
+        // for (float i = 0.0; i < 1.0; i++) {
+        //   float a = i / 1.5 + t * 0.5;
+        //   vec2 q = p;
 
-        for (float i = 0.0; i < 42.0; i++) {
+        //   float d = length(q - vec2(cos(a), sin(a)) * 0.1);
+        //   c += vec3(0.34, 0.30, 0.24) * (2.0 / d);
+        // }
 
-          c += vec3(0.34, 0.30, 0.24) * (0.015 / d);
-        }
-
-        vec3 col = c * c + 0.05;
+        vec3 col = 0.2 / (c * c + 0.05);
         float edgeFade = 1.0 - smoothstep(0.62, 0.88, length(p));
         float alpha = clamp(max(max(col.r, col.g), col.b) - 0.05, 0.0, 1.0) * edgeFade;
         gl_FragColor = vec4(col * alpha, alpha);

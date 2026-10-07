@@ -2,14 +2,18 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { SunFlareEffect } from '../scripts/core/galaxy/SunFlareEffect'
+import { MilkyWayBackground } from '../scripts/core/galaxy/MilkyWayBackground'
 
 const router = useRouter()
 const particleCanvas = ref<HTMLCanvasElement | null>(null)
+const backgroundCanvas = ref<HTMLCanvasElement | null>(null)
 const isEntering = ref(false)
 let navigationTimer = 0
 let sunFlareEffect: SunFlareEffect | undefined
+let milkyWayBackground: MilkyWayBackground | undefined
 
 onMounted(() => {
+  if (backgroundCanvas.value) milkyWayBackground = new MilkyWayBackground(backgroundCanvas.value)
   if (particleCanvas.value) sunFlareEffect = new SunFlareEffect(particleCanvas.value)
 })
 
@@ -36,12 +40,14 @@ function finishSunFlight(event: AnimationEvent) {
 
 onBeforeUnmount(() => {
   if (navigationTimer) window.clearTimeout(navigationTimer)
+  milkyWayBackground?.destroy()
   sunFlareEffect?.destroy()
 })
 </script>
 
 <template>
   <main class="aurora-home" :class="{ 'aurora-home--entering': isEntering }" aria-label="极光主页">
+    <canvas ref="backgroundCanvas" class="milky-way-background" aria-hidden="true"></canvas>
     <div class="aurora-shade" aria-hidden="true"></div>
     <button class="enter-galaxy" type="button" aria-label="进入星空" title="进入星空" :disabled="isEntering"
       @click="enterGalaxy" @animationend="finishSunFlight">
@@ -58,16 +64,22 @@ onBeforeUnmount(() => {
   height: 100dvh;
   min-height: 100vh;
   overflow: hidden;
-  background-color: #061326;
-  background-image: url('/aurora.jpg');
-  background-repeat: no-repeat;
-  background-position: center 42%;
-  background-size: cover;
+  background-color: #030711;
+}
+
+.milky-way-background {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .aurora-home::after {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   inset: 0;
   background: radial-gradient(circle at center, #030711 0%, #02050d 52%, #01030a 100%);
   content: '';
@@ -82,7 +94,7 @@ onBeforeUnmount(() => {
 
 .aurora-shade {
   position: absolute;
-  z-index: -1;
+  z-index: 1;
   inset: 0;
   background:
     linear-gradient(180deg, rgba(4, 10, 25, 0.12) 0%, transparent 42%, rgba(2, 8, 18, 0.44) 72%, #020813 100%),
@@ -92,7 +104,7 @@ onBeforeUnmount(() => {
 .enter-galaxy {
   --fireball-bottom: clamp(112px, 13vh, 168px);
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   left: 50%;
   bottom: var(--fireball-bottom);
   display: block;
