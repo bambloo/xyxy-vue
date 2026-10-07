@@ -16,6 +16,7 @@ type DestinationStar = {
   screenX: number
   screenY: number
   selected: boolean
+  revealsPortal: boolean
 }
 
 const DESTINATION_STAR_PIXELS = 500
@@ -118,6 +119,7 @@ export class GalaxyMeteorEffect {
     private readonly scene: THREE.Scene,
     private readonly camera: THREE.PerspectiveCamera,
     private readonly reducedMotion: boolean,
+    private readonly onBottomMeteorArrive: () => void = () => {},
   ) {
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
@@ -143,17 +145,23 @@ export class GalaxyMeteorEffect {
       toneMapped: false,
     })
     this.camera.getWorldDirection(this.orbitAxis)
+    const homeSunBottom = THREE.MathUtils.clamp(this.host.clientHeight * 0.13, 112, 168)
+    const homeSunCenterY = this.host.clientHeight - homeSunBottom - 66
+    const homeSunNdcY = 1 - (2 * homeSunCenterY) / Math.max(1, this.host.clientHeight)
     const targets = [
-      { x: -0.86, y: 0.78, rotations: 0.34, delay: 0, duration: 3900 },
-      { x: 0.86, y: 0.0, rotations: -0.38, delay: 520, duration: 4200 },
-      { x: 0.0, y: -0.86, rotations: 0.42, delay: 1040, duration: 4500 },
+      { x: -0.86, y: 0.78, rotations: 0.34, delay: 0, duration: 3900, revealsPortal: false },
+      { x: 0.86, y: 0.0, rotations: -0.38, delay: 520, duration: 4200, revealsPortal: false },
+      { x: 0.0, y: homeSunNdcY, rotations: 0.42, delay: 1040, duration: 4500, revealsPortal: true },
     ]
     const now = performance.now()
     targets.forEach((target) => {
       const endpoint = this.destinationFromScreen(target.x, target.y)
-      const destination = this.createDestination(endpoint, target.x, target.y)
+      const destination = this.createDestination(endpoint, target.x, target.y, target.revealsPortal)
       this.destinations.push(destination)
-      destination.group.visible = this.reducedMotion
+      destination.group.visible = this.reducedMotion && !target.revealsPortal
+      if (this.reducedMotion && target.revealsPortal) {
+        this.onBottomMeteorArrive()
+      }
       if (!this.reducedMotion) {
         this.spawnMeteor(
           destination,
@@ -218,8 +226,9 @@ export class GalaxyMeteorEffect {
         this.scene.remove(meteor.mesh)
         meteor.mesh.geometry.dispose()
         meteor.mesh.material.dispose()
-        meteor.destination.group.visible = true
+        meteor.destination.group.visible = !meteor.destination.revealsPortal
         meteor.destination.group.quaternion.copy(this.camera.quaternion)
+        if (meteor.destination.revealsPortal) this.onBottomMeteorArrive()
         this.activeMeteors.splice(index, 1)
         continue
       }
@@ -249,6 +258,7 @@ export class GalaxyMeteorEffect {
     position: THREE.Vector3,
     screenX: number,
     screenY: number,
+    revealsPortal: boolean,
   ): DestinationStar {
     const group = new THREE.Group()
     group.position.copy(position)
@@ -259,7 +269,7 @@ export class GalaxyMeteorEffect {
     ring.renderOrder = 21
     group.add(orb, ring)
     this.scene.add(group)
-    return { group, orb, ring, screenX, screenY, selected: false }
+    return { group, orb, ring, screenX, screenY, selected: false, revealsPortal }
   }
 
   private spawnMeteor(

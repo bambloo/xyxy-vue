@@ -48,8 +48,8 @@ onBeforeUnmount(() => effect?.destroy())
 <template>
   <button class="sun-portal-button" type="button" :aria-label="label" :title="title" :disabled="disabled"
     @pointerdown.stop="handlePointerDown" @pointermove.stop @pointerup.stop="handlePointerUp"
-    @pointercancel.stop="clearPointer"
-    @keydown.enter.prevent="emit('swipe-up')" @keydown.space.prevent="emit('swipe-up')">
+    @pointercancel.stop="clearPointer" @keydown.enter.prevent="emit('swipe-up')"
+    @keydown.space.prevent="emit('swipe-up')">
     <canvas ref="canvas" class="sun-portal-canvas" aria-hidden="true"></canvas>
   </button>
 </template>
