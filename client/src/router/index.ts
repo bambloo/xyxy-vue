@@ -1,5 +1,5 @@
 import GalaxyView from '@/views/GalaxyView.vue'
-import AuroraHomeView from '@/views/AuroraHomeView.vue'
+import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import TagUserView from '@/views/TagUserView.vue'
 import UserManagementView from '@/views/user/UserManagementView.vue'
@@ -33,7 +33,7 @@ const router = createRouter({
     {
       path: '/home',
       name: 'home',
-      component: AuroraHomeView,
+      component: HomeView,
     },
     {
       path: '/galaxy',
