@@ -74,6 +74,7 @@ export class MilkyWayBackground {
         float noise3 = computeFBMStars((uv + vec2(0.5, 0.1)) * 4.0 + u_time * 0.35);
         float starShape = noise1 * noise2 * noise3;
         starShape = clamp(starShape - 0.6 + 0.2, 0.0, 1.0);
+        starShape = pow(starShape, 1.25);
         float weight = starShape / 0.4;
         return weight * vec3(noise1 * 0.55, noise2 * 0.4, noise3) * 6.0;
       }
@@ -179,7 +180,7 @@ export class MilkyWayBackground {
   }
 
   private readonly resize = () => {
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1) * 0.58
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1) * 0.8
     const width = Math.max(1, Math.round(this.canvas.clientWidth * pixelRatio))
     const height = Math.max(1, Math.round(this.canvas.clientHeight * pixelRatio))
     if (this.canvas.width === width && this.canvas.height === height) return
