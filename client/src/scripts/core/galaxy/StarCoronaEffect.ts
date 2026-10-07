@@ -101,6 +101,158 @@ const fragmentShader = `
   }
 `
 
+const sunButtonFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform vec2 u_resolution;
+  uniform float u_time;
+
+  vec4 hash4(vec4 value) {
+    return fract(sin(value) * 1399763.5453123);
+  }
+
+  float noise4q(vec4 point) {
+    vec4 offsets = vec4(0.0, 0.25, 0.5, 0.75);
+    vec4 wCell = floor(point.wwww + offsets);
+    vec4 base = floor(point.xxxx + offsets)
+      + floor(point.yyyy + offsets) * 157.0
+      + floor(point.zzzz + offsets) * 113.0;
+    vec4 p1 = base + fract(wCell * 0.00390625) * vec4(164352.0, -164352.0, 163840.0, -163840.0);
+    vec4 p2 = base + fract((wCell + 1.0) * 0.00390625) * vec4(164352.0, -164352.0, 163840.0, -163840.0);
+    vec4 blendX = fract(point.xxxx + offsets);
+    vec4 blendY = fract(point.yyyy + offsets);
+    blendX = blendX * blendX * (3.0 - 2.0 * blendX);
+    blendY = blendY * blendY * (3.0 - 2.0 * blendY);
+    vec4 n1 = vec4(0.0, 1.0, 157.0, 158.0);
+    vec4 n2 = vec4(113.0, 114.0, 270.0, 271.0);
+    vec4 lowerA = mix(hash4(p1), hash4(n1.yyyy + p1), blendX);
+    vec4 lowerB = mix(hash4(n1.zzzz + p1), hash4(n1.wwww + p1), blendX);
+    vec4 upperA = mix(hash4(p2), hash4(n1.yyyy + p2), blendX);
+    vec4 upperB = mix(hash4(n1.zzzz + p2), hash4(n1.wwww + p2), blendX);
+    lowerA = mix(lowerA, lowerB, blendY);
+    upperA = mix(upperA, upperB, blendY);
+    lowerB = mix(hash4(n2.xxxx + p1), hash4(n2.yyyy + p1), blendX);
+    upperB = mix(hash4(n2.zzzz + p1), hash4(n2.wwww + p1), blendX);
+    lowerB = mix(lowerB, upperB, blendY);
+    upperB = mix(hash4(n2.xxxx + p2), hash4(n2.yyyy + p2), blendX);
+    vec4 upperC = mix(hash4(n2.zzzz + p2), hash4(n2.wwww + p2), blendX);
+    upperB = mix(upperB, upperC, blendY);
+    blendX = fract(point.zzzz + offsets);
+    blendY = fract(point.wwww + offsets);
+    blendX = blendX * blendX * (3.0 - 2.0 * blendX);
+    blendY = blendY * blendY * (3.0 - 2.0 * blendY);
+    lowerA = mix(lowerA, lowerB, blendX);
+    upperA = mix(upperA, upperB, blendX);
+    lowerA = mix(lowerA, upperA, blendY);
+    float value = dot(lowerA, vec4(0.25));
+    return value * value * (3.0 - 2.0 * value);
+  }
+
+  float noiseSphere(vec3 ray, vec3 position, float radius, mat3 rotation, float zoom, vec3 offset, float anim) {
+    float projection = dot(ray, position);
+    float distanceSquared = dot(position, position) - projection * projection;
+    float sum = 0.0;
+    float stepSize = 0.03125;
+    float scale = zoom / (stepSize * stepSize);
+    float amplitude = 5.0;
+    for (int index = 0; index < 3; index++) {
+      float radiusSquared = radius * radius;
+      if (distanceSquared < radiusSquared) {
+        float depth = sqrt(radiusSquared - distanceSquared);
+        vec3 surfacePoint = (ray * (projection - depth) - position) * rotation;
+        sum += abs(noise4q(vec4(surfacePoint * scale + offset * amplitude, anim * amplitude)) * stepSize);
+      }
+      amplitude -= 2.0;
+      stepSize *= 4.0;
+      scale *= 0.0625;
+      radius -= radius * 0.02;
+    }
+    return sum;
+  }
+
+  float ring(vec3 ray, vec3 position, float radius, float size) {
+    float projection = dot(ray, position);
+    float distanceSquared = dot(position, position) - projection * projection;
+    return max(0.0, 1.0 - size * abs(radius - sqrt(distanceSquared)));
+  }
+
+  float ringRayNoise(vec3 ray, vec3 position, float radius, float size, mat3 rotation, float anim) {
+    float projection = dot(ray, position);
+    vec3 projected = ray * projection - position;
+    float distanceToCenter = length(projected);
+    projected = normalize(projected * rotation);
+    float band = max(0.0, 1.0 - size * abs(radius - distanceToCenter));
+    float detail = pow(noise4q(vec4(projected, -anim + distanceToCenter)) * 2.0, 2.0);
+    float noise = 0.4;
+    float secondary = 1.0;
+    if (distanceToCenter > radius) {
+      noise = noise4q(vec4(projected * 10.0, -anim + distanceToCenter));
+      secondary = noise4q(vec4(projected * 50.0, -anim * 2.5 + distanceToCenter * 2.0)) * 2.0;
+    }
+    noise = noise * noise * detail * secondary;
+    return pow(band, 4.0) + band * band * noise;
+  }
+
+  vec4 noiseSpace(vec3 ray, vec3 position, float radius, mat3 rotation, float zoom, vec3 offset) {
+    float projection = dot(ray, position);
+    float distanceSquared = dot(position, position) - projection * projection;
+    float depth = sqrt(abs(radius * radius - distanceSquared));
+    vec3 surfacePoint = (ray * (projection - depth) - position) * rotation * (zoom / 0.09375);
+    float base = abs(noise4q(vec4(surfacePoint + offset, 0.0)) * 0.09375);
+    base += abs(noise4q(vec4(surfacePoint * 0.5 + offset, 0.0)) * 0.1875);
+    base += abs(noise4q(vec4(surfacePoint * 0.25 + offset, 0.0)) * 0.375);
+    return vec4(
+      base * 2.0,
+      abs(noise4q(vec4(surfacePoint * 0.1 + offset, 0.0))),
+      abs(noise4q(vec4(surfacePoint * 0.1 + offset * 6.0, 0.0))),
+      abs(noise4q(vec4(surfacePoint * 0.1 + offset * 13.0, 0.0)))
+    );
+  }
+
+  float sphereZero(vec3 ray, vec3 position, float radius) {
+    float projection = dot(ray, position);
+    float distanceSquared = dot(position, position) - projection * projection;
+    return distanceSquared < radius * radius ? 0.0 : 1.0;
+  }
+
+  void main() {
+    vec2 point = (vUv * 2.0 - 1.0) * vec2(u_resolution.x / u_resolution.y, 1.0);
+    float time = u_time;
+    float rotationX = time * 0.025;
+    float rotationY = -0.6;
+    vec2 sine = sin(vec2(rotationX, rotationY));
+    vec2 cosine = cos(vec2(rotationX, rotationY));
+    mat3 rotation = mat3(
+      vec3(cosine.x, 0.0, sine.x), vec3(0.0, 1.0, 0.0), vec3(-sine.x, 0.0, cosine.x)
+    );
+    rotation = mat3(
+      vec3(1.0, 0.0, 0.0), vec3(0.0, cosine.y, sine.y), vec3(0.0, -sine.y, cosine.y)
+    ) * rotation;
+    vec3 ray = normalize(vec3(point, 2.0));
+    vec3 position = vec3(0.0, 0.0, 3.0);
+    float body = pow(min(1.0, noiseSphere(ray, position, 1.0, rotation, 0.5, vec3(0.0), time) * 2.4), 2.0);
+    float detail = min(1.0, noiseSphere(ray, position, 1.0, rotation, 4.0, vec3(83.23, 34.34, 67.453), time) * 2.2);
+    vec3 color = mix(vec3(1.0, 1.0, 0.0), vec3(1.0), pow(body, 60.0)) * body;
+    color += mix(mix(vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 1.0), pow(detail, 2.0)), vec3(1.0), pow(detail, 10.0)) * detail;
+    color -= vec3(ring(ray, position, 1.03, 11.0)) * 2.0;
+    color = max(color, vec3(0.0));
+    float rays = ringRayNoise(ray, position, 0.96, 1.0, rotation, time);
+    color += mix(vec3(1.0, 0.6, 0.1), vec3(1.0, 0.95, 1.0), pow(rays, 3.0)) * rays;
+    float outside = sphereZero(ray, position, 0.9);
+    if (outside > 0.0) {
+      vec4 space = noiseSpace(ray, position, 100.0, rotation, 0.05, vec3(1.0, 2.0, 4.0));
+      space.x = pow(space.x, 3.0);
+      color += mix(mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), space.y * 1.9), vec3(0.9, 1.0, 0.1), space.w * 0.75)
+        * space.x * pow(space.z * 2.5, 3.0) * 0.2 * outside;
+    }
+    color = clamp(color, 0.0, 1.0);
+    float alpha = clamp(max(max(color.r, color.g), color.b), 0.0, 1.0);
+    float radialFade = 1.0 - smoothstep(0.48, 1.06, length(point));
+    alpha *= radialFade;
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`
+
 export class StarCoronaEffect extends THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> {
   constructor(size = 1) {
     const material = new THREE.ShaderMaterial({
@@ -132,6 +284,7 @@ export class StarCoronaEffect extends THREE.Mesh<THREE.PlaneGeometry, THREE.Shad
 export class StarCoronaCanvasEffect {
   private readonly gl: WebGLRenderingContext
   private readonly program: WebGLProgram
+  private readonly resolutionLocation: WebGLUniformLocation
   private readonly timeLocation: WebGLUniformLocation
   private frame = 0
   private readonly startTime = performance.now()
@@ -149,7 +302,7 @@ export class StarCoronaCanvasEffect {
       }
     `
     const compiledVertex = this.compileShader(gl.VERTEX_SHADER, canvasVertexShader)
-    const compiledFragment = this.compileShader(gl.FRAGMENT_SHADER, fragmentShader)
+    const compiledFragment = this.compileShader(gl.FRAGMENT_SHADER, sunButtonFragmentShader)
     const program = gl.createProgram()
     if (!program) throw new Error('Unable to create WebGL program')
     gl.attachShader(program, compiledVertex)
@@ -163,18 +316,10 @@ export class StarCoronaCanvasEffect {
 
     const resolutionLocation = gl.getUniformLocation(program, 'u_resolution')
     const timeLocation = gl.getUniformLocation(program, 'u_time')
-    const speedLocation = gl.getUniformLocation(program, 'u_speed')
-    const opacityLocation = gl.getUniformLocation(program, 'u_opacity')
-    const premultiplyLocation = gl.getUniformLocation(program, 'u_premultiply')
-    if (
-      resolutionLocation === null ||
-      timeLocation === null ||
-      speedLocation === null ||
-      opacityLocation === null ||
-      premultiplyLocation === null
-    ) {
+    if (resolutionLocation === null || timeLocation === null) {
       throw new Error('Unable to locate shader uniforms')
     }
+    this.resolutionLocation = resolutionLocation
     this.timeLocation = timeLocation
     canvas.width = 220 * Math.min(window.devicePixelRatio || 1, 2)
     canvas.height = canvas.width
@@ -187,10 +332,7 @@ export class StarCoronaCanvasEffect {
     gl.useProgram(program)
     gl.enableVertexAttribArray(0)
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
-    gl.uniform2f(resolutionLocation, 1, 1)
-    gl.uniform1f(speedLocation, 0.6)
-    gl.uniform1f(opacityLocation, 1)
-    gl.uniform1f(premultiplyLocation, 1)
+    gl.uniform2f(resolutionLocation, canvas.width, canvas.height)
     gl.clearColor(0, 0, 0, 0)
     this.render()
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -224,6 +366,7 @@ export class StarCoronaCanvasEffect {
   private render() {
     this.gl.clear(this.gl.COLOR_BUFFER_BIT)
     this.gl.useProgram(this.program)
+    this.gl.uniform2f(this.resolutionLocation, this.canvas.width, this.canvas.height)
     this.gl.uniform1f(this.timeLocation, (performance.now() - this.startTime) * 0.001)
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3)
   }

@@ -1,20 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { StarCoronaCanvasEffect } from '../scripts/core/galaxy/StarCoronaEffect'
+import SunPortalButton from '../components/SunPortalButton.vue'
 import { MilkyWayBackground } from '../scripts/core/galaxy/MilkyWayBackground'
 
 const router = useRouter()
-const particleCanvas = ref<HTMLCanvasElement | null>(null)
 const backgroundCanvas = ref<HTMLCanvasElement | null>(null)
 const isEntering = ref(false)
 let navigationTimer = 0
-let sunFlareEffect: StarCoronaCanvasEffect | undefined
 let milkyWayBackground: MilkyWayBackground | undefined
 
 onMounted(() => {
   if (backgroundCanvas.value) milkyWayBackground = new MilkyWayBackground(backgroundCanvas.value)
-  if (particleCanvas.value) sunFlareEffect = new StarCoronaCanvasEffect(particleCanvas.value)
 })
 
 function navigateToGalaxy() {
@@ -41,7 +38,6 @@ function finishSunFlight(event: AnimationEvent) {
 onBeforeUnmount(() => {
   if (navigationTimer) window.clearTimeout(navigationTimer)
   milkyWayBackground?.destroy()
-  sunFlareEffect?.destroy()
 })
 </script>
 
@@ -49,10 +45,8 @@ onBeforeUnmount(() => {
   <main class="aurora-home" :class="{ 'aurora-home--entering': isEntering }" aria-label="极光主页">
     <canvas ref="backgroundCanvas" class="milky-way-background" aria-hidden="true"></canvas>
     <div class="aurora-shade" aria-hidden="true"></div>
-    <button class="enter-galaxy" type="button" aria-label="进入星空" title="进入星空" :disabled="isEntering"
-      @click="enterGalaxy" @animationend="finishSunFlight">
-      <canvas ref="particleCanvas" class="sun-flare-effect" aria-hidden="true"></canvas>
-    </button>
+    <SunPortalButton class="enter-galaxy" :disabled="isEntering" @swipe-up="enterGalaxy"
+      @animationend="finishSunFlight" />
   </main>
 </template>
 
@@ -107,42 +101,7 @@ onBeforeUnmount(() => {
   z-index: 3;
   left: 50%;
   bottom: var(--fireball-bottom);
-  display: block;
-  width: 132px;
-  height: 132px;
-  padding: 0;
   transform: translateX(-50%);
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #fff9dc;
-  filter: drop-shadow(0 0 15px rgba(255, 207, 31, 0.7));
-  cursor: pointer;
-  transition: filter 180ms ease;
-}
-
-.enter-galaxy:hover {
-  filter: drop-shadow(0 0 23px rgba(255, 226, 69, 0.95));
-}
-
-.enter-galaxy:focus-visible {
-  outline: 2px solid #d9ffff;
-  outline-offset: 5px;
-}
-
-.sun-flare-effect {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  display: block;
-  transform: translate(-50%, -50%);
-}
-
-.sun-flare-effect {
-  z-index: 3;
-  width: 184px;
-  height: 184px;
-  pointer-events: none;
 }
 
 .aurora-home--entering .enter-galaxy {
@@ -168,10 +127,6 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .enter-galaxy {
-    transition: none;
-  }
-
   .aurora-home::after {
     transition: none;
   }
