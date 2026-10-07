@@ -1,6 +1,7 @@
 import express from 'express'
 import { errout, logout, proxy_console } from './util/logger-helper'
 import { proxy_router } from './util/router-proxy'
+import { start_daily_fortune_schedule } from './core/manager/daily-fortune'
 import { dirname, join } from 'path'
 import body_parser from 'body-parser'
 import { fileURLToPath } from 'url'
@@ -33,6 +34,7 @@ application
   .listen(Number(process.env.PORT) || 1992)
   .on('listening', () => {
     logout('Server Listening')
+    start_daily_fortune_schedule()
   })
   .on('error', (err) => {
     logout(err)

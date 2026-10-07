@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { Request, Response } from 'express'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
+import { daily_session_manager } from '../../core/manager/daily-session'
 import { response } from '../../util/secretary'
 import { issue_session } from '../../util/session'
 import { to_public_user } from '../../core/entity/user'
@@ -35,10 +36,12 @@ export default function handler(params: { [key: string]: unknown }, req: Request
         return response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误')
       }
 
-      const token = issue_session(req, res, user)
-      return response(res, BamblooStatusCode.Success, '登录成功', {
-        ...to_public_user(user),
-        token,
+      return daily_session_manager.recordLogin(user.tag).then(() => {
+        const token = issue_session(req, res, user)
+        return response(res, BamblooStatusCode.Success, '登录成功', {
+          ...to_public_user(user),
+          token,
+        })
       })
     })
     .catch(() => response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误'))
