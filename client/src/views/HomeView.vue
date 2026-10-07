@@ -49,6 +49,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .galaxy-demo {
+  position: relative;
+  isolation: isolate;
   width: 100vw;
   height: 100dvh;
   min-height: 100vh;

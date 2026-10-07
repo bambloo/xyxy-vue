@@ -55,8 +55,8 @@ export class GalaxyManager {
     )
   }
 
-  pointerUp(event: PointerEvent) {
-    if (!this.pointerMoved) this.selectStar(event)
+  pointerUp(event: PointerEvent, suppressSelection = false) {
+    if (!this.pointerMoved && !suppressSelection) this.selectStar(event)
     this.isDragging = false
     this.options.host.releasePointerCapture(event.pointerId)
   }

@@ -1,10 +1,12 @@
 import * as THREE from 'three'
+import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
 import { GaussianCloudDistribution } from './distribution/GaussianCloudDistribution'
 
 export class GalaxyScene {
   private readonly host: HTMLElement
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   private animationFrame = 0
   private renderer?: THREE.WebGLRenderer
   private resizeObserver?: ResizeObserver
@@ -15,6 +17,7 @@ export class GalaxyScene {
   private geometries: THREE.BufferGeometry[] = []
   private materials: THREE.Material[] = []
   private starTexture?: THREE.CanvasTexture
+  private meteorEffect?: GalaxyMeteorEffect
   private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
   constructor(host: HTMLElement) {
@@ -23,6 +26,7 @@ export class GalaxyScene {
   }
 
   pointerDown(event: PointerEvent) {
+    this.meteorEffect?.pointerDown(event)
     this.manager?.pointerDown(event)
   }
 
@@ -31,7 +35,8 @@ export class GalaxyScene {
   }
 
   pointerUp(event: PointerEvent) {
-    this.manager?.pointerUp(event)
+    const hitDestination = this.meteorEffect?.pointerUp(event) ?? false
+    this.manager?.pointerUp(event, hitDestination)
   }
 
   wheel(event: WheelEvent) {
@@ -46,6 +51,7 @@ export class GalaxyScene {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()
     this.manager?.destroy()
+    this.meteorEffect?.destroy()
     this.geometries.forEach((geometry) => geometry.dispose())
     this.materials.forEach((material) => material.dispose())
     this.renderer?.dispose()
@@ -59,6 +65,7 @@ export class GalaxyScene {
     this.camera = undefined
     this.galaxy = undefined
     this.starTexture = undefined
+    this.meteorEffect = undefined
   }
 
   private makeStarTexture() {
@@ -122,7 +129,6 @@ export class GalaxyScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.host.appendChild(this.renderer.domElement)
-
     this.galaxy = new THREE.Group()
     const distantStars = this.makeStars(4800, 980, 2.4, 0.78)
     const spiralStars = this.makeStars(2600, 520, 3.8, 0.92)
@@ -130,6 +136,12 @@ export class GalaxyScene {
     const starFields = [distantStars, spiralStars, innerStars]
     this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
+    this.meteorEffect = new GalaxyMeteorEffect(
+      this.host,
+      this.scene,
+      this.camera,
+      this.reducedMotion,
+    )
     this.manager = new GalaxyManager({
       host: this.host,
       renderer: this.renderer,
@@ -151,12 +163,13 @@ export class GalaxyScene {
     this.resizeObserver.observe(this.host)
     resize()
 
-    const animate = () => {
+    const animate = (timestamp: number) => {
       if (!this.galaxy || !this.camera || !this.renderer || !this.scene || !this.manager) return
+      this.meteorEffect?.update(timestamp)
       this.manager.update(performance.now())
       this.renderer.render(this.scene, this.camera)
       this.animationFrame = requestAnimationFrame(animate)
     }
-    animate()
+    animate(performance.now())
   }
 }

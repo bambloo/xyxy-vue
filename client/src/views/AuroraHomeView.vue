@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { SunFlareEffect } from '../scripts/core/galaxy/SunFlareEffect'
+import { StarCoronaCanvasEffect } from '../scripts/core/galaxy/StarCoronaEffect'
 import { MilkyWayBackground } from '../scripts/core/galaxy/MilkyWayBackground'
 
 const router = useRouter()
@@ -9,12 +9,12 @@ const particleCanvas = ref<HTMLCanvasElement | null>(null)
 const backgroundCanvas = ref<HTMLCanvasElement | null>(null)
 const isEntering = ref(false)
 let navigationTimer = 0
-let sunFlareEffect: SunFlareEffect | undefined
+let sunFlareEffect: StarCoronaCanvasEffect | undefined
 let milkyWayBackground: MilkyWayBackground | undefined
 
 onMounted(() => {
   if (backgroundCanvas.value) milkyWayBackground = new MilkyWayBackground(backgroundCanvas.value)
-  if (particleCanvas.value) sunFlareEffect = new SunFlareEffect(particleCanvas.value)
+  if (particleCanvas.value) sunFlareEffect = new StarCoronaCanvasEffect(particleCanvas.value)
 })
 
 function navigateToGalaxy() {
