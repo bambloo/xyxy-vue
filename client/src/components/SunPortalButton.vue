@@ -14,6 +14,7 @@ withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'swipe-up': []
+  'swipe-down': []
 }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -35,7 +36,8 @@ function handlePointerUp(event: PointerEvent) {
   const deltaY = pointerStart.y - event.clientY
   const deltaX = Math.abs(pointerStart.x - event.clientX)
   pointerStart = undefined
-  if (deltaY >= 48 && deltaY > deltaX) emit('swipe-up')
+  if (Math.abs(deltaY) < 48 || Math.abs(deltaY) <= deltaX) return
+  emit(deltaY > 0 ? 'swipe-up' : 'swipe-down')
 }
 
 function clearPointer() {
@@ -49,7 +51,8 @@ onBeforeUnmount(() => effect?.destroy())
   <button class="sun-portal-button" type="button" :aria-label="label" :title="title" :disabled="disabled"
     @pointerdown.stop="handlePointerDown" @pointermove.stop @pointerup.stop="handlePointerUp"
     @pointercancel.stop="clearPointer" @keydown.enter.prevent="emit('swipe-up')"
-    @keydown.space.prevent="emit('swipe-up')">
+    @keydown.space.prevent="emit('swipe-up')" @keydown.arrow-up.prevent="emit('swipe-up')"
+    @keydown.arrow-down.prevent="emit('swipe-down')">
     <canvas ref="canvas" class="sun-portal-canvas" aria-hidden="true"></canvas>
   </button>
 </template>
@@ -58,14 +61,14 @@ onBeforeUnmount(() => effect?.destroy())
 .sun-portal-button {
   position: relative;
   display: block;
-  width: 132px;
-  height: 132px;
+  width: 92.4px;
+  height: 92.4px;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
   color: #fff9dc;
-  filter: drop-shadow(0 0 15px rgba(255, 207, 31, 0.7));
+  filter: drop-shadow(0 0 10.5px rgba(255, 207, 31, 0.7));
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -73,7 +76,7 @@ onBeforeUnmount(() => effect?.destroy())
 }
 
 .sun-portal-button:hover:not(:disabled) {
-  filter: drop-shadow(0 0 23px rgba(255, 226, 69, 0.95));
+  filter: drop-shadow(0 0 16.1px rgba(255, 226, 69, 0.95));
 }
 
 .sun-portal-button:focus-visible {
@@ -95,8 +98,8 @@ onBeforeUnmount(() => effect?.destroy())
   top: 50%;
   z-index: 1;
   display: block;
-  width: 184px;
-  height: 184px;
+  width: 128.8px;
+  height: 128.8px;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }

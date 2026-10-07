@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
+import SunPortalButton from '@/components/SunPortalButton.vue'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const isHomeRoute = computed(() => route.name === 'home')
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
+const isPortalRoute = computed(() => isHomeRoute.value || isGalaxyRoute.value)
+const portalLabel = computed(() => isHomeRoute.value ? '上划进入星空' : '下滑返回主页')
 const tag = computed(() => {
   const routeTag = route.params.tag
   if (Array.isArray(routeTag)) return routeTag.join('/')
@@ -56,6 +60,14 @@ async function loadTagState() {
 }
 
 watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, { immediate: true })
+
+function handlePortalSwipeUp() {
+  if (isHomeRoute.value) void router.push({ name: 'galaxy' })
+}
+
+function handlePortalSwipeDown() {
+  if (isGalaxyRoute.value) void router.push({ name: 'home' })
+}
 </script>
 
 <template>
@@ -67,6 +79,8 @@ watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState,
     </template>
     <RouterView v-else-if="appState === 'ready'" />
     <div v-else class="empty-page" aria-hidden="true"></div>
+    <SunPortalButton v-if="isPortalRoute" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
+      @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown" />
   </div>
 </template>
 
@@ -106,5 +120,13 @@ body {
 
 .empty-page {
   min-height: 100vh;
+}
+
+.sun-portal-control {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: clamp(112px, 13vh, 168px);
+  transform: translateX(-50%);
 }
 </style>

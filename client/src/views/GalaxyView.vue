@@ -1,15 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
-import SunPortalButton from '../components/SunPortalButton.vue'
 
 const canvasHost = ref<HTMLElement | null>(null)
-const isSunPortalVisible = ref(false)
 let galaxyScene: GalaxyScene | undefined
-
-function resetGalaxy() {
-  galaxyScene?.resetView()
-}
 
 function handlePointerDown(event: PointerEvent) {
   galaxyScene?.pointerDown(event)
@@ -28,11 +22,7 @@ function handleWheel(event: WheelEvent) {
 }
 
 onMounted(() => {
-  if (canvasHost.value) {
-    galaxyScene = new GalaxyScene(canvasHost.value, () => {
-      isSunPortalVisible.value = true
-    })
-  }
+  if (canvasHost.value) galaxyScene = new GalaxyScene(canvasHost.value)
 })
 
 onBeforeUnmount(() => {
@@ -45,10 +35,6 @@ onBeforeUnmount(() => {
   <main class="galaxy-demo" aria-label="旋转星空 Demo">
     <section ref="canvasHost" class="galaxy-canvas" @pointerdown="handlePointerDown" @pointermove="handlePointerMove"
       @pointerup="handlePointerUp" @pointercancel="handlePointerUp" @wheel.prevent="handleWheel"></section>
-    <Transition name="portal-arrive">
-      <SunPortalButton v-if="isSunPortalVisible" class="galaxy-control" label="上划重置星空视角" title="上划重置星空视角"
-        @swipe-up="resetGalaxy" />
-    </Transition>
   </main>
 </template>
 
@@ -78,26 +64,6 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-.galaxy-control {
-  --fireball-bottom: clamp(112px, 13vh, 168px);
-  position: absolute;
-  left: 50%;
-  bottom: var(--fireball-bottom);
-  width: 132px;
-  height: 132px;
-  z-index: 2;
-  transform: translateX(-50%) scale(1);
-}
-
-.portal-arrive-enter-active {
-  transition: opacity 900ms ease-out, transform 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.portal-arrive-enter-from {
-  opacity: 0;
-  transform: translateX(-50%) scale(0.12);
-}
-
 .galaxy-canvas :deep(canvas) {
   position: absolute;
   inset: 0;
@@ -105,11 +71,5 @@ onBeforeUnmount(() => {
   max-width: none;
   width: 100%;
   height: 100%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .portal-arrive-enter-active {
-    transition: none;
-  }
 }
 </style>

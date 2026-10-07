@@ -6,7 +6,6 @@ import { GaussianCloudDistribution } from './distribution/GaussianCloudDistribut
 
 export class GalaxyScene {
   private readonly host: HTMLElement
-  private readonly onBottomMeteorArrive: () => void
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   private animationFrame = 0
   private renderer?: THREE.WebGLRenderer
@@ -21,9 +20,8 @@ export class GalaxyScene {
   private meteorEffect?: GalaxyMeteorEffect
   private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
-  constructor(host: HTMLElement, onBottomMeteorArrive: () => void = () => {}) {
+  constructor(host: HTMLElement) {
     this.host = host
-    this.onBottomMeteorArrive = onBottomMeteorArrive
     this.createGalaxy()
   }
 
@@ -143,7 +141,6 @@ export class GalaxyScene {
       this.scene,
       this.camera,
       this.reducedMotion,
-      this.onBottomMeteorArrive,
     )
     this.manager = new GalaxyManager({
       host: this.host,

@@ -119,7 +119,6 @@ export class GalaxyMeteorEffect {
     private readonly scene: THREE.Scene,
     private readonly camera: THREE.PerspectiveCamera,
     private readonly reducedMotion: boolean,
-    private readonly onBottomMeteorArrive: () => void = () => {},
   ) {
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
@@ -146,7 +145,7 @@ export class GalaxyMeteorEffect {
     })
     this.camera.getWorldDirection(this.orbitAxis)
     const homeSunBottom = THREE.MathUtils.clamp(this.host.clientHeight * 0.13, 112, 168)
-    const homeSunCenterY = this.host.clientHeight - homeSunBottom - 66
+    const homeSunCenterY = this.host.clientHeight - homeSunBottom - 46.2
     const homeSunNdcY = 1 - (2 * homeSunCenterY) / Math.max(1, this.host.clientHeight)
     const targets = [
       { x: -0.86, y: 0.78, rotations: 0.34, delay: 0, duration: 3900, revealsPortal: false },
@@ -159,9 +158,6 @@ export class GalaxyMeteorEffect {
       const destination = this.createDestination(endpoint, target.x, target.y, target.revealsPortal)
       this.destinations.push(destination)
       destination.group.visible = this.reducedMotion && !target.revealsPortal
-      if (this.reducedMotion && target.revealsPortal) {
-        this.onBottomMeteorArrive()
-      }
       if (!this.reducedMotion) {
         this.spawnMeteor(
           destination,
@@ -228,7 +224,6 @@ export class GalaxyMeteorEffect {
         meteor.mesh.material.dispose()
         meteor.destination.group.visible = !meteor.destination.revealsPortal
         meteor.destination.group.quaternion.copy(this.camera.quaternion)
-        if (meteor.destination.revealsPortal) this.onBottomMeteorArrive()
         this.activeMeteors.splice(index, 1)
         continue
       }
@@ -264,6 +259,7 @@ export class GalaxyMeteorEffect {
     group.position.copy(position)
     group.quaternion.copy(this.camera.quaternion)
     const orb = new THREE.Mesh(this.starGeometry, this.starMaterial)
+    orb.visible = !revealsPortal
     const ring = new THREE.Mesh(this.ringGeometry, this.ringMaterial)
     ring.visible = false
     ring.renderOrder = 21
