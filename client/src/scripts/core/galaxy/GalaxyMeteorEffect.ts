@@ -144,13 +144,17 @@ export class GalaxyMeteorEffect {
       toneMapped: false,
     })
     this.camera.getWorldDirection(this.orbitAxis)
-    const homeSunBottom = THREE.MathUtils.clamp(this.host.clientHeight * 0.13, 112, 168)
-    const homeSunCenterY = this.host.clientHeight - homeSunBottom - 46.2
-    const homeSunNdcY = 1 - (2 * homeSunCenterY) / Math.max(1, this.host.clientHeight)
+    const mainStarPosition = this.mainStarScreenPosition()
     const targets = [
       { x: -0.86, y: 0.78, rotations: 0.34, delay: 0, duration: 3900, revealsPortal: false },
       { x: 0.86, y: 0.0, rotations: -0.38, delay: 520, duration: 4200, revealsPortal: false },
-      { x: 0.0, y: homeSunNdcY, rotations: 0.42, delay: 1040, duration: 4500, revealsPortal: true },
+      {
+        ...mainStarPosition,
+        rotations: 0.42,
+        delay: 1040,
+        duration: 4500,
+        revealsPortal: true,
+      },
     ]
     const now = performance.now()
     targets.forEach((target) => {
@@ -196,7 +200,12 @@ export class GalaxyMeteorEffect {
 
   update(nowMs: number) {
     this.camera.updateMatrixWorld(true)
+    const mainStarPosition = this.mainStarScreenPosition()
     this.destinations.forEach((destination, index) => {
+      if (destination.revealsPortal) {
+        destination.screenX = mainStarPosition.x
+        destination.screenY = mainStarPosition.y
+      }
       destination.group.position.copy(
         this.destinationFromScreen(destination.screenX, destination.screenY),
       )
@@ -378,5 +387,21 @@ export class GalaxyMeteorEffect {
   private cameraBounds() {
     const { left, top, width, height } = this.host.getBoundingClientRect()
     return { left, top, width, height }
+  }
+
+  private mainStarScreenPosition() {
+    const bounds = this.cameraBounds()
+    const button = document.querySelector<HTMLElement>('.sun-portal-control')
+    const buttonBounds = button?.getBoundingClientRect()
+    if (buttonBounds && bounds.width > 0 && bounds.height > 0) {
+      return {
+        x: ((buttonBounds.left + buttonBounds.width / 2 - bounds.left) / bounds.width) * 2 - 1,
+        y: 1 - ((buttonBounds.top + buttonBounds.height / 2 - bounds.top) / bounds.height) * 2,
+      }
+    }
+
+    const bottom = THREE.MathUtils.clamp(this.host.clientHeight * 0.13, 112, 168)
+    const centerY = this.host.clientHeight - bottom - 46.2
+    return { x: 0, y: 1 - (2 * centerY) / Math.max(1, this.host.clientHeight) }
   }
 }

@@ -77,7 +77,11 @@ function handlePortalSwipeDown() {
         :active="tagState === 'active'" />
       <div v-else class="empty-page" aria-hidden="true"></div>
     </template>
-    <RouterView v-else-if="appState === 'ready'" />
+    <RouterView v-else-if="appState === 'ready'" v-slot="{ Component }">
+      <Transition :name="isPortalRoute ? 'portal-route' : 'route-instant'">
+        <component :is="Component" :key="route.name" />
+      </Transition>
+    </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
     <SunPortalButton v-if="isPortalRoute" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
       @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown" />
@@ -122,11 +126,37 @@ body {
   min-height: 100vh;
 }
 
-.sun-portal-control {
+.app-shell>.sun-portal-control {
   position: fixed;
   z-index: 20;
-  left: 50%;
+  left: 50vw;
   bottom: clamp(112px, 13vh, 168px);
   transform: translateX(-50%);
+}
+
+.portal-route-enter-active,
+.portal-route-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  transition: opacity 420ms ease, transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.portal-route-enter-from {
+  opacity: 0;
+  transform: scale(0.985);
+}
+
+.portal-route-leave-to {
+  opacity: 0;
+  transform: scale(1.015);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .portal-route-enter-active,
+  .portal-route-leave-active {
+    transition: none;
+  }
 }
 </style>
