@@ -14,6 +14,7 @@ interface WritingVariable {
   id: number
   name: string
   instruction: string
+  validationType: string
   example: string
   calmInstruction: string
   noHumorInstruction: string
@@ -109,6 +110,7 @@ const variables = readRows('写法变量池')
     id: asNumber(row[2], '写法变量池.编号'),
     name: asText(row[3]),
     instruction: asText(row[4]),
+    validationType: asText(row[7]),
     example: asText(row[5]),
     calmInstruction: asText(row[8]),
     noHumorInstruction: asText(row[9]),
@@ -189,6 +191,66 @@ export function current_time_name(date = new Date()): TimeName {
   return time_name_for_index(current_time_index(date))
 }
 
+function isAngleAvailable(variable: WritingVariable, now: Date): boolean {
+  const condition = variable.validationType
+  if (condition === 'unuse') return false
+
+  if (!condition.startsWith('time_after:') && !condition.startsWith('time_before:')) {
+    return true
+  }
+  const timeCondition = /^(time_after|time_before):(\d{4})$/.exec(condition)
+  if (!timeCondition) {
+    throw new Error(`角度变量 ${variable.id} 的时间限制格式无效：${condition}`)
+  }
+
+  const hours = Number(timeCondition[2].slice(0, 2))
+  const minutes = Number(timeCondition[2].slice(2))
+  if (hours > 23 || minutes > 59) {
+    throw new Error(`角度变量 ${variable.id} 的时间限制无效：${condition}`)
+  }
+
+  const limit = hours * 60 + minutes
+  const current = now.getHours() * 60 + now.getMinutes()
+  return timeCondition[1] === 'time_after' ? current >= limit : current <= limit
+}
+
+function openingValidationInstruction(variable: WritingVariable, user: PromptUser): string {
+  const name = user.name?.trim() || '用户'
+  const validationType = variable.validationType
+  if (!validationType) return ''
+
+  if (validationType.startsWith('starts_with_any:')) {
+    const prefixes = validationType.slice('starts_with_any:'.length).split('|').filter(Boolean)
+    if (!prefixes.length) {
+      throw new Error(`开头变量 ${variable.id} 的校验类型没有有效前缀`)
+    }
+    return `正文必须以以下任一词语开头：${prefixes.map((prefix) => `“${prefix}”`).join('、')}。`
+  }
+
+  switch (validationType) {
+    case 'starts_with_name':
+      return `正文必须以用户称呼“${name}”开头。`
+    case 'festival_prefix':
+      return '正文前10个字内必须点出当天的节日或相关习俗。'
+    case 'weather_prefix':
+      return '第一句必须写当天的天气或气温。'
+    case 'time_prefix':
+      return '正文必须以一个具体时间点或时段开头。'
+    case 'starts_with_digit':
+      return '正文必须以阿拉伯数字或中文数字开头。'
+    case 'first_sentence_question':
+      return '第一句必须是问句。'
+    default:
+      throw new Error(`开头变量 ${variable.id} 使用了不支持的校验类型：${validationType}`)
+  }
+}
+
+function writingInstruction(variable: WritingVariable, user: PromptUser): string {
+  const validation =
+    variable.dimension === '开头' ? openingValidationInstruction(variable, user) : ''
+  return [variable.instruction, validation].filter(Boolean).join(' ')
+}
+
 function selectVariable(
   user: PromptUser,
   applies: string,
@@ -197,13 +259,22 @@ function selectVariable(
   dayNumber: number,
   specialRules: string[],
   timeIndex?: number,
+  now = new Date(),
 ): WritingVariable {
-  const options = variables
+  let options = variables
     .filter((variable) => variable.applies === applies && variable.dimension === dimension)
     .sort((left, right) => left.id - right.id)
-  const count = asNumber(config.get(`${configKey}.数量`), `${configKey}.数量`)
-  if (options.length !== count) {
-    throw new Error(`${configKey} 变量数量为 ${options.length}，与工作簿配置 ${count} 不一致`)
+  const configuredCount = asNumber(config.get(`${configKey}.数量`), `${configKey}.数量`)
+  if (options.length !== configuredCount) {
+    throw new Error(
+      `${configKey} 变量数量为 ${options.length}，与工作簿配置 ${configuredCount} 不一致`,
+    )
+  }
+  if (applies === '锦言' && dimension === '角度') {
+    options = options.filter((option) => isAngleAvailable(option, now))
+    if (!options.length) {
+      throw new Error(`${configKey} 当前时间没有可用的角度变量`)
+    }
   }
 
   const multiplierR = asNumber(config.get(`${configKey}.乘数r`), `${configKey}.乘数r`)
@@ -216,9 +287,9 @@ function selectVariable(
         : asNumber(config.get(`${configKey}.时辰偏移`), `${configKey}.时辰偏移`) * timeIndex
     index += timeOffset
   }
-  index = positiveModulo(index, count)
-  let selected = options.find((option) => option.id === index)
-  if (!selected) throw new Error(`${configKey} 未找到编号 ${index} 的写法变量`)
+  index = positiveModulo(index, options.length)
+  let selected = options[index]
+  if (!selected) throw new Error(`${configKey} 未找到候选位置 ${index} 的写法变量`)
 
   if (specialRules.some((rule) => rule.includes('锁定沉静')) && dimension === '语气') {
     selected = options.find((option) => option.name === '沉静') ?? selected
@@ -257,7 +328,7 @@ function selectTimeAction(user: PromptUser, dayNumber: number, theme: TimeTheme)
   return selected
 }
 
-export function build_daily_prompt(user: PromptUser, date: string): string {
+export function build_daily_prompt(user: PromptUser, date: string, now = new Date()): string {
   const dayNumber = dayNumberFor(date)
   const specialRules = specialDayRules.filter((item) => item.date === date).map((item) => item.rule)
   const selected = promptDimensions.map((dimension) =>
@@ -268,6 +339,8 @@ export function build_daily_prompt(user: PromptUser, date: string): string {
       dimension.configKey,
       dayNumber,
       specialRules,
+      undefined,
+      now,
     ),
   )
   const wordLimit = `${asNumber(config.get('锦言.字数下限'), '锦言.字数下限')}-${asNumber(config.get('锦言.字数上限'), '锦言.字数上限')}`
@@ -277,7 +350,8 @@ export function build_daily_prompt(user: PromptUser, date: string): string {
     user.hobbies?.trim() ? `兴趣参考：${user.hobbies.trim()}` : '',
     '请按以下从工作簿读取的写作指令创作，不要输出指令说明：',
     ...selected.map(
-      (variable) => `【${variable.dimension}：${variable.name}】${variable.instruction}`,
+      (variable) =>
+        `【${variable.dimension}：${variable.name}】${writingInstruction(variable, user)}`,
     ),
     ...selected
       .filter((variable) => variable.example)
@@ -318,7 +392,8 @@ export function build_time_prompt(user: PromptUser, date: string, timeIndex: num
     `动作场景：${action.scene}；强度：${action.intensity}。`,
     '「锦言+时辰」写法变量适用于每日锦言与时辰锦言；请按以下工作簿指令创作，不要输出指令说明：',
     ...selected.map(
-      (variable) => `【${variable.dimension}：${variable.name}】${variable.instruction}`,
+      (variable) =>
+        `【${variable.dimension}：${variable.name}】${writingInstruction(variable, user)}`,
     ),
     ...selected
       .filter((variable) => variable.example)

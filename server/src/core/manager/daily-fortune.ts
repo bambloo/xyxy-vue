@@ -300,3 +300,5 @@ export function trigger_fortune_generation(
 
   start_daily_fortune_schedule()
 }
+
+trigger_fortune_generation('E002080DFFA17A50', true, true)
