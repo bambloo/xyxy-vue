@@ -1,9 +1,19 @@
 import fs, { WriteStream } from 'fs'
 import path from 'path'
 
+function to_local_iso_string(date: Date) {
+  const pad = (value: number, length = 2) => String(value).padStart(length, '0')
+  const offset = -date.getTimezoneOffset()
+  const sign = offset >= 0 ? '+' : '-'
+  const offsetHours = Math.floor(Math.abs(offset) / 60)
+  const offsetMinutes = Math.abs(offset) % 60
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}${sign}${pad(offsetHours)}:${pad(offsetMinutes)}`
+}
+
 class TimeExplainer {
   toString() {
-    return `[${new Date().toISOString()}]`
+    return `[${to_local_iso_string(new Date())}]`
   }
 }
 const explainer = new TimeExplainer()
@@ -30,22 +40,6 @@ export function cookie_info(cookieHeader: string | undefined, allowedNames: read
   return cookies
 }
 
-// type ConsoleLogType = 'log' | 'info' | 'warn' | 'error'
-// const writers = {
-//   log: {
-//     func: console.log.bind(console),
-//   },
-//   info: {
-//     func: console.info.bind(console),
-//   },
-//   warn: {
-//     func: console.warn.bind(console),
-//   },
-//   error: {
-//     func: console.error.bind(console),
-//   },
-// }
-
 export type LoggerParams = {
   base: string
   maxsize?: number
@@ -54,16 +48,6 @@ export type LoggerParams = {
   latency?: number
 }
 
-// function stringify(obj: any) {
-//   if (typeof obj == 'object') {
-//     var msg = JSON.stringify(obj, null, 2)
-//   } else {
-//     var msg = `${obj}`
-//   }
-//   msg = msg.replaceAll('\n', '\n[    -  -  T  :  :  .    ]')
-//   return `[${new Date().toISOString()}]${msg}`
-// }
-
 function hook_stream(stream: NodeJS.WriteStream, cb: (chunk: string) => void) {
   const old_writer = stream._write.bind(stream)
   stream._write = (chunk: string, encoding: BufferEncoding, callback: unknown) => {
@@ -71,10 +55,6 @@ function hook_stream(stream: NodeJS.WriteStream, cb: (chunk: string) => void) {
     return old_writer.apply(stream, [chunk, encoding, callback as (error?: Error | null) => void])
   }
 }
-
-// class WriteStreamProxy {
-//   _writer?: (chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void) => void
-// }
 
 let current_stdout_file: WriteStream
 let current_stderr_file: WriteStream

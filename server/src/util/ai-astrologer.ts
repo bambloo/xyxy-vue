@@ -82,7 +82,8 @@ export class AiAstrologer {
     )
   }
 
-  daily_fortune(user: UserProfile, day: string): Promise<string> {
-    return this.ask(build_daily_prompt(user, day))
+  daily_fortune(user: UserProfile, day: string): Promise<{ prompt: string; fortune: string }> {
+    const prompt = build_daily_prompt(user, day)
+    return this.ask(prompt).then((fortune) => ({ prompt, fortune }))
   }
 }

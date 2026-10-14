@@ -9,6 +9,7 @@ export interface DailyFortune {
   _id: string
   userTag: string
   day: string
+  prompt: string
   fortune: string
   time_fortune: Map<number, string>
   createdAt: string
@@ -135,7 +136,7 @@ function generate_daily_fortune(user: User, day: string) {
       return existing
     }
 
-    const fortune = await AiAstrologer.instance.daily_fortune(user, day)
+    const { prompt, fortune } = await AiAstrologer.instance.daily_fortune(user, day)
     await fortunes.updateOne(
       { _id: id },
       {
@@ -143,6 +144,7 @@ function generate_daily_fortune(user: User, day: string) {
           _id: id,
           userTag: user.tag,
           day,
+          prompt,
           fortune,
           time_fortune: new Map<number, string>(),
           createdAt: new Date().toISOString(),
@@ -227,7 +229,7 @@ function daily_fortune_ticker() {
           schedule_next_midnight()
         }
         if (err.code === BamblooStatusCode.Retry) {
-          setTimeout(daily_fortune_ticker, 30_000)
+          setTimeout(daily_fortune_ticker, 10_000)
         }
         errout(err.msg)
       }

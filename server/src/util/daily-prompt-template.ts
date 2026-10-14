@@ -145,7 +145,7 @@ export function build_daily_prompt(user: PromptUser, date: string): string {
   const wordLimit = `${asNumber(config.get('锦言.字数下限'), '锦言.字数下限')}-${asNumber(config.get('锦言.字数上限'), '锦言.字数上限')}`
 
   return [
-    `请为${user.name?.trim() || '用户'}写一条 ${date} 的每日锦言。`,
+    `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} 的每日锦言。`,
     user.hobbies?.trim() ? `兴趣参考：${user.hobbies.trim()}` : '',
     '请按以下从工作簿读取的写作指令创作，不要输出指令说明：',
     ...selected.map(
