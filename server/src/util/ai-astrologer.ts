@@ -1,6 +1,6 @@
 import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import type { UserProfile } from '../core/entity/user'
-import { build_daily_prompt } from './daily-prompt-template'
+import { build_daily_prompt, build_time_prompt } from './daily-prompt-template'
 
 interface AiAstrologerOptions {
   apiKey?: string
@@ -82,8 +82,17 @@ export class AiAstrologer {
     )
   }
 
-  daily_fortune(user: UserProfile, day: string): Promise<{ prompt: string; fortune: string }> {
+  daily_fortune(user: UserProfile, day: string): Promise<{ prompt: string; message: string }> {
     const prompt = build_daily_prompt(user, day)
-    return this.ask(prompt).then((fortune) => ({ prompt, fortune }))
+    return this.ask(prompt).then((message) => ({ prompt, message }))
+  }
+
+  time_fortune(
+    user: UserProfile,
+    day: string,
+    timeIndex: number,
+  ): Promise<{ prompt: string; message: string }> {
+    const prompt = build_time_prompt(user, day, timeIndex)
+    return this.ask(prompt).then((message) => ({ prompt, message }))
   }
 }

@@ -2,16 +2,25 @@ import { user_manager } from './user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { errout, logout } from '../../util/logger-helper'
 import { AiAstrologer } from '../../util/ai-astrologer'
+import {
+  current_time_index,
+  time_name_for_index,
+  type TimeName,
+} from '../../util/daily-prompt-template'
 import { mongo_helper } from '../../util/mongo-helper'
 import type { User } from '../entity/user'
+
+export interface FortuneGeneration {
+  prompt: string
+  message: string
+}
 
 export interface DailyFortune {
   _id: string
   userTag: string
   day: string
-  prompt: string
-  fortune: string
-  time_fortune: Map<number, string>
+  fortune: FortuneGeneration
+  time_fortune?: Partial<Record<TimeName, FortuneGeneration>>
   createdAt: string
 }
 
@@ -136,7 +145,7 @@ function generate_daily_fortune(user: User, day: string) {
       return existing
     }
 
-    const { prompt, fortune } = await AiAstrologer.instance.daily_fortune(user, day)
+    const fortune = await AiAstrologer.instance.daily_fortune(user, day)
     await fortunes.updateOne(
       { _id: id },
       {
@@ -144,9 +153,8 @@ function generate_daily_fortune(user: User, day: string) {
           _id: id,
           userTag: user.tag,
           day,
-          prompt,
           fortune,
-          time_fortune: new Map<number, string>(),
+          time_fortune: {},
           createdAt: new Date().toISOString(),
         },
       },
@@ -161,6 +169,28 @@ function generate_daily_fortune(user: User, day: string) {
     await markFortuneGenerated()
     return record
   })
+}
+
+function timeFortuneAt(record: DailyFortune, timeName: TimeName): FortuneGeneration | undefined {
+  return record.time_fortune?.[timeName]
+}
+
+async function generate_time_fortune(user: User, day: string, timeIndex: number): Promise<void> {
+  const id = `${user.tag}:${day}`
+  const timeName = time_name_for_index(timeIndex)
+  const record = await generate_daily_fortune(user, day)
+  const existing = timeFortuneAt(record, timeName)
+  if (existing?.prompt && existing.message) return
+
+  const fortune = await AiAstrologer.instance.time_fortune(user, day, timeIndex)
+  const result = await mongo_helper.ddo((db) =>
+    db
+      .collection<DailyFortune>('daily_fortune')
+      .updateOne({ _id: id }, { $set: { [`time_fortune.${timeName}`]: fortune } }),
+  )
+  if (!result.matchedCount) {
+    throw new Error(`未能保存用户 ${user.tag} 的 ${day} ${timeName} 锦言`)
+  }
 }
 
 function generate_one_daily_fortune() {
@@ -192,9 +222,12 @@ function generate_one_daily_fortune() {
           })
           .then(() => {
             if (tri.time_fortune) {
-              return user.ask_time_fortune(new Date().toISOString().slice(0, 10)).then(() => {
+              const now = new Date()
+              const day = now.toISOString().slice(0, 10)
+              const timeIndex = current_time_index(now)
+              return generate_time_fortune(user, day, timeIndex).then(() => {
                 tri.time_fortune = false
-                logout(`已生成用户 ${user.tag} 的时辰运势`)
+                logout(`已生成用户 ${user.tag} 的${time_name_for_index(timeIndex)}锦言`)
               })
             }
           })
@@ -229,9 +262,9 @@ function daily_fortune_ticker() {
           schedule_next_midnight()
         }
         if (err.code === BamblooStatusCode.Retry) {
-          setTimeout(daily_fortune_ticker, 10_000)
+          setTimeout(daily_fortune_ticker, 30_000)
         }
-        errout(err.msg)
+        errout(BamblooStatusCode[err.code], err.msg)
       }
     })
 }
