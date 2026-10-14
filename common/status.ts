@@ -15,6 +15,7 @@ export enum BamblooStatusCode {
   Unauthorized,
   DatabaseError,
   NetworkInvalid,
+  DailyFortuneGenerated,
 
   Timeout,
   Retry,

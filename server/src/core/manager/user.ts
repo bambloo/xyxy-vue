@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import type { UserQuery } from '../../../../common/entity/user'
 import { hash_password } from '../../../../common/util/crypto'
-import type { UserProfile } from '../entity/user'
+import type { User, UserProfile } from '../entity/user'
 import { mongo_helper } from '../../util/mongo-helper'
 import { Mutex } from '../../util/mutex'
 
@@ -55,7 +55,7 @@ export class user_manager {
     }
   }
 
-  public get(key: UserQuery): Promise<UserProfile> {
+  public get(key: UserQuery): Promise<User> {
     if (key.tag) {
       return mongo_helper.get('user', { tag: key.tag })
     }
@@ -109,5 +109,30 @@ export class user_manager {
     }
 
     return imported
+  }
+
+  public get_without_daily_fortune(): Promise<User> {
+    return mongo_helper.tdo('user', (collection) => {
+      return collection
+        .findOne(
+          {
+            isActive: { $ne: false },
+            lastFortuneGeneratedAt: { $lt: new Date().toISOString() },
+          },
+          { projection: { tag: 1, lastFortuneGeneratedAt: 1 } },
+        )
+        .then((doc) => {
+          if (!doc) {
+            return Promise.reject(
+              new BamblooError(
+                BamblooStatusCode.DailyFortuneGenerated,
+                '没有找到未生成今日运势的用户',
+              ),
+            )
+          } else {
+            return this.get({ tag: doc.tag })
+          }
+        })
+    })
   }
 }

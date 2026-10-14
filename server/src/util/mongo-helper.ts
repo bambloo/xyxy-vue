@@ -1,4 +1,4 @@
-import { Db, MongoClient } from 'mongodb'
+import { Collection, Db, MongoClient } from 'mongodb'
 import { DATABASE_HOST, DATABASE_PORT } from '../config'
 import { BamblooError, BamblooStatusCode } from '../../../common/status'
 
@@ -27,6 +27,15 @@ export class mongo_helper {
   public static ddo<ReturnType>(callback: (database: Db) => ReturnType | Promise<ReturnType>) {
     return this.get_db().then((db) => {
       return callback(db)
+    })
+  }
+
+  public static tdo<ReturnType>(
+    col: string,
+    callback: (collection: Collection) => ReturnType | Promise<ReturnType>,
+  ) {
+    return this.get_db().then((db) => {
+      return callback(db.collection(col))
     })
   }
 

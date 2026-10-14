@@ -1,3 +1,6 @@
+import type { UserProfile } from '../core/entity/user'
+import { build_daily_prompt } from './daily-prompt-template'
+
 interface AiAstrologerOptions {
   apiKey?: string
   endpoint?: string
@@ -16,14 +19,15 @@ interface ChatCompletionResponse {
 }
 
 const ASTROLOGER_SYSTEM_PROMPT =
-  '你是一名温和、理性的 AI 占星师。请将占星内容作为自我探索和娱乐参考，不要将其描述为确定的事实或替代专业建议。'
+  '你是一名中文生活方式内容作者。请严格遵循用户消息中由工作簿读取的写作指令，创作具体、温和的每日锦言；不得预测运势、作医疗承诺或使用用户提供的禁用词。'
 
 export class AiAstrologer {
   private readonly apiKey: string
   private readonly endpoint: string
   private readonly model: string
 
-  constructor(options: AiAstrologerOptions = {}) {
+  public static instance: AiAstrologer = new AiAstrologer()
+  private constructor(options: AiAstrologerOptions = {}) {
     this.apiKey =
       options.apiKey ?? process.env.BIG_MODEL_API_KEY ?? process.env.BIGMODEL_API_KEY ?? ''
     this.endpoint = options.endpoint ?? 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
@@ -71,5 +75,9 @@ export class AiAstrologer {
         return answer
       }),
     )
+  }
+
+  daily_fortune(user: UserProfile, day: string): Promise<string> {
+    return this.ask(build_daily_prompt(user, day))
   }
 }
