@@ -1,16 +1,17 @@
 import fs, { WriteStream } from 'fs'
 import path from 'path'
+import { format_timestamp } from './date-time'
 
 function to_local_iso_string(date: Date) {
   const pad = (value: number, length = 2) => String(value).padStart(length, '0')
-  const offset = -date.getTimezoneOffset()
-  const sign = offset >= 0 ? '+' : '-'
-  const offsetHours = Math.floor(Math.abs(offset) / 60)
-  const offsetMinutes = Math.abs(offset) % 60
+  // const offset = -date.getTimezoneOffset()
+  // const sign = offset >= 0 ? '+' : '-'
+  // const offsetHours = Math.floor(Math.abs(offset) / 60)
+  // const offsetMinutes = Math.abs(offset) % 60
 
   const localDate = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
   const localTime = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
-  return `${localDate} ${localTime}${sign}${pad(offsetHours)}:${pad(offsetMinutes)}`
+  return `${localDate} ${localTime}}`
 }
 
 class TimeExplainer {
@@ -84,7 +85,10 @@ function switch_file() {
     current_stdout_file.close()
   }
 
-  const time = new Date().toISOString().replaceAll(':', '')
+  const time = format_timestamp(new Date())
+    .replaceAll(':', '')
+    .replaceAll('-', '')
+    .replaceAll(' ', '-')
   current_stderr_file = fs.createWriteStream(path.join(base, `${time}-err.log`))
   current_stdout_file = fs.createWriteStream(path.join(base, `${time}-out.log`))
 

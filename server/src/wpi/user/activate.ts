@@ -5,6 +5,7 @@ import { response } from '../../util/secretary'
 import { mongo_helper } from '../../util/mongo-helper'
 import { issue_session } from '../../util/session'
 import { to_public_user } from '../../core/entity/user'
+import { format_timestamp } from '../../util/date-time'
 
 export const config = { access: 'public' as const }
 
@@ -26,7 +27,7 @@ export default function handler(params: { [key: string]: unknown }, req: Request
     hobbies: typeof params.hobbies === 'string' ? params.hobbies.trim() : '',
     avatar: typeof params.avatar === 'string' ? params.avatar.trim() : '',
     isActive: true,
-    updatedAt: new Date().toISOString(),
+    updatedAt: format_timestamp(new Date()),
   }
 
   return user_manager

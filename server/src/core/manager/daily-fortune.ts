@@ -7,6 +7,7 @@ import {
   time_name_for_index,
   type TimeName,
 } from '../../util/daily-prompt-template'
+import { format_local_day, format_timestamp, now } from '../../util/date-time'
 import { mongo_helper } from '../../util/mongo-helper'
 import type { User } from '../entity/user'
 
@@ -134,7 +135,7 @@ function generate_daily_fortune(user: User, day: string) {
   return mongo_helper.ddo(async (db) => {
     const fortunes = db.collection<DailyFortune>('daily_fortune')
     const markFortuneGenerated = async () => {
-      const lastFortuneGeneratedAt = new Date().toISOString()
+      const lastFortuneGeneratedAt = format_timestamp(new Date())
       await db.collection('user').updateOne({ tag: user.tag }, { $set: { lastFortuneGeneratedAt } })
       user.lastFortuneGeneratedAt = lastFortuneGeneratedAt
     }
@@ -155,7 +156,7 @@ function generate_daily_fortune(user: User, day: string) {
           day,
           fortune,
           time_fortune: {},
-          createdAt: new Date().toISOString(),
+          createdAt: format_timestamp(now()),
         },
       },
       { upsert: true },
@@ -197,7 +198,7 @@ function generate_one_daily_fortune() {
   return user_manager.instance().then((um) => {
     if (!generating_que.length) {
       return um.get_without_daily_fortune().then((user) => {
-        const day = new Date().toISOString().slice(0, 10)
+        const day = format_local_day(new Date())
         return generate_daily_fortune(user, day).then(() => {
           logout(`已生成用户 ${user.tag} 的 ${day} 今日运势`)
         })
@@ -213,7 +214,7 @@ function generate_one_daily_fortune() {
         return Promise.resolve()
           .then(() => {
             if (tri.daily_fortune) {
-              const day = new Date().toISOString().slice(0, 10)
+              const day = format_local_day(now())
               return generate_daily_fortune(user, day).then(() => {
                 tri.daily_fortune = false
                 logout(`已生成用户 ${user.tag} 的 ${day} 今日运势`)
@@ -222,9 +223,9 @@ function generate_one_daily_fortune() {
           })
           .then(() => {
             if (tri.time_fortune) {
-              const now = new Date()
-              const day = now.toISOString().slice(0, 10)
-              const timeIndex = current_time_index(now)
+              const time = now()
+              const day = format_local_day(time)
+              const timeIndex = current_time_index(time)
               return generate_time_fortune(user, day, timeIndex).then(() => {
                 tri.time_fortune = false
                 logout(`已生成用户 ${user.tag} 的${time_name_for_index(timeIndex)}锦言`)
@@ -243,12 +244,12 @@ let daily_fortune_generating = false
 let scheduler: NodeJS.Timeout | undefined
 
 function schedule_next_midnight() {
-  const now = new Date()
-  const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  const datetime = now()
+  const nextMidnight = new Date(datetime.getFullYear(), datetime.getMonth(), datetime.getDate() + 1)
   scheduler = setTimeout(() => {
     scheduler = undefined
     daily_fortune_ticker()
-  }, nextMidnight - now.getTime())
+  }, nextMidnight.getTime() - datetime.getTime())
 }
 
 function daily_fortune_ticker() {
@@ -300,5 +301,3 @@ export function trigger_fortune_generation(
 
   start_daily_fortune_schedule()
 }
-
-trigger_fortune_generation('E002080DFFA17A50', true, true)

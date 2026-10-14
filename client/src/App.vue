@@ -5,6 +5,7 @@ import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
+import TimeFortuneIndicator from '@/components/TimeFortuneIndicator.vue'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
@@ -83,6 +84,7 @@ function handlePortalSwipeDown() {
       </Transition>
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
+    <TimeFortuneIndicator />
     <SunPortalButton v-if="isPortalRoute" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
       @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown" />
   </div>

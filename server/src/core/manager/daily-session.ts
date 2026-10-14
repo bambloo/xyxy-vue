@@ -1,9 +1,10 @@
 import { mongo_helper } from '../../util/mongo-helper'
+import { format_local_day, format_timestamp } from '../../util/date-time'
 
 export class daily_session_manager {
   public static recordLogin(userTag: string, now = new Date()) {
-    const day = now.toISOString().slice(0, 10)
-    const timestamp = now.toISOString()
+    const day = format_local_day(now)
+    const timestamp = format_timestamp(now)
 
     return mongo_helper.ddo((db) =>
       db

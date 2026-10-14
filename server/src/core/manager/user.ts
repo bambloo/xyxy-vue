@@ -5,6 +5,7 @@ import { hash_password } from '../../../../common/util/crypto'
 import { User, type UserProfile } from '../entity/user'
 import { mongo_helper } from '../../util/mongo-helper'
 import { Mutex } from '../../util/mutex'
+import { format_timestamp } from '../../util/date-time'
 
 export const DEFAULT_ADMIN_ACCOUNT = 'admin'
 export const DEFAULT_ADMIN_PASSWORD = 'Admin123456'
@@ -37,14 +38,15 @@ export class user_manager {
       return existing
     } catch {
       const passwordHash = await hash_password(DEFAULT_ADMIN_PASSWORD)
+      const now = format_timestamp(new Date())
       const adminUser: UserProfile = {
         tag: randomUUID(),
         account: DEFAULT_ADMIN_ACCOUNT,
         passwordHash,
         name: '管理员',
         isAdmin: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       }
 
       await mongo_helper.ddo((db) => {
@@ -81,7 +83,7 @@ export class user_manager {
     return mongo_helper.ddo(async (db) => {
       const result = await db
         .collection('user')
-        .updateOne({ tag }, { $set: { passwordHash, updatedAt: new Date().toISOString() } })
+        .updateOne({ tag }, { $set: { passwordHash, updatedAt: format_timestamp(new Date()) } })
       if (!result.matchedCount) {
         throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
       }
@@ -97,7 +99,7 @@ export class user_manager {
         imported.push(await this.get({ tag }))
         continue
       } catch {
-        const now = new Date().toISOString()
+        const now = format_timestamp(new Date())
         const user: UserProfile = {
           tag,
           account: '',
@@ -116,8 +118,9 @@ export class user_manager {
   }
 
   public get_without_daily_fortune(): Promise<User> {
-    const today = new Date().toISOString().slice(0, 10)
-    const todayStart = `${today}T00:00:00.000Z`
+    const now = new Date()
+    const localMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const todayStart = format_timestamp(localMidnight)
     return mongo_helper.tdo('user', (collection) => {
       return collection
         .findOne(
