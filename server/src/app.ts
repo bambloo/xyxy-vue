@@ -31,7 +31,7 @@ application.post('/', (req) => {
   console.log(req.url)
 })
 application
-  .listen(Number(process.env.PORT) || 1992)
+  .listen(Number(process.env.PORT) || 3000)
   .on('listening', () => {
     logout('Server Listening')
     start_daily_fortune_schedule()

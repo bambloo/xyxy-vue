@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import type { UserQuery } from '../../../../common/entity/user'
 import { hash_password } from '../../../../common/util/crypto'
-import type { User, UserProfile } from '../entity/user'
+import { User, type UserProfile } from '../entity/user'
 import { mongo_helper } from '../../util/mongo-helper'
 import { Mutex } from '../../util/mutex'
 
@@ -57,20 +57,24 @@ export class user_manager {
 
   public get(key: UserQuery): Promise<User> {
     if (key.tag) {
-      return mongo_helper.get('user', { tag: key.tag })
+      return this.get_user({ tag: key.tag })
     }
 
     if (key.account) {
-      return mongo_helper.get('user', { account: key.account })
+      return this.get_user({ account: key.account })
     }
 
     if (key.phone) {
-      return mongo_helper.get('user', { phone: key.phone })
+      return this.get_user({ phone: key.phone })
     }
 
     return Promise.reject(
       new BamblooError(BamblooStatusCode.BadRequest, '必须提供 tag、account 或 phone 作为查询条件'),
     )
+  }
+
+  private get_user(key: UserQuery): Promise<User> {
+    return mongo_helper.get<UserProfile>('user', { ...key }).then((profile) => new User(profile))
   }
 
   public updatePassword(tag: string, passwordHash: string) {
@@ -112,12 +116,17 @@ export class user_manager {
   }
 
   public get_without_daily_fortune(): Promise<User> {
+    const today = new Date().toISOString().slice(0, 10)
+    const todayStart = `${today}T00:00:00.000Z`
     return mongo_helper.tdo('user', (collection) => {
       return collection
         .findOne(
           {
             isActive: { $ne: false },
-            lastFortuneGeneratedAt: { $lt: new Date().toISOString() },
+            $or: [
+              { lastFortuneGeneratedAt: { $exists: false } },
+              { lastFortuneGeneratedAt: { $lt: todayStart } },
+            ],
           },
           { projection: { tag: 1, lastFortuneGeneratedAt: 1 } },
         )

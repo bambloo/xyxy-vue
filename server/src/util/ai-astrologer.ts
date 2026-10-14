@@ -1,3 +1,4 @@
+import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import type { UserProfile } from '../core/entity/user'
 import { build_daily_prompt } from './daily-prompt-template'
 
@@ -14,6 +15,7 @@ interface ChatCompletionResponse {
     }
   }>
   error?: {
+    code?: string
     message?: string
   }
 }
@@ -65,7 +67,10 @@ export class AiAstrologer {
       response.json().then((payload: unknown) => {
         const result = payload as ChatCompletionResponse
         if (!response.ok) {
-          throw new Error(result.error?.message || `AI 服务请求失败：HTTP ${response.status}`)
+          throw new BamblooError(
+            BamblooStatusCode.Retry,
+            `AI 服务请求失败：ZP ${result.error!.code} ${result.error!.message}`,
+          )
         }
 
         const answer = result.choices?.[0]?.message?.content?.trim()

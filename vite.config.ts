@@ -5,6 +5,8 @@ import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+const backendPort = Number(process.env.PORT) || 3000
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -30,7 +32,7 @@ export default defineConfig({
     port: 5002,
     proxy: {
       '/wpi': {
-        target: 'http://localhost:1992',
+        target: `http://localhost:${backendPort}`,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/wpi/, ''),
       },

@@ -1,4 +1,15 @@
 import type { UserPublicProfile } from '../../../../common/entity/user'
+import { BamblooError, BamblooStatusCode } from '../../../../common/status'
+import { trigger_fortune_generation } from '../manager/daily-fortune'
+import { mongo_helper } from '../../util/mongo-helper'
+
+interface DailyFortuneRecord {
+  _id: string
+  userTag: string
+  day: string
+  fortune: string
+  createdAt: string
+}
 
 export interface UserProfile {
   tag: string
@@ -87,11 +98,24 @@ export class User implements UserProfile {
     this.updatedAt = init.updatedAt
   }
 
-  ask_daily_fortune(day: string): Promise<void> {
-    return Promise.resolve()
+  ask_daily_fortune(day: string): Promise<string> {
+    const id = `${this.tag}:${day}`
+
+    return mongo_helper
+      .ddo((db) => db.collection<DailyFortuneRecord>('daily_fortune').findOne({ _id: id }))
+      .then((record) => {
+        if (!record) {
+          trigger_fortune_generation(this.tag, true)
+          throw new BamblooError(
+            BamblooStatusCode.EntityNonexist,
+            `未找到用户 ${this.tag} 的 ${day} 今日运势`,
+          )
+        }
+        return record.fortune
+      })
   }
 
-  ask_time_fortune(arg0: string) {
+  ask_time_fortune(_arg0: string) {
     return Promise.resolve()
   }
 }

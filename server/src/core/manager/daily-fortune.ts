@@ -1,6 +1,9 @@
 import { user_manager } from './user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { errout, logout } from '../../util/logger-helper'
+import { AiAstrologer } from '../../util/ai-astrologer'
+import { mongo_helper } from '../../util/mongo-helper'
+import type { User } from '../entity/user'
 
 export interface DailyFortune {
   _id: string
@@ -115,12 +118,57 @@ export interface DailyFortune {
 
 const generating_que: string[] = []
 const generating_map: Map<string, { daily_fortune: boolean; time_fortune: boolean }> = new Map()
+
+function generate_daily_fortune(user: User, day: string) {
+  const id = `${user.tag}:${day}`
+  return mongo_helper.ddo(async (db) => {
+    const fortunes = db.collection<DailyFortune>('daily_fortune')
+    const markFortuneGenerated = async () => {
+      const lastFortuneGeneratedAt = new Date().toISOString()
+      await db.collection('user').updateOne({ tag: user.tag }, { $set: { lastFortuneGeneratedAt } })
+      user.lastFortuneGeneratedAt = lastFortuneGeneratedAt
+    }
+
+    const existing = await fortunes.findOne({ _id: id })
+    if (existing) {
+      await markFortuneGenerated()
+      return existing
+    }
+
+    const fortune = await AiAstrologer.instance.daily_fortune(user, day)
+    await fortunes.updateOne(
+      { _id: id },
+      {
+        $setOnInsert: {
+          _id: id,
+          userTag: user.tag,
+          day,
+          fortune,
+          time_fortune: new Map<number, string>(),
+          createdAt: new Date().toISOString(),
+        },
+      },
+      { upsert: true },
+    )
+
+    const record = await fortunes.findOne({ _id: id })
+    if (!record) {
+      throw new Error(`未能保存用户 ${user.tag} 的 ${day} 今日运势`)
+    }
+
+    await markFortuneGenerated()
+    return record
+  })
+}
+
 function generate_one_daily_fortune() {
   return user_manager.instance().then((um) => {
     if (!generating_que.length) {
       return um.get_without_daily_fortune().then((user) => {
-        const now = new Date()
-        return user.ask_daily_fortune(now.toISOString().slice(0, 10))
+        const day = new Date().toISOString().slice(0, 10)
+        return generate_daily_fortune(user, day).then(() => {
+          logout(`已生成用户 ${user.tag} 的 ${day} 今日运势`)
+        })
       })
     }
 
@@ -133,9 +181,10 @@ function generate_one_daily_fortune() {
         return Promise.resolve()
           .then(() => {
             if (tri.daily_fortune) {
-              return user.ask_daily_fortune(new Date().toISOString().slice(0, 10)).then(() => {
+              const day = new Date().toISOString().slice(0, 10)
+              return generate_daily_fortune(user, day).then(() => {
                 tri.daily_fortune = false
-                logout(`已生成用户 ${user.tag} 的今日运势`)
+                logout(`已生成用户 ${user.tag} 的 ${day} 今日运势`)
               })
             }
           })
@@ -153,22 +202,34 @@ function generate_one_daily_fortune() {
         generating_que.shift()
         generating_map.delete(tag)
       })
-      .catch((err) => {
-        errout(`生成用户 ${tag} 的运势失败`, err)
-      })
   })
 }
 let daily_fortune_generating = false
 let scheduler: NodeJS.Timeout | undefined
+
+function schedule_next_midnight() {
+  const now = new Date()
+  const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  scheduler = setTimeout(() => {
+    scheduler = undefined
+    daily_fortune_ticker()
+  }, nextMidnight - now.getTime())
+}
 
 function daily_fortune_ticker() {
   generate_one_daily_fortune()
     .then(() => {
       process.nextTick(daily_fortune_ticker)
     })
-    .catch((err: BamblooError) => {
-      if (err.code == BamblooStatusCode.EntityNonexist) {
-        scheduler = setTimeout(daily_fortune_ticker, new Date().getTime())
+    .catch((err: unknown) => {
+      if (err instanceof BamblooError) {
+        if (err.code === BamblooStatusCode.DailyFortuneGenerated) {
+          schedule_next_midnight()
+        }
+        if (err.code === BamblooStatusCode.Retry) {
+          setTimeout(daily_fortune_ticker, 30_000)
+        }
+        errout(err.msg)
       }
     })
 }
