@@ -1,4 +1,8 @@
 import type { Request, Response } from 'express'
+import {
+  MAX_USER_HOBBIES_LENGTH,
+  normalize_user_hobbies,
+} from '../../../../common/entity/user'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
@@ -13,7 +17,15 @@ export default function handler(params: { [key: string]: unknown }, req: Request
   const tag = typeof params.tag === 'string' ? params.tag.trim() : ''
   const name = typeof params.name === 'string' ? params.name.trim() : ''
   const passwordHash = typeof params.passwordHash === 'string' ? params.passwordHash.trim() : ''
-  if (!tag || !name || !/^[a-f0-9]{64}$/i.test(passwordHash)) {
+  const hobbies = typeof params.hobbies === 'string' ? normalize_user_hobbies(params.hobbies) : ''
+  if (hobbies.length > MAX_USER_HOBBIES_LENGTH) {
+    return response(res, BamblooStatusCode.FormatError, '兴趣爱好总长度不能超过 500 个字符')
+  }
+  if (
+    !tag ||
+    !name ||
+    !/^[a-f0-9]{64}$/i.test(passwordHash)
+  ) {
     return response(res, BamblooStatusCode.FormatError, 'Tag、姓名和密码格式错误')
   }
 
@@ -24,7 +36,7 @@ export default function handler(params: { [key: string]: unknown }, req: Request
     phone: typeof params.phone === 'string' ? params.phone.trim() : '',
     email: typeof params.email === 'string' ? params.email.trim() : '',
     birthday: typeof params.birthday === 'string' ? params.birthday.trim() : '',
-    hobbies: typeof params.hobbies === 'string' ? params.hobbies.trim() : '',
+    hobbies,
     city: typeof params.city === 'string' ? params.city.trim() : '',
     avatar: typeof params.avatar === 'string' ? params.avatar.trim() : '',
     isActive: true,

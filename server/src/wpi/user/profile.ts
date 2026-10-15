@@ -1,5 +1,9 @@
 import type { Response } from 'express'
-import { parse_user_location } from '../../../../common/entity/user'
+import {
+  MAX_USER_HOBBIES_LENGTH,
+  normalize_user_hobbies,
+  parse_user_location,
+} from '../../../../common/entity/user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { to_public_user } from '../../core/entity/user'
 import { response } from '../../util/secretary'
@@ -17,7 +21,7 @@ export default async function handler(
   const phone = typeof params.phone === 'string' ? params.phone.trim() : ''
   const email = typeof params.email === 'string' ? params.email.trim() : ''
   const birthday = typeof params.birthday === 'string' ? params.birthday.trim() : ''
-  const hobbies = typeof params.hobbies === 'string' ? params.hobbies.trim() : ''
+  const hobbies = typeof params.hobbies === 'string' ? normalize_user_hobbies(params.hobbies) : ''
   const city = typeof params.city === 'string' ? params.city.trim() : ''
   const location =
     params.location === undefined ? undefined : parse_user_location(params.location)
@@ -28,6 +32,7 @@ export default async function handler(
     !/^\d{11}$/.test(phone) ||
     !/^\d{4}-\d{2}-\d{2}$/.test(birthday) ||
     (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+    hobbies.length > MAX_USER_HOBBIES_LENGTH ||
     city.length > 500 ||
     (params.location !== undefined && !location)
   ) {

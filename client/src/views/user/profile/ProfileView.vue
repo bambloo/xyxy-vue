@@ -3,7 +3,7 @@ import { defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, type AuthUser } from '../../../stores/auth'
 import { post } from '../../../scripts/request'
-import type { UserLocation } from '../../../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../../common/entity/user'
 import {
   is_at_least_five_years_old,
   is_valid_email,
@@ -16,6 +16,7 @@ const loading = ref(false)
 const { t } = useI18n()
 const auth = useAuthStore()
 const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
+const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 
 const emptyLocation = (): UserLocation => ({
   countryCode: 'CN',
@@ -66,6 +67,10 @@ async function saveProfile() {
 
   if (!is_valid_email(user.email)) {
     statusMessage.value = t('profile.emailFormat')
+    return
+  }
+  if (user.hobbies.length > MAX_USER_HOBBIES_LENGTH) {
+    statusMessage.value = t('profile.hobbiesTooLong')
     return
   }
 
@@ -133,7 +138,7 @@ async function saveProfile() {
       </div>
       <label class="full-width">
         <span>{{ t('profile.hobbies') }}</span>
-        <textarea v-model="user.hobbies" rows="4" />
+        <HobbiesPicker v-model="user.hobbies" />
       </label>
     </div>
   </section>

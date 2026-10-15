@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { defineAsyncComponent, reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { hash_password } from '../../../common/util/crypto'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import { validateAccount, validatePassword } from '../utils/login-validator'
-import type { UserPublicProfile } from '../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH, type UserPublicProfile } from '../../../common/entity/user'
 import {
   is_at_least_five_years_old,
   is_valid_email,
@@ -19,6 +19,7 @@ const props = defineProps<{ tag: string; active: boolean }>()
 const router = useRouter()
 const auth = useAuthStore()
 const { t } = useI18n()
+const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 const loginRequired = ref(props.active)
 const password = ref('')
 const loginLoading = ref(false)
@@ -106,6 +107,11 @@ async function activate() {
     return
   }
 
+  if (user.hobbies.length > MAX_USER_HOBBIES_LENGTH) {
+    activationMessage.value = t('profile.hobbiesTooLong')
+    return
+  }
+
   if (user.password !== user.confirmPassword) {
     activationMessage.value = t('password.mismatch')
     return
@@ -113,10 +119,14 @@ async function activate() {
 
   try {
     const passwordHash = await hash_password(user.password)
-    const { password, confirmPassword, ...profileData } = user
     const packet = await post('/wpi/user/activate', activationLoading, {
       tag: props.tag,
-      ...profileData,
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+      birthday: user.birthday,
+      hobbies: user.hobbies,
+      avatar: user.avatar,
       passwordHash,
     })
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
@@ -162,8 +172,7 @@ onMounted(async () => {
           autocomplete="new-password" :placeholder="t('password.confirmPlaceholder')" /></label>
       <label><span>{{ t('profile.email') }}</span><input v-model="user.email" type="email" /></label>
       <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" required /></label>
-      <label class="full-width"><span>{{ t('profile.hobbies') }}</span><textarea v-model="user.hobbies"
-          rows="4" /></label>
+      <label class="full-width"><span>{{ t('profile.hobbies') }}</span><HobbiesPicker v-model="user.hobbies" /></label>
       <label class="full-width"><span>{{ t('tag.avatar') }}</span><input v-model="user.avatar" type="url" /></label>
       <p v-if="activationMessage" class="error-message" role="alert">{{ activationMessage }}</p>
       <button class="full-width" type="submit" :disabled="activationLoading">

@@ -6,6 +6,26 @@ export interface UserLocation {
   custom: string
 }
 
+export const MAX_USER_HOBBIES_LENGTH = 500
+
+export function parse_user_hobbies(value: string): string[] {
+  const unique = new Set<string>()
+  return value
+    .split(/[\s,，、;；.。!！?？:：/|]+/u)
+    .map((hobby) => hobby.trim())
+    .filter((hobby) => {
+      if (!hobby) return false
+      const key = hobby.toLocaleLowerCase()
+      if (unique.has(key)) return false
+      unique.add(key)
+      return true
+    })
+}
+
+export function normalize_user_hobbies(value: string): string {
+  return parse_user_hobbies(value).join('、')
+}
+
 export function format_user_location(location?: UserLocation) {
   return location
     ? [location.country, location.region, location.city, location.custom]

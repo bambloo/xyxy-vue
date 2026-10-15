@@ -2,15 +2,17 @@
 import { defineAsyncComponent, ref } from 'vue'
 import { post } from '../../../scripts/request'
 import { useI18n } from 'vue-i18n'
-import type { UserLocation } from '../../../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../../common/entity/user'
 
 const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
+const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 
 interface ImportedUser {
   tag: string
   account: string
   name: string
   phone?: string
+  hobbies?: string
   city?: string
   location?: UserLocation
   isActive?: boolean
@@ -21,8 +23,8 @@ type QueryField = 'tag' | 'account' | 'phone'
 const loading = ref(false)
 const { t } = useI18n()
 const queryLoading = ref(false)
-const cityLoading = ref(false)
-const savingCityTag = ref('')
+const profileLoading = ref(false)
+const savingProfileTag = ref('')
 const errorMessage = ref('')
 const users = ref<ImportedUser[]>([])
 const queryField = ref<QueryField>('tag')
@@ -99,10 +101,14 @@ async function queryUser() {
   }
 }
 
-async function saveCity(user: ImportedUser) {
-  if (savingCityTag.value) return
+async function saveProfile(user: ImportedUser) {
+  if (savingProfileTag.value) return
   errorMessage.value = ''
-  savingCityTag.value = user.tag
+  if ((user.hobbies ?? '').length > MAX_USER_HOBBIES_LENGTH) {
+    errorMessage.value = t('profile.hobbiesTooLong')
+    return
+  }
+  savingProfileTag.value = user.tag
   user.location ??= {
     countryCode: '',
     country: '',
@@ -111,21 +117,23 @@ async function saveCity(user: ImportedUser) {
     custom: user.city?.trim() ?? '',
   }
   try {
-    const packet = await post('/wpi/user/update-city', cityLoading, {
+    const packet = await post('/wpi/user/update-profile', profileLoading, {
       tag: user.tag,
       location: user.location,
+      hobbies: user.hobbies || '',
     })
     const updatedUser = packet.data as ImportedUser | undefined
     if (!updatedUser || updatedUser.tag !== user.tag) {
-      throw new Error(t('users.cityUpdateError'))
+      throw new Error(t('users.profileUpdateError'))
     }
     user.city = updatedUser.city ?? ''
     user.location = updatedUser.location
+    user.hobbies = updatedUser.hobbies ?? ''
   } catch (error: unknown) {
     const result = error as { msg?: string; message?: string }
-    errorMessage.value = result.msg || result.message || t('users.cityUpdateError')
+    errorMessage.value = result.msg || result.message || t('users.profileUpdateError')
   } finally {
-    savingCityTag.value = ''
+    savingProfileTag.value = ''
   }
 }
 
@@ -199,6 +207,7 @@ async function addTag() {
             <th>{{ t('common.name') }}</th>
             <th>{{ t('common.phone') }}</th>
             <th>{{ t('profile.city') }}</th>
+            <th>{{ t('profile.hobbies') }}</th>
             <th>{{ t('common.save') }}</th>
             <th>{{ t('common.status') }}</th>
           </tr>
@@ -213,12 +222,15 @@ async function addTag() {
               <LocationPicker
                 v-model="user.location"
                 :legacy-value="user.city"
-                :disabled="savingCityTag === user.tag"
+                :disabled="savingProfileTag === user.tag"
               />
             </td>
             <td>
-              <button type="button" :disabled="Boolean(savingCityTag)" @click="saveCity(user)">
-                {{ savingCityTag === user.tag ? t('users.savingCity') : t('common.save') }}
+              <HobbiesPicker v-model="user.hobbies" :disabled="savingProfileTag === user.tag" />
+            </td>
+            <td>
+              <button type="button" :disabled="Boolean(savingProfileTag)" @click="saveProfile(user)">
+                {{ savingProfileTag === user.tag ? t('users.savingProfile') : t('common.save') }}
               </button>
             </td>
             <td><span class="status">{{ user.isActive === false ? t('common.inactive') : t('common.active') }}</span>
