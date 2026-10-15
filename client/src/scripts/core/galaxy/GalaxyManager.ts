@@ -458,7 +458,11 @@ export class GalaxyManager {
       })
 
     if (!nearest || nearest.distance > 32) return
-    const star = this.getOrCreateStar(nearest.field, nearest.index, this.getRandomStarColor())
+    const star = this.getOrCreateStar(
+      nearest.field,
+      nearest.index,
+      this.getDefaultStarColor(nearest.index),
+    )
     if (!this.selectedStar) {
       this.selectedStar = star
       this.showSelectionMarker(galaxy, star)
@@ -526,8 +530,8 @@ export class GalaxyManager {
     )
   }
 
-  private getRandomStarColor(): string {
-    return starColors[Math.floor(Math.random() * starColors.length)] ?? (starColors[0] as string)
+  private getDefaultStarColor(index: number): string {
+    return starColors[index % starColors.length] ?? (starColors[0] as string)
   }
 
   private originalStarForId(id: string, usedKeys: Set<string>) {

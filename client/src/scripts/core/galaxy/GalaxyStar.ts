@@ -45,7 +45,7 @@ export class GalaxyStar {
     const fieldMaterial = field.material
     const pointMaterial = fieldMaterial instanceof THREE.PointsMaterial ? fieldMaterial : undefined
     this.regularOpacity = 0.38 + (pointMaterial?.opacity ?? 0.92) * 0.12
-    this.regularColor = pointMaterial?.color.clone() ?? new THREE.Color(0xd8efff)
+    this.regularColor = new THREE.Color(color)
     this.position = new THREE.Vector3().fromBufferAttribute(
       field.geometry.attributes.position as THREE.BufferAttribute,
       index,

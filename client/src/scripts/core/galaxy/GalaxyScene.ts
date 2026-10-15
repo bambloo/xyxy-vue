@@ -3,7 +3,9 @@ import type { SentGalaxyStar } from '../../../../../common/entity/galaxy-star'
 import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
-import { GaussianCloudDistribution } from './distribution/GaussianCloudDistribution'
+import { SpiralGalaxyDistribution } from './distribution/SpiralGalaxyDistribution'
+
+const galaxyArmColors = ['#72d7ff', '#a78bfa', '#ff83ca', '#7dffe3', '#ffd27d']
 
 export class GalaxyScene {
   private readonly host: HTMLElement
@@ -20,7 +22,7 @@ export class GalaxyScene {
   private starTexture?: THREE.CanvasTexture
   private meteorEffect?: GalaxyMeteorEffect
   private readonly activeTouchPointers = new Set<number>()
-  private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
+  private readonly starDistribution: StarDistribution = new SpiralGalaxyDistribution()
 
   constructor(
     host: HTMLElement,
@@ -127,18 +129,40 @@ export class GalaxyScene {
   private makeStars(count: number, radius: number, size: number, opacity: number) {
     const geometry = new THREE.BufferGeometry()
     const positions: number[] = []
+    const colors: number[] = []
     this.starDistribution.generate({ count, radius }).forEach((position) => {
       positions.push(position.x, position.y, position.z)
+      const distance = Math.hypot(position.x, position.z)
+      const armAngle = Math.atan2(position.z, position.x) - distance * 0.014
+      const colorPosition =
+        THREE.MathUtils.euclideanModulo(armAngle / (Math.PI * 2), 1) * galaxyArmColors.length
+      const colorIndex = Math.floor(colorPosition)
+      const colorBlend = colorPosition - colorIndex
+      const smoothColorBlend = colorBlend * colorBlend * (3 - 2 * colorBlend)
+      const color = new THREE.Color(
+        galaxyArmColors[colorIndex] ?? galaxyArmColors[0] ?? '#72d7ff',
+      ).lerp(
+        new THREE.Color(
+          galaxyArmColors[(colorIndex + 1) % galaxyArmColors.length] ??
+            galaxyArmColors[0] ??
+            '#72d7ff',
+        ),
+        smoothColorBlend,
+      )
+      color.multiplyScalar(0.38 + Math.random() * 0.18)
+      colors.push(color.r, color.g, color.b)
     })
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     const options: THREE.PointsMaterialParameters = {
-      color: 0xd8efff,
+      color: 0xffffff,
       size,
       alphaTest: 0.01,
       transparent: true,
       opacity,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      vertexColors: true,
     }
     if (this.starTexture) options.map = this.starTexture
     const material = new THREE.PointsMaterial(options)
