@@ -4,6 +4,7 @@ import type {
   GalaxyStarView,
   SentGalaxyStar,
 } from '../../../../../common/entity/galaxy-star'
+import { GalaxyBlackHole } from './GalaxyBlackHole'
 import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
@@ -21,6 +22,7 @@ export class GalaxyScene {
   private camera?: THREE.PerspectiveCamera
   private galaxy?: THREE.Group
   private manager?: GalaxyManager
+  private blackHole?: GalaxyBlackHole
   private geometries: THREE.BufferGeometry[] = []
   private materials: THREE.Material[] = []
   private starTexture?: THREE.CanvasTexture
@@ -87,6 +89,7 @@ export class GalaxyScene {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()
     this.manager?.destroy()
+    if (this.blackHole && this.galaxy) this.blackHole.destroy(this.galaxy)
     this.meteorEffect?.destroy()
     this.geometries.forEach((geometry) => geometry.dispose())
     this.materials.forEach((material) => material.dispose())
@@ -97,6 +100,7 @@ export class GalaxyScene {
     this.materials = []
     this.activeTouchPointers.clear()
     this.manager = undefined
+    this.blackHole = undefined
     this.renderer = undefined
     this.scene = undefined
     this.camera = undefined
@@ -301,6 +305,7 @@ export class GalaxyScene {
     const starFields = [distantStars, spiralStars, innerStars]
     this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
+    this.blackHole = new GalaxyBlackHole(this.galaxy, starFields, this.reducedMotion, this.camera)
     this.meteorEffect = new GalaxyMeteorEffect(
       this.host,
       this.scene,
@@ -337,6 +342,7 @@ export class GalaxyScene {
       nebulaSky.position.copy(this.camera.position)
       this.meteorEffect?.update(timestamp)
       this.manager.update(performance.now())
+      this.blackHole?.update(timestamp)
       this.renderer.render(this.scene, this.camera)
       this.animationFrame = requestAnimationFrame(animate)
     }
