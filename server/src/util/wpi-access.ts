@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express'
-import { BamblooStatusCode } from '../../../common/status'
+import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import { user_manager } from '../core/manager/user'
 import { refresh_session } from './session'
 import { response } from './secretary'
@@ -22,33 +22,38 @@ export interface WpiRequest extends Request {
   }
 }
 
-export async function authorize_wpi(
+export function authorize_wpi(
   config: WpiConfig,
   req: WpiRequest,
   res: Response,
 ): Promise<boolean> {
-  if (config.access !== 'protected' && config.access !== 'private') return true
+  if (config.access !== 'protected' && config.access !== 'private') return Promise.resolve(true)
 
-  const session = refresh_session(req, res)
-  if (!session) {
-    response(res, BamblooStatusCode.Unauthorized as unknown as BamblooStatusCode, '需要登录后访问')
-    return false
-  }
+  return refresh_session(req, res)
+    .then((session) => {
+      req.auth = session.payload
+      if (config.access !== 'private' || !config.permissions?.length) return true
 
-  req.auth = session.payload
-  if (config.access !== 'private' || !config.permissions?.length) return true
-
-  const user = await user_manager.instance().then((manager) => {
-    return manager.get({ tag: session.payload.userTag })
-  })
-  const hasPermission =
-    user.isAdmin || config.permissions.every((permission) => user.permissions?.includes(permission))
-  if (!hasPermission) {
-    response(res, BamblooStatusCode.Unauthorized as unknown as BamblooStatusCode, '没有访问权限')
-    return false
-  }
-
-  return true
+      return user_manager.instance().then((manager) =>
+        manager.get({ tag: session.payload.userTag }).then((user) => {
+          const hasPermission =
+            user.isAdmin ||
+            config.permissions!.every((permission) => user.permissions?.includes(permission))
+          if (!hasPermission) {
+            response(res, BamblooStatusCode.Unauthorized, '没有访问权限')
+            return false
+          }
+          return true
+        }),
+      )
+    })
+    .catch((error: unknown) => {
+      if (error instanceof BamblooError && error.code === BamblooStatusCode.Unauthorized) {
+        response(res, BamblooStatusCode.Unauthorized, '需要登录后访问')
+        return false
+      }
+      throw error
+    })
 }
 
 export type WpiHandler = (

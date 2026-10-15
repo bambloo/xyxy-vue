@@ -59,8 +59,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.hydrate()
-  if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    return '/login'
+  if (!auth.isLoggedIn && to.name !== 'home' && to.name !== 'login' && to.name !== 'tag') {
+    return { name: 'home' }
   }
 
   if (to.path === '/login' && auth.isLoggedIn) {

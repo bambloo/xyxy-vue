@@ -5,7 +5,7 @@ import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
-import TimeFortuneIndicator from '@/components/TimeFortuneIndicator.vue'
+import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
@@ -56,7 +56,7 @@ async function loadTagState() {
     const isActive = (packet.data as { isActive?: boolean } | undefined)?.isActive === true
     tagState.value = isActive ? 'active' : 'inactive'
   } catch {
-    tagState.value = 'missing'
+    await router.replace({ name: 'home' })
   }
 }
 
@@ -84,8 +84,9 @@ function handlePortalSwipeDown() {
       </Transition>
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
-    <TimeFortuneIndicator />
-    <SunPortalButton v-if="isPortalRoute" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
+    <TimeFortuneDialog />
+    <SunPortalButton v-if="isPortalRoute && auth.isSessionValidated" class="sun-portal-control" :label="portalLabel"
+      :title="portalLabel"
       @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown" />
   </div>
 </template>

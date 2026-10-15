@@ -244,6 +244,7 @@ let daily_fortune_generating = false
 let scheduler: NodeJS.Timeout | undefined
 
 function schedule_next_midnight() {
+  daily_fortune_generating = false
   const datetime = now()
   const nextMidnight = new Date(datetime.getFullYear(), datetime.getMonth(), datetime.getDate() + 1)
   scheduler = setTimeout(() => {

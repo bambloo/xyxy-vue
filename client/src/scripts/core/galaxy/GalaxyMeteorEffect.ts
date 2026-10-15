@@ -1,10 +1,16 @@
 import * as THREE from 'three'
+import {
+  isTimeFortuneReady,
+  TIME_FORTUNE_STATE_EVENT,
+} from '@/events/time-fortune'
 
 type ActiveMeteor = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
   destination: DestinationStar
   end: THREE.Vector3
+  start?: THREE.Vector3
   rotations: number
+  landsAtDestination: boolean
   startTime: number
   duration: number
 }
@@ -17,10 +23,19 @@ type DestinationStar = {
   screenY: number
   selected: boolean
   revealsPortal: boolean
+  fortuneLocator: boolean
 }
 
 const DESTINATION_STAR_PIXELS = 500
 const RIPPLE_REFERENCE_PIXELS = 144
+
+function randomFortuneFlight() {
+  const direction = Math.random() < 0.5 ? -1 : 1
+  return {
+    rotations: direction * (0.2 + Math.random() * 0.7),
+    duration: 7000 + Math.random() * 5000,
+  }
+}
 
 const meteorVertexShader = `
   varying vec2 vUv;
@@ -113,13 +128,42 @@ export class GalaxyMeteorEffect {
   private readonly ringMaterial: THREE.ShaderMaterial
 
   private pointerStart?: THREE.Vector2
+  private fortuneReady = isTimeFortuneReady()
+  private readonly handleFortuneState = (event: Event) => {
+    this.fortuneReady = (event as CustomEvent<boolean>).detail
+    if (!this.fortuneReady) {
+      const locator = this.destinations.find((destination) => destination.fortuneLocator)
+      if (!locator) return
+      locator.group.visible = false
+      for (let index = this.activeMeteors.length - 1; index >= 0; index--) {
+        const meteor = this.activeMeteors[index]!
+        if (meteor.destination !== locator) continue
+        this.scene.remove(meteor.mesh)
+        meteor.mesh.geometry.dispose()
+        meteor.mesh.material.dispose()
+        this.activeMeteors.splice(index, 1)
+      }
+      if (!this.reducedMotion) this.spawnFortuneMeteor(locator, performance.now(), false)
+      return
+    }
+
+    const locator = this.destinations.find((destination) => destination.fortuneLocator)
+    if (!locator) return
+    if (this.reducedMotion) {
+      locator.group.visible = true
+    } else if (!this.activeMeteors.some((meteor) => meteor.destination === locator)) {
+      this.spawnFortuneMeteor(locator, performance.now(), true)
+    }
+  }
 
   constructor(
     private readonly host: HTMLElement,
     private readonly scene: THREE.Scene,
     private readonly camera: THREE.PerspectiveCamera,
     private readonly reducedMotion: boolean,
+    private readonly onDestinationClick: () => void,
   ) {
+    window.addEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
       fragmentShader: destinationFragmentShader,
@@ -145,31 +189,69 @@ export class GalaxyMeteorEffect {
     })
     this.camera.getWorldDirection(this.orbitAxis)
     const mainStarPosition = this.mainStarScreenPosition()
-    const targets = [
-      { x: -0.86, y: 0.78, rotations: 0.34, delay: 0, duration: 3900, revealsPortal: false },
-      { x: 0.86, y: 0.0, rotations: -0.38, delay: 520, duration: 4200, revealsPortal: false },
+    const targets: {
+      x: number
+      y: number
+      rotations: number
+      delay: number
+      duration: number
+      revealsPortal: boolean
+      fortuneLocator: boolean
+    }[] = [
+      {
+        x: -0.86,
+        y: 0.78,
+        rotations: 0.34,
+        delay: 0,
+        duration: 9000,
+        revealsPortal: false,
+        fortuneLocator: true,
+      },
+      {
+        x: 0.86,
+        y: 0.0,
+        rotations: -0.38,
+        delay: 520,
+        duration: 4200,
+        revealsPortal: false,
+        fortuneLocator: false,
+      },
       {
         ...mainStarPosition,
         rotations: 0.42,
         delay: 1040,
         duration: 4500,
         revealsPortal: true,
+        fortuneLocator: false,
       },
     ]
     const now = performance.now()
     targets.forEach((target) => {
       const endpoint = this.destinationFromScreen(target.x, target.y)
-      const destination = this.createDestination(endpoint, target.x, target.y, target.revealsPortal)
+      const destination = this.createDestination(
+        endpoint,
+        target.x,
+        target.y,
+        target.revealsPortal,
+        target.fortuneLocator,
+      )
       this.destinations.push(destination)
-      destination.group.visible = this.reducedMotion && !target.revealsPortal
+      destination.group.visible =
+        this.reducedMotion &&
+        !target.revealsPortal &&
+        (!target.fortuneLocator || this.fortuneReady)
       if (!this.reducedMotion) {
-        this.spawnMeteor(
-          destination,
-          endpoint,
-          target.rotations,
-          now + target.delay,
-          target.duration,
-        )
+        if (target.fortuneLocator) {
+          this.spawnFortuneMeteor(destination, now + target.delay, this.fortuneReady)
+        } else {
+          this.spawnMeteor(
+            destination,
+            endpoint,
+            target.rotations,
+            now + target.delay,
+            target.duration,
+          )
+        }
       }
     })
   }
@@ -190,9 +272,10 @@ export class GalaxyMeteorEffect {
       const projected = destination.group.position.clone().project(this.camera)
       const screenX = bounds.left + (projected.x + 1) * 0.5 * bounds.width
       const screenY = bounds.top + (1 - projected.y) * 0.5 * bounds.height
-      if (Math.hypot(event.clientX - screenX, event.clientY - screenY) > 30) continue
+      if (Math.hypot(event.clientX - screenX, event.clientY - screenY) > 48) continue
       destination.selected = !destination.selected
       destination.ring.visible = destination.selected
+      if (destination.fortuneLocator) this.onDestinationClick()
       return true
     }
     return false
@@ -209,6 +292,9 @@ export class GalaxyMeteorEffect {
       destination.group.position.copy(
         this.destinationFromScreen(destination.screenX, destination.screenY),
       )
+      if (destination.fortuneLocator && this.reducedMotion) {
+        destination.group.visible = this.fortuneReady
+      }
       destination.group.quaternion.copy(this.camera.quaternion)
       const cameraPosition = this.camera.worldToLocal(destination.group.position.clone())
       const depth = Math.max(this.camera.near, -cameraPosition.z)
@@ -223,14 +309,30 @@ export class GalaxyMeteorEffect {
     for (let index = this.activeMeteors.length - 1; index >= 0; index--) {
       const meteor = this.activeMeteors[index]!
       if (nowMs < meteor.startTime) continue
-      meteor.end.copy(
-        this.destinationFromScreen(meteor.destination.screenX, meteor.destination.screenY),
-      )
+      if (meteor.landsAtDestination) {
+        meteor.end.copy(
+          this.destinationFromScreen(meteor.destination.screenX, meteor.destination.screenY),
+        )
+      }
       const progress = (nowMs - meteor.startTime) / meteor.duration
       if (progress >= 1) {
         this.scene.remove(meteor.mesh)
         meteor.mesh.geometry.dispose()
         meteor.mesh.material.dispose()
+        if (meteor.destination.fortuneLocator && !this.fortuneReady) {
+          this.spawnFortuneMeteor(meteor.destination, nowMs + 180, false)
+          this.activeMeteors.splice(index, 1)
+          continue
+        }
+        if (
+          meteor.destination.fortuneLocator &&
+          this.fortuneReady &&
+          !meteor.landsAtDestination
+        ) {
+          this.spawnFortuneMeteor(meteor.destination, nowMs + 180, true)
+          this.activeMeteors.splice(index, 1)
+          continue
+        }
         meteor.destination.group.visible = !meteor.destination.revealsPortal
         meteor.destination.group.quaternion.copy(this.camera.quaternion)
         this.activeMeteors.splice(index, 1)
@@ -244,6 +346,7 @@ export class GalaxyMeteorEffect {
   }
 
   destroy() {
+    window.removeEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
     this.activeMeteors.forEach((meteor) => {
       this.scene.remove(meteor.mesh)
       meteor.mesh.geometry.dispose()
@@ -263,6 +366,7 @@ export class GalaxyMeteorEffect {
     screenX: number,
     screenY: number,
     revealsPortal: boolean,
+    fortuneLocator: boolean,
   ): DestinationStar {
     const group = new THREE.Group()
     group.position.copy(position)
@@ -274,7 +378,16 @@ export class GalaxyMeteorEffect {
     ring.renderOrder = 21
     group.add(orb, ring)
     this.scene.add(group)
-    return { group, orb, ring, screenX, screenY, selected: false, revealsPortal }
+    return {
+      group,
+      orb,
+      ring,
+      screenX,
+      screenY,
+      selected: false,
+      revealsPortal,
+      fortuneLocator,
+    }
   }
 
   private spawnMeteor(
@@ -283,6 +396,7 @@ export class GalaxyMeteorEffect {
     rotations: number,
     startTime: number,
     duration: number,
+    landsAtDestination = false,
   ) {
     const segments = 40
     const positions = new Float32Array((segments + 1) * 2 * 3)
@@ -322,10 +436,31 @@ export class GalaxyMeteorEffect {
       mesh,
       destination,
       end,
+      start: destination.fortuneLocator ? this.randomFortuneStart(destination) : undefined,
       rotations,
+      landsAtDestination,
       startTime,
       duration,
     })
+  }
+
+  private spawnFortuneMeteor(
+    destination: DestinationStar,
+    startTime: number,
+    landsAtDestination: boolean,
+  ) {
+    const flight = randomFortuneFlight()
+    const end = landsAtDestination
+      ? this.destinationFromScreen(destination.screenX, destination.screenY)
+      : this.randomFortuneEnd(destination)
+    this.spawnMeteor(
+      destination,
+      end,
+      flight.rotations,
+      startTime,
+      flight.duration,
+      landsAtDestination,
+    )
   }
 
   private updateTrail(meteor: ActiveMeteor, progress: number) {
@@ -336,17 +471,19 @@ export class GalaxyMeteorEffect {
     for (let segment = 0; segment <= segments; segment++) {
       const along = segment / segments
       const pathProgress = THREE.MathUtils.lerp(trailStart, progress, along)
-      const center = this.pathPosition(meteor.end, pathProgress, meteor.rotations)
+      const center = this.pathPosition(meteor.end, pathProgress, meteor.rotations, meteor.start)
       const tangentStep = 0.002
       const before = this.pathPosition(
         meteor.end,
         Math.max(0, pathProgress - tangentStep),
         meteor.rotations,
+        meteor.start,
       )
       const after = this.pathPosition(
         meteor.end,
         Math.min(1, pathProgress + tangentStep),
         meteor.rotations,
+        meteor.start,
       )
       const tangent = after.sub(before).normalize()
       const viewDirection = center.clone().sub(this.camera.position).normalize()
@@ -377,11 +514,50 @@ export class GalaxyMeteorEffect {
     return this.camera.localToWorld(cameraPosition)
   }
 
-  private pathPosition(end: THREE.Vector3, progress: number, rotations: number) {
+  private pathPosition(
+    end: THREE.Vector3,
+    progress: number,
+    rotations: number,
+    start?: THREE.Vector3,
+  ) {
+    if (start) {
+      const inverseProgress = 1 - progress
+      const direction = end.clone().sub(start)
+      const distance = direction.length()
+      const curveDirection = new THREE.Vector3().crossVectors(direction, this.orbitAxis).normalize()
+      const control = start
+        .clone()
+        .add(end)
+        .multiplyScalar(0.5)
+        .addScaledVector(curveDirection, distance * rotations)
+      return start
+        .clone()
+        .multiplyScalar(inverseProgress * inverseProgress)
+        .addScaledVector(control, 2 * inverseProgress * progress)
+        .addScaledVector(end, progress * progress)
+    }
     return end
       .clone()
       .applyAxisAngle(this.orbitAxis, (1 - progress) * rotations * Math.PI * 2)
       .multiplyScalar(progress)
+  }
+
+  private randomFortuneStart(destination: DestinationStar) {
+    const angle = Math.random() * Math.PI * 2
+    const distance = 0.7 + Math.random() * 1.4
+    const x = destination.screenX + Math.cos(angle) * distance
+    const y = destination.screenY + Math.sin(angle) * distance
+    return this.destinationFromScreen(x, y)
+  }
+
+  private randomFortuneEnd(destination: DestinationStar) {
+    let x = 0
+    let y = 0
+    do {
+      x = Math.random() * 2.7 - 1.35
+      y = Math.random() * 2.7 - 1.35
+    } while (Math.hypot(x - destination.screenX, y - destination.screenY) < 0.7)
+    return this.destinationFromScreen(x, y)
   }
 
   private cameraBounds() {

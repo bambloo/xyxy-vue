@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
-
-type FortuneStatus = 'hidden' | 'generating' | 'arriving' | 'ready'
+import {
+  setTimeFortuneReady,
+  TIME_FORTUNE_OPEN_EVENT,
+} from '@/events/time-fortune'
 
 interface FortuneDetails {
   ready: boolean
@@ -13,18 +15,13 @@ interface FortuneDetails {
 }
 
 const auth = useAuthStore()
-const status = ref<FortuneStatus>('hidden')
 const requestLoading = ref(false)
 const detailsLoading = ref(false)
 const runId = ref(0)
-const retryMessage = ref('')
+const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
-const visible = computed(() => status.value !== 'hidden')
-const label = computed(() =>
-  status.value === 'ready' ? '当前时辰锦言已生成，点击查看' : '正在生成当前时辰锦言',
-)
 
 function responseData(packet: { data?: unknown }): FortuneDetails | undefined {
   return packet.data as FortuneDetails | undefined
@@ -35,17 +32,24 @@ function wait(milliseconds: number) {
 }
 
 watch(
-  () => auth.currentUser?.tag,
-  async (userTag) => {
+  () => [auth.currentUser?.tag, auth.isSessionValidated] as const,
+  async ([userTag, isSessionValidated]) => {
     const currentRun = ++runId.value
-    if (!userTag || !auth.isLoggedIn) {
+    if (!auth.isLoggedIn) {
       status.value = 'hidden'
-      retryMessage.value = ''
+      setTimeFortuneReady(false)
       dialogOpen.value = false
       details.value = undefined
       return
     }
 
+    if (!isSessionValidated || !userTag) {
+      status.value = 'hidden'
+      await auth.hydrate()
+      return
+    }
+
+    setTimeFortuneReady(false)
     status.value = 'generating'
     let shouldTrigger = true
     while (currentRun === runId.value) {
@@ -55,16 +59,16 @@ watch(
         })
         shouldTrigger = false
         if (currentRun !== runId.value) return
-        retryMessage.value = ''
         if (responseData(packet)?.ready) {
+          setTimeFortuneReady(true)
           status.value = 'arriving'
           await wait(1500)
-          if (currentRun === runId.value) status.value = 'ready'
+          if (currentRun !== runId.value) return
+          status.value = 'ready'
           return
         }
       } catch (error) {
         if (currentRun !== runId.value) return
-        retryMessage.value = '连接暂时不可用，正在重试'
         console.error('查询时辰锦言生成状态失败', error)
       }
       await wait(2000)
@@ -74,9 +78,18 @@ watch(
 )
 
 async function openFortuneDialog() {
-  if (status.value !== 'ready') return
   dialogOpen.value = true
   detailsError.value = ''
+  details.value = undefined
+  if (status.value === 'hidden') {
+    detailsError.value = '请先登录后查看每日锦言和时辰锦言。'
+    return
+  }
+  if (status.value !== 'ready') {
+    detailsError.value = '当前时辰锦言仍在生成中，请稍后再查看。'
+    return
+  }
+
   detailsLoading.value = true
   try {
     const packet = await post('/wpi/user/time-fortune', detailsLoading, { details: true })
@@ -95,42 +108,17 @@ async function openFortuneDialog() {
   }
 }
 
+onMounted(() => {
+  window.addEventListener(TIME_FORTUNE_OPEN_EVENT, openFortuneDialog)
+})
+
 onBeforeUnmount(() => {
+  window.removeEventListener(TIME_FORTUNE_OPEN_EVENT, openFortuneDialog)
   runId.value += 1
 })
 </script>
 
 <template>
-  <div v-if="visible" class="time-fortune-indicator" :class="`is-${status}`">
-    <svg class="sky-mark" viewBox="0 0 96 96" aria-hidden="true">
-      <defs>
-        <linearGradient id="meteor-trail" x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0" stop-color="#8abaff" stop-opacity="0" />
-          <stop offset=".72" stop-color="#b8d8ff" stop-opacity=".75" />
-          <stop offset="1" stop-color="#fff" />
-        </linearGradient>
-        <radialGradient id="locator-glow">
-          <stop offset="0" stop-color="#fff" />
-          <stop offset=".2" stop-color="#e4f4ff" />
-          <stop offset="1" stop-color="#8fc7ff" stop-opacity="0" />
-        </radialGradient>
-      </defs>
-      <path class="meteor-trail" pathLength="1" d="M 9 78 Q 34 57 71 20" />
-      <circle class="meteor-head" cx="72" cy="19" r="3.5" />
-      <circle class="locator-halo" cx="72" cy="19" r="15" />
-      <path class="locator-rays" d="M72 5v7m0 14v7M58 19h7m14 0h7M62.1 9.1l5 5m9.8 9.8 5 5m0-19.8-5 5m-9.8 9.8-5 5" />
-      <circle class="locator-core" cx="72" cy="19" r="3.5" />
-    </svg>
-    <button
-      class="locator-button"
-      type="button"
-      :disabled="status !== 'ready'"
-      :aria-label="label"
-      :title="retryMessage || label"
-      @click="openFortuneDialog"
-    />
-  </div>
-
   <Teleport to="body">
     <Transition name="fortune-dialog">
       <div v-if="dialogOpen" class="fortune-overlay" @click.self="dialogOpen = false">
@@ -170,111 +158,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.time-fortune-indicator {
-  position: fixed;
-  z-index: 30;
-  top: 12px;
-  left: 12px;
-  width: 96px;
-  height: 96px;
-  overflow: visible;
-  pointer-events: none;
-  filter: drop-shadow(0 0 8px rgba(129, 188, 255, .42));
-}
-
-.sky-mark {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.meteor-trail {
-  fill: none;
-  stroke: url(#meteor-trail);
-  stroke-linecap: round;
-  stroke-width: 2.4;
-  stroke-dasharray: 1;
-  animation: meteor-cross 4.8s cubic-bezier(.25, .1, .3, 1) infinite;
-}
-
-.meteor-head {
-  fill: #fff;
-  filter: drop-shadow(0 0 5px #a9d4ff);
-  animation: meteor-head 4.8s cubic-bezier(.25, .1, .3, 1) infinite;
-}
-
-.locator-halo,
-.locator-rays,
-.locator-core {
-  opacity: 0;
-}
-
-.is-ready .meteor-trail,
-.is-ready .meteor-head {
-  animation: none;
-  opacity: 0;
-}
-
-.is-arriving .meteor-trail {
-  stroke-dasharray: 1 0;
-  stroke-dashoffset: 1;
-  opacity: 1;
-  animation: meteor-dock-trail 1.5s cubic-bezier(.18, .72, .25, 1) forwards;
-}
-
-.is-arriving .meteor-head {
-  opacity: 1;
-  transform: translate(-45px, 45px);
-  animation: meteor-dock-head 1.5s cubic-bezier(.18, .72, .25, 1) forwards;
-}
-
-.is-ready .locator-halo,
-.is-ready .locator-rays,
-.is-ready .locator-core {
-  animation: locator-pulse 2.4s ease-in-out infinite;
-}
-
-.locator-halo {
-  fill: url(#locator-glow);
-}
-
-.locator-rays {
-  fill: none;
-  stroke: #d9edff;
-  stroke-linecap: round;
-  stroke-width: 1.3;
-}
-
-.locator-core {
-  fill: #fff;
-  filter: drop-shadow(0 0 6px #a9d4ff);
-}
-
-.locator-button {
-  position: absolute;
-  top: 7px;
-  left: 60px;
-  z-index: 2;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.locator-button:focus-visible {
-  outline: 2px solid #d9edff;
-  outline-offset: 3px;
-}
-
-.locator-button:disabled {
-  cursor: default;
-}
-
 .fortune-overlay {
   position: fixed;
   z-index: 1000;
@@ -396,96 +279,4 @@ onBeforeUnmount(() => {
   transform: translateY(12px) scale(.98);
 }
 
-@keyframes meteor-cross {
-  0% {
-    stroke-dasharray: 0 .98;
-    opacity: 0;
-  }
-  12% {
-    opacity: .95;
-  }
-  78% {
-    stroke-dasharray: .72 .28;
-    opacity: .9;
-  }
-  100% {
-    stroke-dasharray: .86 .14;
-    opacity: 0;
-  }
-}
-
-@keyframes meteor-dock-trail {
-  0% {
-    stroke-dashoffset: 1;
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  100% {
-    stroke-dashoffset: 0;
-    opacity: .15;
-  }
-}
-
-@keyframes meteor-dock-head {
-  0% {
-    opacity: 0;
-    transform: translate(-45px, 45px);
-  }
-  12% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0);
-  }
-}
-
-@keyframes meteor-head {
-  0%,
-  8% {
-    opacity: 0;
-    transform: translate(-45px, 45px);
-  }
-  78% {
-    opacity: 1;
-    transform: translate(0, 0);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(2px, -2px);
-  }
-}
-
-@keyframes locator-pulse {
-  0%,
-  100% {
-    opacity: .35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .is-generating .meteor-trail,
-  .is-generating .meteor-head {
-    animation: none;
-    opacity: .8;
-  }
-
-  .is-arriving .meteor-trail,
-  .is-arriving .meteor-head {
-    animation: none;
-    opacity: 0;
-  }
-
-  .is-ready .locator-halo,
-  .is-ready .locator-rays,
-  .is-ready .locator-core {
-    animation: none;
-    opacity: .85;
-  }
-}
 </style>

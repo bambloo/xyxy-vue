@@ -20,9 +20,9 @@ export class GalaxyScene {
   private meteorEffect?: GalaxyMeteorEffect
   private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
-  constructor(host: HTMLElement) {
+  constructor(host: HTMLElement, onDestinationClick: () => void) {
     this.host = host
-    this.createGalaxy()
+    this.createGalaxy(onDestinationClick)
   }
 
   pointerDown(event: PointerEvent) {
@@ -120,7 +120,7 @@ export class GalaxyScene {
     return new THREE.Points(geometry, material)
   }
 
-  private createGalaxy() {
+  private createGalaxy(onDestinationClick: () => void) {
     this.scene = new THREE.Scene()
     this.makeStarTexture()
     this.camera = new THREE.PerspectiveCamera(52, 1, 1, 2400)
@@ -141,6 +141,7 @@ export class GalaxyScene {
       this.scene,
       this.camera,
       this.reducedMotion,
+      onDestinationClick,
     )
     this.manager = new GalaxyManager({
       host: this.host,

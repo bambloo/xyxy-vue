@@ -9,6 +9,7 @@ const STORAGE_KEY = 'bambloo-auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
+  const isSessionValidated = ref(false)
   const user = ref<AuthUser | null>(null)
   let hydrationPromise: Promise<void> | null = null
 
@@ -16,6 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearLocalState() {
     isLoggedIn.value = false
+    isSessionValidated.value = false
     user.value = null
     localStorage.removeItem(STORAGE_KEY)
   }
@@ -32,6 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
         const { token, ...profile } = data
         localStorage.setItem(STORAGE_KEY, token)
         isLoggedIn.value = true
+        isSessionValidated.value = true
         user.value = profile
       })
       .catch(() => {
@@ -63,6 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(STORAGE_KEY, token)
     user.value = nextUser ?? null
     isLoggedIn.value = true
+    isSessionValidated.value = true
   }
 
   async function logout() {
@@ -79,6 +83,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     isLoggedIn,
+    isSessionValidated,
     currentUser,
     login,
     logout,

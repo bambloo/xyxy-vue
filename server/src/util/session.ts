@@ -6,6 +6,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto'
 import type { Request, Response } from 'express'
+import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import type { UserProfile } from '../core/entity/user'
 
 export const SESSION_COOKIE = 'bambloo_session'
@@ -61,14 +62,19 @@ function decode(token: string, req: Request): SessionPayload | null {
     const ip = typeof payload.ip === 'string' ? payload.ip : ''
     const salt = typeof payload.salt === 'string' ? payload.salt : ''
     const expectedSalt = Buffer.from(sessionSalt)
+    const now = Date.now()
     if (
       !payload.userTag ||
       !account ||
       !ip ||
       Buffer.byteLength(salt) !== expectedSalt.length ||
       !timingSafeEqual(Buffer.from(salt), expectedSalt) ||
+      !Number.isFinite(payload.issuedAt) ||
       !Number.isFinite(payload.lastSeenAt) ||
-      Date.now() - payload.lastSeenAt > SESSION_TTL ||
+      payload.issuedAt > now ||
+      payload.lastSeenAt > now ||
+      payload.lastSeenAt - payload.issuedAt < 0 ||
+      now - payload.lastSeenAt > SESSION_TTL ||
       Buffer.byteLength(ip) !== Buffer.byteLength(currentIp) ||
       !timingSafeEqual(Buffer.from(ip), Buffer.from(currentIp))
     ) {
@@ -104,34 +110,58 @@ function set_session_cookie(res: Response, req: Request, token: string) {
   })
 }
 
-export function refresh_session(req: Request, res: Response) {
-  const token = read_token(req)
-  if (!token) return null
-  const payload = decode(token, req)
-  if (!payload) {
-    clear_session(res)
-    return null
-  }
-  const refreshed = encode({ ...payload, lastSeenAt: Date.now() })
-  set_session_cookie(res, req, refreshed)
-  return { payload, token: refreshed }
+export function refresh_session(
+  req: Request,
+  res: Response,
+): Promise<{ payload: SessionPayload; token: string }> {
+  return new Promise<{ payload: SessionPayload; token: string }>((resolve, reject) => {
+    const token = read_token(req)
+    if (token === null) {
+      reject(new BamblooError(BamblooStatusCode.Unauthorized, '登录已失效'))
+      return
+    }
+
+    const payload = decode(token, req)
+    if (payload === null) {
+      clear_session(res)
+      reject(new BamblooError(BamblooStatusCode.Unauthorized, '登录已失效'))
+      return
+    }
+
+    const refreshed = encode({ ...payload, lastSeenAt: Date.now() })
+    set_session_cookie(res, req, refreshed)
+    resolve({ payload, token: refreshed })
+  })
 }
 
 export function clear_session(res: Response) {
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' })
 }
 
-function read_cookie(req: Request, name: string) {
+function read_cookie(req: Request, name: string): string | null {
   const prefix = `${name}=`
   const value = (req.headers.cookie || '')
     .split(';')
     .map((part) => part.trim())
     .find((part) => part.startsWith(prefix))
-  return value ? decodeURIComponent(value.slice(prefix.length)) : null
+  if (!value) return null
+  const encodedToken = value.slice(prefix.length)
+  if (!encodedToken) return null
+  try {
+    return decodeURIComponent(encodedToken)
+  } catch {
+    return null
+  }
 }
 
-function read_token(req: Request) {
+function read_token(req: Request): string | null {
+  const cookie = read_cookie(req, SESSION_COOKIE)
+  if (cookie !== null) return cookie
+
   const authorization = req.headers.authorization
-  if (authorization?.startsWith('Bearer ')) return authorization.slice('Bearer '.length)
-  return read_cookie(req, SESSION_COOKIE)
+  if (authorization?.startsWith('Bearer ')) {
+    const token = authorization.slice('Bearer '.length)
+    return token.length > 0 ? token : null
+  }
+  return null
 }

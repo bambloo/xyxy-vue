@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 
 const canvasHost = ref<HTMLElement | null>(null)
@@ -22,7 +23,11 @@ function handleWheel(event: WheelEvent) {
 }
 
 onMounted(() => {
-  if (canvasHost.value) galaxyScene = new GalaxyScene(canvasHost.value)
+  if (canvasHost.value) {
+    galaxyScene = new GalaxyScene(canvasHost.value, () => {
+      window.dispatchEvent(new Event(TIME_FORTUNE_OPEN_EVENT))
+    })
+  }
 })
 
 onBeforeUnmount(() => {
