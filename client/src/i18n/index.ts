@@ -153,6 +153,9 @@ const messages = {
       activateSuccess: 'Tag 激活成功，感谢填写。',
       activateError: 'Tag 激活失败',
     },
+    timeFortune: {
+      title: '星言星语',
+    },
   },
   'en-US': {
     common: {
@@ -303,6 +306,9 @@ const messages = {
       activating: 'Activating...',
       activateSuccess: 'Tag activated successfully. Thank you.',
       activateError: 'Failed to activate Tag',
+    },
+    timeFortune: {
+      title: 'Words from the Stars',
     },
   },
 }

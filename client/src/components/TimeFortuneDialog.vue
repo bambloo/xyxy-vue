@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import {
+  dismissTimeFortuneLocator,
   setTimeFortuneReady,
   TIME_FORTUNE_OPEN_EVENT,
 } from '@/events/time-fortune'
@@ -11,10 +13,11 @@ interface FortuneDetails {
   ready: boolean
   timeName: string
   dailyFortune?: string
-  timeFortune?: string
+  timeFortunes?: { timeName: string; message: string }[]
 }
 
 const auth = useAuthStore()
+const { t } = useI18n()
 const requestLoading = ref(false)
 const detailsLoading = ref(false)
 const runId = ref(0)
@@ -78,6 +81,8 @@ watch(
 )
 
 async function openFortuneDialog() {
+  const userTag = auth.currentUser?.tag
+  if (userTag) dismissTimeFortuneLocator(userTag)
   dialogOpen.value = true
   detailsError.value = ''
   details.value = undefined
@@ -94,7 +99,7 @@ async function openFortuneDialog() {
   try {
     const packet = await post('/wpi/user/time-fortune', detailsLoading, { details: true })
     const result = responseData(packet)
-    if (!result?.ready || !result.dailyFortune || !result.timeFortune) {
+    if (!result?.ready || !result.dailyFortune || !result.timeFortunes?.length) {
       throw new Error('锦言内容暂不可用，请稍后重试。')
     }
     details.value = result
@@ -135,7 +140,7 @@ onBeforeUnmount(() => {
             @click="dialogOpen = false"
           >×</button>
           <p class="dialog-eyebrow">TODAY'S CONSTELLATION</p>
-          <h2 id="fortune-title">星辰寄语</h2>
+          <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
           <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
           <p v-else-if="detailsError" class="dialog-status dialog-error" role="alert">
             {{ detailsError }}
@@ -145,9 +150,20 @@ onBeforeUnmount(() => {
               <h3>每日锦言</h3>
               <p>{{ details.dailyFortune }}</p>
             </article>
-            <article class="fortune-entry time-entry">
-              <h3>{{ details.timeName }} · 时辰锦言</h3>
-              <p>{{ details.timeFortune }}</p>
+            <article
+              v-for="fortune in details.timeFortunes"
+              :key="fortune.timeName"
+              :class="[
+                'fortune-entry',
+                'time-entry',
+                { 'current-time-entry': fortune.timeName === details.timeName },
+              ]"
+            >
+              <h3>
+                {{ fortune.timeName }} · 时辰锦言
+                <span v-if="fortune.timeName === details.timeName" class="current-time-label">当前时辰</span>
+              </h3>
+              <p>{{ fortune.message }}</p>
             </article>
           </template>
           <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
@@ -237,6 +253,28 @@ onBeforeUnmount(() => {
   font-size: 16px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.current-time-entry {
+  border-color: rgba(240, 189, 99, .72);
+  background: linear-gradient(135deg, rgba(240, 189, 99, .16), rgba(137, 177, 226, .08));
+  box-shadow: inset 0 0 24px rgba(240, 189, 99, .08), 0 0 18px rgba(240, 189, 99, .08);
+}
+
+.current-time-entry h3 {
+  color: #f5d58e;
+}
+
+.current-time-label {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid rgba(240, 189, 99, .5);
+  border-radius: 999px;
+  color: #f5d58e;
+  font-size: 10px;
+  letter-spacing: .04em;
+  vertical-align: 1px;
 }
 
 .dialog-status {

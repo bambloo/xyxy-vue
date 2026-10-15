@@ -1,6 +1,9 @@
 import * as THREE from 'three'
+import { useAuthStore } from '@/stores/auth'
 import {
+  isTimeFortuneLocatorDismissed,
   isTimeFortuneReady,
+  TIME_FORTUNE_DISMISSED_EVENT,
   TIME_FORTUNE_STATE_EVENT,
 } from '@/events/time-fortune'
 
@@ -129,7 +132,24 @@ export class GalaxyMeteorEffect {
 
   private pointerStart?: THREE.Vector2
   private fortuneReady = isTimeFortuneReady()
+  private fortuneLocatorDismissed = false
+  private readonly handleFortuneLocatorDismissed = () => {
+    this.fortuneLocatorDismissed = true
+    const locator = this.destinations.find((destination) => destination.fortuneLocator)
+    if (!locator) return
+    locator.group.visible = false
+    locator.ring.visible = false
+    for (let index = this.activeMeteors.length - 1; index >= 0; index--) {
+      const meteor = this.activeMeteors[index]!
+      if (meteor.destination !== locator) continue
+      this.scene.remove(meteor.mesh)
+      meteor.mesh.geometry.dispose()
+      meteor.mesh.material.dispose()
+      this.activeMeteors.splice(index, 1)
+    }
+  }
   private readonly handleFortuneState = (event: Event) => {
+    if (this.fortuneLocatorDismissed) return
     this.fortuneReady = (event as CustomEvent<boolean>).detail
     if (!this.fortuneReady) {
       const locator = this.destinations.find((destination) => destination.fortuneLocator)
@@ -163,7 +183,12 @@ export class GalaxyMeteorEffect {
     private readonly reducedMotion: boolean,
     private readonly onDestinationClick: () => void,
   ) {
+    const userTag = useAuthStore().currentUser?.tag
+    this.fortuneLocatorDismissed = Boolean(
+      userTag && isTimeFortuneLocatorDismissed(userTag),
+    )
     window.addEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
+    window.addEventListener(TIME_FORTUNE_DISMISSED_EVENT, this.handleFortuneLocatorDismissed)
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
       fragmentShader: destinationFragmentShader,
@@ -176,7 +201,7 @@ export class GalaxyMeteorEffect {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
-    })
+      })
     this.ringMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
       fragmentShader: selectionRingFragmentShader,
@@ -226,7 +251,9 @@ export class GalaxyMeteorEffect {
       },
     ]
     const now = performance.now()
-    targets.forEach((target) => {
+    targets
+      .filter((target) => !target.fortuneLocator || !this.fortuneLocatorDismissed)
+      .forEach((target) => {
       const endpoint = this.destinationFromScreen(target.x, target.y)
       const destination = this.createDestination(
         endpoint,
@@ -250,6 +277,7 @@ export class GalaxyMeteorEffect {
             target.rotations,
             now + target.delay,
             target.duration,
+            true,
           )
         }
       }
@@ -293,7 +321,7 @@ export class GalaxyMeteorEffect {
         this.destinationFromScreen(destination.screenX, destination.screenY),
       )
       if (destination.fortuneLocator && this.reducedMotion) {
-        destination.group.visible = this.fortuneReady
+        destination.group.visible = this.fortuneReady && !this.fortuneLocatorDismissed
       }
       destination.group.quaternion.copy(this.camera.quaternion)
       const cameraPosition = this.camera.worldToLocal(destination.group.position.clone())
@@ -347,6 +375,7 @@ export class GalaxyMeteorEffect {
 
   destroy() {
     window.removeEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
+    window.removeEventListener(TIME_FORTUNE_DISMISSED_EVENT, this.handleFortuneLocatorDismissed)
     this.activeMeteors.forEach((meteor) => {
       this.scene.remove(meteor.mesh)
       meteor.mesh.geometry.dispose()
