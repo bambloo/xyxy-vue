@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { SentGalaxyStar } from '../../../../../common/entity/galaxy-star'
 import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
@@ -20,9 +21,22 @@ export class GalaxyScene {
   private meteorEffect?: GalaxyMeteorEffect
   private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
-  constructor(host: HTMLElement, onDestinationClick: () => void) {
+  constructor(
+    host: HTMLElement,
+    onDestinationClick: () => void,
+    onStarSendLocatorClick: () => void,
+    onSentStarClick: (star: SentGalaxyStar) => void,
+  ) {
     this.host = host
-    this.createGalaxy(onDestinationClick)
+    this.createGalaxy(onDestinationClick, onStarSendLocatorClick, onSentStarClick)
+  }
+
+  setSentStars(stars: SentGalaxyStar[]) {
+    this.manager?.setSentStars(stars)
+  }
+
+  setStarSendAvailable(available: boolean) {
+    this.meteorEffect?.setStarSendAvailable(available)
   }
 
   pointerDown(event: PointerEvent) {
@@ -120,7 +134,11 @@ export class GalaxyScene {
     return new THREE.Points(geometry, material)
   }
 
-  private createGalaxy(onDestinationClick: () => void) {
+  private createGalaxy(
+    onDestinationClick: () => void,
+    onStarSendLocatorClick: () => void,
+    onSentStarClick: (star: SentGalaxyStar) => void,
+  ) {
     this.scene = new THREE.Scene()
     this.makeStarTexture()
     this.camera = new THREE.PerspectiveCamera(52, 1, 1, 2400)
@@ -142,6 +160,7 @@ export class GalaxyScene {
       this.camera,
       this.reducedMotion,
       onDestinationClick,
+      onStarSendLocatorClick,
     )
     this.manager = new GalaxyManager({
       host: this.host,
@@ -152,6 +171,7 @@ export class GalaxyScene {
       starTexture: this.starTexture!,
       geometries: this.geometries,
       materials: this.materials,
+      onSentStarClick,
     })
 
     const resize = () => {

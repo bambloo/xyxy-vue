@@ -8,9 +8,9 @@ import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
 import { timeFortuneRange } from '@/utils/time-fortune'
 import {
   dismissTimeFortuneLocator,
-  setTimeFortuneReady,
   TIME_FORTUNE_HISTORY_EVENT,
   TIME_FORTUNE_OPEN_EVENT,
+  setTimeFortuneReady,
   TIME_FORTUNE_TOGGLE_EVENT,
 } from '@/events/time-fortune'
 
@@ -30,6 +30,8 @@ interface FortuneDetails {
   timeName: string
   days: FortuneDay[]
   history: boolean
+  dailyFortune?: string
+  timeFortunes?: TimeFortune[]
 }
 
 const auth = useAuthStore()
@@ -98,11 +100,7 @@ watch(
   { immediate: true },
 )
 
-async function openFortuneDialog(dismissLocator: boolean, history: boolean) {
-  if (dismissLocator) {
-    const userTag = auth.currentUser?.tag
-    if (userTag) dismissTimeFortuneLocator(userTag)
-  }
+async function openFortuneDialog(history: boolean) {
   dialogOpen.value = true
   detailsError.value = ''
   details.value = undefined
@@ -154,11 +152,13 @@ function localDate() {
 }
 
 function handleLocatorOpen() {
-  void openFortuneDialog(true, false)
+  const userTag = auth.currentUser?.tag
+  if (userTag) dismissTimeFortuneLocator(userTag)
+  void openFortuneDialog(false)
 }
 
 function handleHistoryOpen() {
-  void openFortuneDialog(false, true)
+  void openFortuneDialog(true)
 }
 
 function handleButtonToggle() {
@@ -166,13 +166,17 @@ function handleButtonToggle() {
     dialogOpen.value = false
     return
   }
-  void openFortuneDialog(false, false)
+  void openFortuneDialog(false)
 }
 
 function handleDialogPointerDown(event: PointerEvent) {
   if (event.pointerType !== 'mouse' || event.button !== 0) return
   const target = event.target
-  if (target instanceof Element && target.closest('button, summary')) return
+  if (
+    target instanceof Element &&
+    target.closest('button, summary, input, textarea, select, label')
+  )
+    return
   const dialog = fortuneDialog.value
   if (!dialog || dialog.scrollHeight <= dialog.clientHeight) return
   event.preventDefault()
@@ -222,7 +226,9 @@ onBeforeUnmount(() => {
           @pointerup="clearDialogDrag"
           @pointercancel="clearDialogDrag"
         >
-          <button class="dialog-close" type="button" aria-label="关闭" @click="dialogOpen = false">×</button>
+          <button class="dialog-close" type="button" aria-label="关闭" @click="dialogOpen = false">
+            ×
+          </button>
           <p class="dialog-eyebrow">Words From the Stars</p>
           <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
           <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
@@ -230,9 +236,9 @@ onBeforeUnmount(() => {
             {{ detailsError }}
           </p>
           <template v-else-if="details">
-            <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
-            <TimeFortuneHistory v-else-if="details.history" :days="details.days" />
+            <TimeFortuneHistory v-if="details.history" :days="details.days" />
             <template v-else>
+              <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
               <section v-for="day in details.days" :key="day.date">
                 <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
                   <h3>每日锦言</h3>
@@ -249,10 +255,9 @@ onBeforeUnmount(() => {
                 >
                   <h3>
                     {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
-                    <span
-                      v-if="fortune.timeName === details.timeName"
-                      class="current-time-label"
-                    >当前时辰</span>
+                    <span v-if="fortune.timeName === details.timeName" class="current-time-label"
+                      >当前时辰</span
+                    >
                   </h3>
                   <p>{{ fortune.message }}</p>
                 </article>
@@ -274,7 +279,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(1, 7, 19, .76);
+  background: rgba(1, 7, 19, 0.76);
   backdrop-filter: blur(12px);
 }
 
@@ -289,12 +294,14 @@ onBeforeUnmount(() => {
   interpolate-size: allow-keywords;
   cursor: grab;
   padding: 34px clamp(24px, 6vw, 48px) 24px;
-  border: 1px solid rgba(163, 207, 255, .38);
+  border: 1px solid rgba(163, 207, 255, 0.38);
   border-radius: 24px;
   background:
-    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, .2), transparent 54%),
-    linear-gradient(145deg, rgba(13, 34, 65, .98), rgba(5, 15, 32, .98));
-  box-shadow: 0 28px 90px rgba(0, 0, 0, .55), inset 0 0 36px rgba(121, 175, 241, .08);
+    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, 0.2), transparent 54%),
+    linear-gradient(145deg, rgba(13, 34, 65, 0.98), rgba(5, 15, 32, 0.98));
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.55),
+    inset 0 0 36px rgba(121, 175, 241, 0.08);
   color: #e8f1fb;
 }
 
@@ -321,7 +328,7 @@ onBeforeUnmount(() => {
   margin: 0;
   color: #96bce7;
   font-size: 10px;
-  letter-spacing: .24em;
+  letter-spacing: 0.24em;
   text-align: center;
 }
 
@@ -330,18 +337,18 @@ onBeforeUnmount(() => {
   color: #f4e6bf;
   font-size: 25px;
   font-weight: 500;
-  letter-spacing: .18em;
+  letter-spacing: 0.18em;
   text-align: center;
 }
 
 .fortune-entry {
   padding: 18px 20px;
-  border: 1px solid rgba(149, 186, 227, .17);
+  border: 1px solid rgba(149, 186, 227, 0.17);
   border-radius: 16px;
-  background: rgba(137, 177, 226, .07);
+  background: rgba(137, 177, 226, 0.07);
 }
 
-.fortune-entry+.fortune-entry {
+.fortune-entry + .fortune-entry {
   margin-top: 14px;
 }
 
@@ -350,7 +357,7 @@ onBeforeUnmount(() => {
   color: #edc981;
   font-size: 13px;
   font-weight: 500;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
 }
 
 .fortune-entry p {
@@ -362,9 +369,11 @@ onBeforeUnmount(() => {
 }
 
 .current-time-entry {
-  border-color: rgba(240, 189, 99, .72);
-  background: linear-gradient(135deg, rgba(240, 189, 99, .16), rgba(137, 177, 226, .08));
-  box-shadow: inset 0 0 24px rgba(240, 189, 99, .08), 0 0 18px rgba(240, 189, 99, .08);
+  border-color: rgba(240, 189, 99, 0.72);
+  background: linear-gradient(135deg, rgba(240, 189, 99, 0.16), rgba(137, 177, 226, 0.08));
+  box-shadow:
+    inset 0 0 24px rgba(240, 189, 99, 0.08),
+    0 0 18px rgba(240, 189, 99, 0.08);
 }
 
 .current-time-entry h3 {
@@ -375,11 +384,11 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 7px;
-  border: 1px solid rgba(240, 189, 99, .5);
+  border: 1px solid rgba(240, 189, 99, 0.5);
   border-radius: 999px;
   color: #f5d58e;
   font-size: 10px;
-  letter-spacing: .04em;
+  letter-spacing: 0.04em;
   vertical-align: 1px;
 }
 
@@ -399,7 +408,7 @@ onBeforeUnmount(() => {
   margin-top: 22px;
   color: #83a9d4;
   font-size: 12px;
-  letter-spacing: .35em;
+  letter-spacing: 0.35em;
   text-align: center;
 }
 
@@ -420,7 +429,6 @@ onBeforeUnmount(() => {
 
 .fortune-dialog-enter-from .fortune-dialog,
 .fortune-dialog-leave-to .fortune-dialog {
-  transform: translateY(12px) scale(.98);
+  transform: translateY(12px) scale(0.98);
 }
-
 </style>

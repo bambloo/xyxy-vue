@@ -29,7 +29,11 @@ export function proxy_router(application: Express, base: string) {
         .then(() => resolve())
         .catch(reject)
     })
-    // walker.on('error', reject)
+    walker.on('errors', (root, nodeStatsArray, next) => {
+      const errors = nodeStatsArray.map((nodeStats) => nodeStats.error)
+      next()
+      reject(errors[0])
+    })
   })
 }
 

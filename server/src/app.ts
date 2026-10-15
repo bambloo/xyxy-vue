@@ -25,7 +25,7 @@ application.set('trust proxy', 'loopback')
 application.use(body_parser.json({ limit: '10mb' }))
 application.use(body_parser.urlencoded({ extended: true }))
 
-proxy_router(application, join(__dirname, 'wpi'))
+await proxy_router(application, join(__dirname, 'wpi'))
 
 application.post('/', (req) => {
   console.log(req.url)

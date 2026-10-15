@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { SentGalaxyStar } from '../../../../../common/entity/galaxy-star'
 import { GalaxyLink } from './GalaxyLink'
 import { GalaxyStar } from './GalaxyStar'
 
@@ -11,14 +12,26 @@ type GalaxyManagerOptions = {
   starTexture: THREE.CanvasTexture
   geometries: THREE.BufferGeometry[]
   materials: THREE.Material[]
+  onSentStarClick: (star: SentGalaxyStar) => void
 }
 
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
+const SENT_STAR_LABEL_OFFSET = 13
+const SENT_STAR_LABEL_MAX_DISTANCE = 560
+
+type SentStarVisual = {
+  data: SentGalaxyStar
+  star: GalaxyStar
+  label: THREE.Sprite
+  labelTexture: THREE.CanvasTexture
+  labelMaterial: THREE.SpriteMaterial
+}
 
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
   private readonly links: GalaxyLink[] = []
+  private readonly sentStars = new Map<string, SentStarVisual>()
   private selectionMarker?: THREE.Mesh
   private selectedStar?: GalaxyStar
   private pointerStartX = 0
@@ -79,6 +92,7 @@ export class GalaxyManager {
     const { galaxy } = this.options
     galaxy.rotation.y += (this.targetRotationY - galaxy.rotation.y) * 0.08 + 0.0018
     galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
+    this.updateSentStarLabels()
     this.stars.forEach((star) => star.update(time))
     this.links.forEach((link) => link.update(time))
     this.updateSelectionMarker()
@@ -93,6 +107,56 @@ export class GalaxyManager {
     this.links.length = 0
     this.selectedStar = undefined
     this.stars.clear()
+    this.sentStars.forEach((star) => {
+      this.options.galaxy.remove(star.label)
+      star.labelTexture.dispose()
+      star.labelMaterial.dispose()
+    })
+    this.sentStars.clear()
+  }
+
+  setSentStars(stars: SentGalaxyStar[]) {
+    const incomingIds = new Set(stars.map((star) => star.id))
+    const usedStarKeys = new Set(
+      [...this.sentStars.values()].map(({ star }) => `${star.field.uuid}:${star.index}`),
+    )
+    this.sentStars.forEach((star, id) => {
+      if (incomingIds.has(id)) return
+      this.options.galaxy.remove(star.label)
+      star.labelTexture.dispose()
+      star.labelMaterial.dispose()
+      const materialIndex = this.options.materials.indexOf(star.labelMaterial)
+      if (materialIndex >= 0) this.options.materials.splice(materialIndex, 1)
+      this.sentStars.delete(id)
+    })
+
+    stars.forEach((data) => {
+      if (this.sentStars.has(data.id)) return
+      const { field, index } = this.originalStarForId(data.id, usedStarKeys)
+      const star = this.getOrCreateStar(field, index, data.color)
+      star.setColor(data.color)
+      usedStarKeys.add(`${field.uuid}:${index}`)
+
+      const labelTexture = this.makeLabelTexture(data.title, data.color)
+      const labelMaterial = new THREE.SpriteMaterial({
+        map: labelTexture,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      })
+      const label = new THREE.Sprite(labelMaterial)
+      label.position.copy(star.position)
+      label.scale.set(72, 20, 1)
+      this.options.galaxy.add(label)
+      this.options.materials.push(labelMaterial)
+      this.sentStars.set(data.id, {
+        data,
+        star,
+        label,
+        labelTexture,
+        labelMaterial,
+      })
+    })
   }
 
   private getOrCreateStar(field: THREE.Points, index: number, color: string) {
@@ -111,12 +175,51 @@ export class GalaxyManager {
     return star
   }
 
+  private updateSentStarLabels() {
+    const { camera, galaxy } = this.options
+    if (this.sentStars.size === 0) return
+    galaxy.updateMatrixWorld(true)
+    camera.updateMatrixWorld(true)
+    const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
+    const cameraUp = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize()
+    this.sentStars.forEach((star) => {
+      const worldPosition = galaxy.localToWorld(star.star.position.clone())
+      star.label.position.copy(worldPosition).addScaledVector(cameraUp, SENT_STAR_LABEL_OFFSET)
+      galaxy.worldToLocal(star.label.position)
+      const cameraSpacePosition = camera.worldToLocal(worldPosition.clone())
+      star.label.visible =
+        cameraSpacePosition.z < 0 &&
+        worldPosition.distanceTo(cameraPosition) <= SENT_STAR_LABEL_MAX_DISTANCE
+    })
+  }
+
   private selectStar(event: PointerEvent) {
     const { renderer, camera, galaxy, starFields } = this.options
     const bounds = renderer.domElement.getBoundingClientRect()
     galaxy.updateMatrixWorld(true)
     const clickX = event.clientX - bounds.left
     const clickY = event.clientY - bounds.top
+    let nearestSentStar: SentStarVisual | undefined
+    let nearestSentDistance = Number.POSITIVE_INFINITY
+    this.sentStars.forEach((star) => {
+      const projected = galaxy.localToWorld(star.star.position.clone()).project(camera)
+      if (projected.z < -1 || projected.z > 1) return
+      const screenX = (projected.x + 1) * 0.5 * bounds.width
+      const screenY = (1 - projected.y) * 0.5 * bounds.height
+      const distance = Math.hypot(screenX - clickX, screenY - clickY)
+      if (distance < nearestSentDistance) {
+        nearestSentDistance = distance
+        nearestSentStar = star
+      }
+    })
+    if (nearestSentStar && nearestSentDistance <= 32) {
+      this.clearSelection(galaxy)
+      this.options.onSentStarClick(nearestSentStar.data)
+      return
+    }
+
     let nearest: { field: THREE.Points; index: number; distance: number } | undefined
     const projected = new THREE.Vector3()
 
@@ -206,5 +309,54 @@ export class GalaxyManager {
 
   private getRandomStarColor(): string {
     return starColors[Math.floor(Math.random() * starColors.length)] ?? (starColors[0] as string)
+  }
+
+  private originalStarForId(id: string, usedKeys: Set<string>) {
+    const fields = this.options.starFields.filter(
+      (field) => (field.geometry.getAttribute('position')?.count ?? 0) > 0,
+    )
+    const total = fields.reduce(
+      (count, field) => count + field.geometry.getAttribute('position').count,
+      0,
+    )
+    if (total === 0) throw new Error('银河场景中没有可绑定的星星')
+
+    let hash = 2166136261
+    for (let index = 0; index < id.length; index += 1) {
+      hash = Math.imul(hash ^ id.charCodeAt(index), 16777619)
+    }
+    const startIndex = (hash >>> 0) % total
+    for (let offset = 0; offset < total; offset += 1) {
+      let fieldIndex = (startIndex + offset) % total
+      for (const field of fields) {
+        const count = field.geometry.getAttribute('position').count
+        if (fieldIndex < count) {
+          const key = `${field.uuid}:${fieldIndex}`
+          if (!usedKeys.has(key)) return { field, index: fieldIndex }
+          break
+        }
+        fieldIndex -= count
+      }
+    }
+    throw new Error('没有可绑定的未占用星星')
+  }
+
+  private makeLabelTexture(title: string, color: string) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 384
+    canvas.height = 96
+    const context = canvas.getContext('2d')
+    if (context) {
+      context.font = '30px "Microsoft YaHei", sans-serif'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.shadowColor = color
+      context.shadowBlur = 14
+      context.fillStyle = '#ffffff'
+      context.fillText(title, 192, 48, 360)
+    }
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
   }
 }

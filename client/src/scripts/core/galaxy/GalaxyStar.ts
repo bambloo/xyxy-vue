@@ -5,13 +5,16 @@ export class GalaxyStar {
   readonly field: THREE.Points
   readonly index: number
   readonly position: THREE.Vector3
-  readonly color: string
+  color: string
   private readonly sprite: THREE.Sprite
   private readonly material: THREE.SpriteMaterial
   private readonly label?: THREE.Sprite
   private readonly labelMaterial?: THREE.SpriteMaterial
   private readonly size: number
   private readonly phase: number
+  private readonly regularOpacity: number
+  private readonly regularColor: THREE.Color
+  private sentStarColor?: THREE.Color
 
   private static readonly labels = [
     '星河',
@@ -39,6 +42,10 @@ export class GalaxyStar {
     this.color = color
     this.size = 3.2 + (((index * 37) % 100) / 100) * 4.8
     this.phase = (index * 2.417) % (Math.PI * 2)
+    const fieldMaterial = field.material
+    const pointMaterial = fieldMaterial instanceof THREE.PointsMaterial ? fieldMaterial : undefined
+    this.regularOpacity = 0.38 + (pointMaterial?.opacity ?? 0.92) * 0.12
+    this.regularColor = pointMaterial?.color.clone() ?? new THREE.Color(0xd8efff)
     this.position = new THREE.Vector3().fromBufferAttribute(
       field.geometry.attributes.position as THREE.BufferAttribute,
       index,
@@ -77,14 +84,25 @@ export class GalaxyStar {
 
   update(time = 0) {
     const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
-    const opacity = 0.38 + Math.sin(time * 0.003 + this.phase) * 0.12
-    this.sprite.scale.setScalar(this.size * pulse)
+    const isSentStar = Boolean(this.sentStarColor)
+    const opacity = isSentStar
+      ? 1
+      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12
+    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 1.7 : 1))
     this.material.opacity = opacity
-    this.material.color.set(this.color)
+    this.material.color.copy(this.sentStarColor ?? this.regularColor)
     if (this.label && this.labelMaterial) {
       this.labelMaterial.opacity = 0.48
       this.label.scale.set(72, 18, 1 + Math.sin(time * 0.004 + this.index) * 0.025)
     }
+  }
+
+  setColor(color: string) {
+    this.color = color
+    this.sentStarColor = new THREE.Color(color)
+    this.material.color.copy(this.sentStarColor)
+    this.material.opacity = 1
+    this.sprite.scale.setScalar(this.size * 1.7)
   }
 
   private static makeLabelTexture(text: string) {
