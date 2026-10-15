@@ -1,6 +1,6 @@
 import type { UserPublicProfile } from '../../../../common/entity/user'
 
-export type TabKey = 'profile' | 'password' | 'security' | 'users'
+export type TabKey = 'profile' | 'password' | 'security' | 'users' | 'site-info'
 
 export type UserMenuItem = {
   key: TabKey
@@ -43,6 +43,14 @@ export const userMenuItems: UserMenuItem[] = [
     descriptionKey: 'user.usersHint',
     route: 'user-users',
     permissions: ['users.import'],
+  },
+  {
+    key: 'site-info',
+    labelKey: 'user.siteInfo',
+    icon: 'document-text-outline',
+    descriptionKey: 'user.siteInfoHint',
+    route: 'user-site-info',
+    permissions: ['site.manage'],
   },
 ]
 

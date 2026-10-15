@@ -1,20 +1,13 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
+import { ref } from 'vue'
 import { post } from '../../../scripts/request'
 import { useI18n } from 'vue-i18n'
-import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../../common/entity/user'
-
-const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
-const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 
 interface ImportedUser {
   tag: string
   account: string
   name: string
   phone?: string
-  hobbies?: string
-  city?: string
-  location?: UserLocation
   isActive?: boolean
 }
 
@@ -23,9 +16,8 @@ type QueryField = 'tag' | 'account' | 'phone'
 const loading = ref(false)
 const { t } = useI18n()
 const queryLoading = ref(false)
-const profileLoading = ref(false)
-const savingProfileTag = ref('')
 const errorMessage = ref('')
+const successMessage = ref('')
 const users = ref<ImportedUser[]>([])
 const queryField = ref<QueryField>('tag')
 const queryValue = ref('')
@@ -42,6 +34,7 @@ async function importSelectedFile(file: File | undefined) {
   if (!file) return
 
   errorMessage.value = ''
+  successMessage.value = ''
   try {
     const content = await file.arrayBuffer()
     const bytes = new Uint8Array(content)
@@ -90,6 +83,7 @@ async function queryUser() {
   }
 
   errorMessage.value = ''
+  successMessage.value = ''
   try {
     const packet = await post('/wpi/user/get', queryLoading, { [queryField.value]: value })
     const user = packet.data as ImportedUser | undefined
@@ -101,42 +95,6 @@ async function queryUser() {
   }
 }
 
-async function saveProfile(user: ImportedUser) {
-  if (savingProfileTag.value) return
-  errorMessage.value = ''
-  if ((user.hobbies ?? '').length > MAX_USER_HOBBIES_LENGTH) {
-    errorMessage.value = t('profile.hobbiesTooLong')
-    return
-  }
-  savingProfileTag.value = user.tag
-  user.location ??= {
-    countryCode: '',
-    country: '',
-    region: '',
-    city: '',
-    custom: user.city?.trim() ?? '',
-  }
-  try {
-    const packet = await post('/wpi/user/update-profile', profileLoading, {
-      tag: user.tag,
-      location: user.location,
-      hobbies: user.hobbies || '',
-    })
-    const updatedUser = packet.data as ImportedUser | undefined
-    if (!updatedUser || updatedUser.tag !== user.tag) {
-      throw new Error(t('users.profileUpdateError'))
-    }
-    user.city = updatedUser.city ?? ''
-    user.location = updatedUser.location
-    user.hobbies = updatedUser.hobbies ?? ''
-  } catch (error: unknown) {
-    const result = error as { msg?: string; message?: string }
-    errorMessage.value = result.msg || result.message || t('users.profileUpdateError')
-  } finally {
-    savingProfileTag.value = ''
-  }
-}
-
 async function addTag() {
   const tag = newTag.value.trim()
   if (!tag) {
@@ -145,11 +103,11 @@ async function addTag() {
   }
 
   errorMessage.value = ''
+  successMessage.value = ''
   try {
-    const packet = await post('/wpi/user/add-tag', queryLoading, { tag })
-    const user = packet.data as ImportedUser | undefined
-    if (user) users.value = [user, ...users.value.filter((item) => item.tag !== user.tag)]
+    await post('/wpi/user/add-tag', queryLoading, { tag })
     newTag.value = ''
+    successMessage.value = t('users.addTagSuccess')
   } catch (error: unknown) {
     const result = error as { msg?: string; message?: string }
     errorMessage.value = result.msg || result.message || t('users.addTagError')
@@ -184,6 +142,7 @@ async function addTag() {
     </button>
 
     <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+    <p v-if="successMessage" class="success-message" role="status">{{ successMessage }}</p>
 
     <form class="query-form" @submit.prevent="queryUser">
       <label for="query-field">{{ t('users.query') }}</label>
@@ -206,9 +165,6 @@ async function addTag() {
             <th>{{ t('common.account') }}</th>
             <th>{{ t('common.name') }}</th>
             <th>{{ t('common.phone') }}</th>
-            <th>{{ t('profile.city') }}</th>
-            <th>{{ t('profile.hobbies') }}</th>
-            <th>{{ t('common.save') }}</th>
             <th>{{ t('common.status') }}</th>
           </tr>
         </thead>
@@ -218,21 +174,6 @@ async function addTag() {
             <td>{{ user.account }}</td>
             <td>{{ user.name }}</td>
             <td>{{ user.phone || '-' }}</td>
-            <td>
-              <LocationPicker
-                v-model="user.location"
-                :legacy-value="user.city"
-                :disabled="savingProfileTag === user.tag"
-              />
-            </td>
-            <td>
-              <HobbiesPicker v-model="user.hobbies" :disabled="savingProfileTag === user.tag" />
-            </td>
-            <td>
-              <button type="button" :disabled="Boolean(savingProfileTag)" @click="saveProfile(user)">
-                {{ savingProfileTag === user.tag ? t('users.savingProfile') : t('common.save') }}
-              </button>
-            </td>
             <td><span class="status">{{ user.isActive === false ? t('common.inactive') : t('common.active') }}</span>
             </td>
           </tr>
@@ -328,6 +269,13 @@ h2 {
   border-radius: 8px;
   background: #fff0ed;
   color: #b44c3d;
+}
+
+.success-message {
+  padding: .8rem 1rem;
+  border-radius: 8px;
+  background: rgba(233, 180, 94, .14);
+  color: var(--space-gold);
 }
 
 .query-form {

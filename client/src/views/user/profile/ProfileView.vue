@@ -104,7 +104,9 @@ async function saveProfile() {
         <p class="eyebrow">{{ t('profile.eyebrow') }}</p>
         <h2>{{ t('profile.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" :disabled="loading" @click="saveProfile">{{ t('profile.save') }}</button>
+      <button class="primary-button" type="button" :disabled="loading" @click="saveProfile">
+        {{ t('profile.save') }}
+      </button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">

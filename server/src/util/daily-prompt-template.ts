@@ -46,7 +46,7 @@ interface TimeAction {
 }
 
 export type TimeName =
-  | '子时'
+  | '早子时'
   | '丑时'
   | '寅时'
   | '卯时'
@@ -58,9 +58,10 @@ export type TimeName =
   | '酉时'
   | '戌时'
   | '亥时'
+  | '晚子时'
 
 const timeNames = new Set<string>([
-  '子时',
+  '早子时',
   '丑时',
   '寅时',
   '卯时',
@@ -72,6 +73,7 @@ const timeNames = new Set<string>([
   '酉时',
   '戌时',
   '亥时',
+  '晚子时',
 ])
 
 function isTimeName(name: string): name is TimeName {
@@ -177,15 +179,24 @@ function dayNumberFor(date: string): number {
 }
 
 export function current_time_index(date = new Date()): number {
+  if (date.getHours() === 23) return 12
   return Math.floor(((date.getHours() + 1) % 24) / 2)
 }
 
 export function time_name_for_index(timeIndex: number): TimeName {
+  if (timeIndex === 0) return '早子时'
+  if (timeIndex === 12) return '晚子时'
   const theme = timeThemes.find((item) => item.id === timeIndex)
   if (!theme || !isTimeName(theme.name)) {
     throw new Error(`工作簿未找到有效的时辰序号 ${timeIndex}`)
   }
   return theme.name
+}
+
+function time_range_for_index(timeIndex: number, theme: TimeTheme): string {
+  if (timeIndex === 0) return '00:00-01:00'
+  if (timeIndex === 12) return '23:00-24:00'
+  return theme.time
 }
 
 export function current_time_name(date = new Date()): TimeName {
@@ -370,13 +381,16 @@ export function build_daily_prompt(user: PromptUser, date: string, now = new Dat
 }
 
 export function build_time_prompt(user: PromptUser, date: string, timeIndex: number): string {
-  if (!Number.isInteger(timeIndex) || timeIndex < 0 || timeIndex >= timeThemes.length) {
+  if (!Number.isInteger(timeIndex) || timeIndex < 0 || timeIndex > 12) {
     throw new Error(`无效的时辰序号：${timeIndex}`)
   }
 
   const dayNumber = dayNumberFor(date)
-  const theme = timeThemes.find((item) => item.id === timeIndex)
+  const themeIndex = timeIndex === 12 ? 0 : timeIndex
+  const theme = timeThemes.find((item) => item.id === themeIndex)
   if (!theme) throw new Error(`工作簿未找到时辰序号 ${timeIndex}`)
+  const timeName = time_name_for_index(timeIndex)
+  const timeRange = time_range_for_index(timeIndex, theme)
   const specialRules = specialDayRules.filter((item) => item.date === date).map((item) => item.rule)
   const selected = [
     selectVariable(user, '锦言+时辰', '开头', '锦言.开头', dayNumber, specialRules, timeIndex),
@@ -387,7 +401,7 @@ export function build_time_prompt(user: PromptUser, date: string, timeIndex: num
   const wordLimit = `${asNumber(config.get('时辰.字数下限'), '时辰.字数下限')}-${asNumber(config.get('时辰.字数上限'), '时辰.字数上限')}`
 
   return [
-    `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} ${theme.name}（${theme.time}）时辰锦言。`,
+    `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} ${timeName}（${timeRange}）时辰锦言。`,
     user.city?.trim()
       ? `所在城市参考：${user.city.trim()}。请结合当地生活环境，不要臆测实时天气。`
       : '',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { areaList } from '@vant/area-data'
 import {
   getAllCountries,
@@ -19,7 +19,6 @@ const countryCode = ref('CN')
 const region = ref('')
 const city = ref('')
 const custom = ref('')
-const cityListId = `city-options-${useId().replaceAll(':', '')}`
 
 const countries = getAllCountries('zh-CN')
   .map((country) => ({
@@ -184,17 +183,23 @@ function setCustom(value: string) {
     </label>
     <label>
       <span>{{ t('location.city') }}</span>
-      <input
+      <select
+        v-if="countryCode === 'CN'"
         :value="city"
-        :list="cities.length ? cityListId : undefined"
-        :disabled="disabled || !countryCode || (countryCode === 'CN' && !region)"
+        :disabled="disabled || !region"
+        @change="selectCity(($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">{{ t('location.selectCity') }}</option>
+        <option v-for="name in cities" :key="name" :value="name">{{ name }}</option>
+      </select>
+      <input
+        v-else
+        :value="city"
+        :disabled="disabled || !countryCode"
         maxlength="120"
         :placeholder="t('location.selectCity')"
         @input="selectCity(($event.target as HTMLInputElement).value)"
       />
-      <datalist v-if="cities.length" :id="cityListId">
-        <option v-for="name in cities" :key="name" :value="name" />
-      </datalist>
     </label>
     <label class="location-custom">
       <span>{{ t('location.custom') }}</span>

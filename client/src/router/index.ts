@@ -7,6 +7,7 @@ import ProfileView from '@/views/user/profile/ProfileView.vue'
 import PasswordView from '@/views/user/security/PasswordView.vue'
 import SecuritySettingsView from '@/views/user/security/SecuritySettingsView.vue'
 import UserListView from '@/views/user/users/UserListView.vue'
+import SiteInfoView from '@/views/user/SiteInfoView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -28,6 +29,12 @@ const router = createRouter({
         { path: 'password', name: 'user-password', component: PasswordView },
         { path: 'security', name: 'user-security', component: SecuritySettingsView },
         { path: 'users', name: 'user-users', component: UserListView },
+        {
+          path: 'site-info',
+          name: 'user-site-info',
+          component: SiteInfoView,
+          meta: { permissions: ['site.manage'] },
+        },
       ],
     },
     {
@@ -65,6 +72,15 @@ router.beforeEach(async (to) => {
 
   if (to.path === '/login' && auth.isLoggedIn) {
     return '/admin/profile'
+  }
+
+  const permissions = to.meta.permissions
+  if (
+    Array.isArray(permissions) &&
+    !auth.currentUser?.isAdmin &&
+    !permissions.every((permission) => auth.currentUser?.permissions?.includes(permission))
+  ) {
+    return { name: 'user-profile' }
   }
 
   return true

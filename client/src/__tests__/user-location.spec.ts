@@ -88,9 +88,53 @@ describe('user location', () => {
     expect(provinceCode).toBeTruthy()
 
     await wrapper.findAll('select')[1]!.setValue('广东省')
-    const cityOptions = wrapper.findAll('datalist option').map((option) => option.attributes('value'))
+    const citySelect = wrapper.findAll('select')[2]!
+    const cityOptions = citySelect.findAll('option').map((option) => option.element.value)
     expect(cityOptions).toContain('深圳市')
-    expect(cityOptions.every((name) => name && /\p{Script=Han}/u.test(name))).toBe(true)
+    expect(cityOptions.filter(Boolean).every((name) => /\p{Script=Han}/u.test(name))).toBe(true)
+    await citySelect.setValue('深圳市')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({
+      countryCode: 'CN',
+      region: '广东省',
+      city: '深圳市',
+    })
+    wrapper.unmount()
+  })
+
+  it('has consistent province and city administrative codes including Langfang', () => {
+    const provinces = Object.entries(areaList.province_list)
+    const cities = Object.entries(areaList.city_list)
+    expect(provinces).toHaveLength(34)
+    expect(provinces.every(([provinceCode]) =>
+      cities.some(([cityCode]) => cityCode.startsWith(provinceCode.slice(0, 2))),
+    )).toBe(true)
+    expect(
+      cities.every(([cityCode]) =>
+        provinces.some(([provinceCode]) => cityCode.startsWith(provinceCode.slice(0, 2))),
+      ),
+    ).toBe(true)
+
+    const hebeiCode = provinces.find(([, name]) => name === '河北省')?.[0]
+    expect(hebeiCode).toBe('130000')
+    expect(
+      cities.find(([code, name]) => code === '131000' && name === '廊坊市')?.[1],
+    ).toBe('廊坊市')
+    expect(cities.some(([code]) => code.startsWith(hebeiCode!.slice(0, 2)) && code === '131000')).toBe(
+      true,
+    )
+  })
+
+  it('keeps city entry as text for countries without a city dataset', async () => {
+    const wrapper = mount(LocationPicker, { global: { plugins: [i18n] } })
+    await wrapper.findAll('select')[0]!.setValue('US')
+
+    const cityField = wrapper.findAll('label')[2]!.find('input')
+    expect(cityField.exists()).toBe(true)
+    await cityField.setValue('New York')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({
+      countryCode: 'US',
+      city: 'New York',
+    })
     wrapper.unmount()
   })
 })

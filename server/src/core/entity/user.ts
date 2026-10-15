@@ -1,4 +1,8 @@
-import { format_user_location, type UserLocation, type UserPublicProfile } from '../../../../common/entity/user'
+import {
+  format_user_location,
+  type UserLocation,
+  type UserPublicProfile,
+} from '../../../../common/entity/user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { trigger_fortune_generation } from '../manager/daily-fortune'
 import {
@@ -42,12 +46,10 @@ export interface UserTimeFortuneDetails {
 }
 
 function timeFortunesFor(record: DailyFortuneRecord | undefined) {
-  return Array.from({ length: 12 }, (_, offset) => {
-    const timeName = time_name_for_index(11 - offset)
+  return Array.from({ length: 13 }, (_, offset) => {
+    const timeName = time_name_for_index(12 - offset)
     const fortune = record?.time_fortune?.[timeName]
-    return fortune?.prompt && fortune.message
-      ? { timeName, message: fortune.message }
-      : undefined
+    return fortune?.prompt && fortune.message ? { timeName, message: fortune.message } : undefined
   }).filter((fortune) => fortune !== undefined)
 }
 
@@ -252,7 +254,10 @@ export class User implements UserProfile {
 
     return mongo_helper
       .ddo((db) =>
-        db.collection<DailyFortuneRecord>('daily_fortune').find({ _id: { $in: ids } }).toArray(),
+        db
+          .collection<DailyFortuneRecord>('daily_fortune')
+          .find({ _id: { $in: ids } })
+          .toArray(),
       )
       .then((records) => {
         const recordsById = new Map(records.map((record) => [record._id, record]))
@@ -260,9 +265,7 @@ export class User implements UserProfile {
           const record = recordsById.get(`${this.tag}:${date}`)
           const timeFortunes = timeFortunesFor(record)
           const dailyFortune = record?.fortune?.message ?? ''
-          return dailyFortune || timeFortunes.length
-            ? [{ date, dailyFortune, timeFortunes }]
-            : []
+          return dailyFortune || timeFortunes.length ? [{ date, dailyFortune, timeFortunes }] : []
         })
 
         return {

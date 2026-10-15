@@ -1,4 +1,18 @@
-const timeNames = ['子时', '丑时', '寅时', '卯时', '辰时', '巳时', '午时', '未时', '申时', '酉时', '戌时', '亥时']
+const timeNames = [
+  '早子时',
+  '丑时',
+  '寅时',
+  '卯时',
+  '辰时',
+  '巳时',
+  '午时',
+  '未时',
+  '申时',
+  '酉时',
+  '戌时',
+  '亥时',
+  '晚子时',
+]
 
 export function timeFortuneOrder(timeName: string) {
   const index = timeNames.indexOf(timeName)
@@ -8,8 +22,10 @@ export function timeFortuneOrder(timeName: string) {
 export function timeFortuneRange(timeName: string) {
   const index = timeFortuneOrder(timeName)
   if (index >= timeNames.length) return ''
-  const startHour = (23 + index * 2) % 24
-  const endHour = (startHour + 2) % 24
+  if (timeName === '早子时') return '00:00-01:00'
+  if (timeName === '晚子时') return '23:00-24:00'
+  const startHour = 1 + (index - 1) * 2
+  const endHour = startHour + 2
   const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`
   return `${formatHour(startHour)}-${formatHour(endHour)}`
 }

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import UserLayout from './UserLayout.vue'
 
-type TabKey = 'profile' | 'password' | 'security' | 'users'
+type TabKey = 'profile' | 'password' | 'security' | 'users' | 'site-info'
 
 const route = useRoute()
 
@@ -15,6 +15,8 @@ const currentTab = computed<TabKey>(() => {
       return 'security'
     case 'user-users':
       return 'users'
+    case 'user-site-info':
+      return 'site-info'
     case 'user-profile':
     default:
       return 'profile'

@@ -6,6 +6,7 @@ import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
 import UserProfileEditDialog from '@/components/UserProfileEditDialog.vue'
+import SiteInfoView from '@/views/user/SiteInfoView.vue'
 import { timeFortuneRange } from '@/utils/time-fortune'
 import {
   dismissTimeFortuneLocator,
@@ -43,6 +44,7 @@ const runId = ref(0)
 const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
 const profileDialogOpen = ref(false)
+const siteInfoOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
 const fortuneDialog = ref<HTMLElement | null>(null)
@@ -171,6 +173,10 @@ function handleButtonToggle() {
   void openFortuneDialog(false)
 }
 
+function openSiteInfo() {
+  siteInfoOpen.value = true
+}
+
 function handleDialogPointerDown(event: PointerEvent) {
   if (event.pointerType !== 'mouse' || event.button !== 0) return
   const target = event.target
@@ -231,13 +237,23 @@ onBeforeUnmount(() => {
           <div class="dialog-header-actions">
             <button
               v-if="details?.history"
-              class="dialog-icon-button dialog-profile"
+              class="dialog-icon-button dialog-action"
               type="button"
               :aria-label="t('timeFortune.editProfile')"
               :title="t('timeFortune.editProfile')"
               @click="profileDialogOpen = true"
             >
               <ion-icon name="create-outline" aria-hidden="true"></ion-icon>
+            </button>
+            <button
+              v-if="details?.history"
+              class="dialog-icon-button dialog-action"
+              type="button"
+              :aria-label="t('siteInfo.title')"
+              :title="t('siteInfo.title')"
+              @click="openSiteInfo"
+            >
+              <ion-icon name="document-text-outline" aria-hidden="true"></ion-icon>
             </button>
             <button
               class="dialog-icon-button dialog-close"
@@ -291,6 +307,7 @@ onBeforeUnmount(() => {
       :open="profileDialogOpen"
       @close="profileDialogOpen = false"
     />
+    <SiteInfoView v-if="siteInfoOpen" dialog @close="siteInfoOpen = false" />
   </Teleport>
 </template>
 
@@ -362,11 +379,11 @@ onBeforeUnmount(() => {
   background: rgba(137, 177, 226, .14);
 }
 
-.dialog-profile {
+.dialog-action {
   color: #f5d58e;
 }
 
-.dialog-profile ion-icon {
+.dialog-action ion-icon {
   font-size: 21px;
 }
 
