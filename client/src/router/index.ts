@@ -8,6 +8,7 @@ import PasswordView from '@/views/user/security/PasswordView.vue'
 import SecuritySettingsView from '@/views/user/security/SecuritySettingsView.vue'
 import UserListView from '@/views/user/users/UserListView.vue'
 import SiteInfoView from '@/views/user/SiteInfoView.vue'
+import GalaxyTestView from '@/views/user/GalaxyTestView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -35,6 +36,12 @@ const router = createRouter({
           component: SiteInfoView,
           meta: { permissions: ['site.manage'] },
         },
+        {
+          path: 'galaxy-test',
+          name: 'user-galaxy-test',
+          component: GalaxyTestView,
+          meta: { requiresAdmin: true },
+        },
       ],
     },
     {
@@ -46,6 +53,12 @@ const router = createRouter({
       path: '/galaxy',
       name: 'galaxy',
       component: GalaxyView,
+    },
+    {
+      path: '/blackhole',
+      name: 'blackhole',
+      component: GalaxyView,
+      props: { blackHoleView: true },
     },
     {
       path: '/',
@@ -75,6 +88,9 @@ router.beforeEach(async (to) => {
   }
 
   const permissions = to.meta.permissions
+  if (to.meta.requiresAdmin && !auth.currentUser?.isAdmin) {
+    return { name: 'user-profile' }
+  }
   if (
     Array.isArray(permissions) &&
     !auth.currentUser?.isAdmin &&

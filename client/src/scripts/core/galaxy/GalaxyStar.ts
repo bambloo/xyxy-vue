@@ -14,8 +14,10 @@ export class GalaxyStar {
   private readonly phase: number
   private readonly regularOpacity: number
   private readonly regularColor: THREE.Color
+  private readonly fieldColor: THREE.Color
   private sentStarColor?: THREE.Color
   private connectionCount = 0
+  private isVisible = true
 
   private static readonly labels = [
     '星河',
@@ -47,6 +49,10 @@ export class GalaxyStar {
     const pointMaterial = fieldMaterial instanceof THREE.PointsMaterial ? fieldMaterial : undefined
     this.regularOpacity = 0.38 + (pointMaterial?.opacity ?? 0.92) * 0.12
     this.regularColor = new THREE.Color(color)
+    const fieldColors = field.geometry.getAttribute('color')
+    this.fieldColor = fieldColors
+      ? new THREE.Color().fromBufferAttribute(fieldColors, index)
+      : new THREE.Color(1, 1, 1)
     this.position = new THREE.Vector3().fromBufferAttribute(
       field.geometry.attributes.position as THREE.BufferAttribute,
       index,
@@ -110,6 +116,19 @@ export class GalaxyStar {
 
   setConnectionCount(count: number) {
     this.connectionCount = Math.max(0, Math.min(100, count))
+  }
+
+  setVisible(visible: boolean) {
+    if (this.isVisible === visible) return
+    this.isVisible = visible
+    this.sprite.visible = visible
+    if (this.label) this.label.visible = visible
+
+    const fieldColors = this.field.geometry.getAttribute('color')
+    if (!fieldColors) return
+    const color = visible ? this.fieldColor : new THREE.Color(0, 0, 0)
+    fieldColors.setXYZ(this.index, color.r, color.g, color.b)
+    fieldColors.needsUpdate = true
   }
 
   private static makeLabelTexture(text: string) {

@@ -1,6 +1,6 @@
 import type { UserPublicProfile } from '../../../../common/entity/user'
 
-export type TabKey = 'profile' | 'password' | 'security' | 'users' | 'site-info'
+export type TabKey = 'profile' | 'password' | 'security' | 'users' | 'site-info' | 'galaxy-test'
 
 export type UserMenuItem = {
   key: TabKey
@@ -9,6 +9,7 @@ export type UserMenuItem = {
   descriptionKey: string
   route: string
   permissions: string[]
+  adminOnly?: boolean
 }
 
 export const userMenuItems: UserMenuItem[] = [
@@ -52,10 +53,20 @@ export const userMenuItems: UserMenuItem[] = [
     route: 'user-site-info',
     permissions: ['site.manage'],
   },
+  {
+    key: 'galaxy-test',
+    labelKey: 'user.galaxyTest',
+    icon: 'planet-outline',
+    descriptionKey: 'user.galaxyTestHint',
+    route: 'user-galaxy-test',
+    permissions: [],
+    adminOnly: true,
+  },
 ]
 
 export function canAccessMenu(user: UserPublicProfile | null, item: UserMenuItem) {
   if (!user) return false
+  if (item.adminOnly && !user.isAdmin) return false
   if (user.isAdmin) return true
   return item.permissions.every((permission) => user.permissions?.includes(permission))
 }

@@ -20,6 +20,14 @@ export interface SentGalaxyStar {
 }
 
 export type GalaxyStarVote = 'like' | 'dislike'
+export type GalaxyStarListView = 'normal' | 'blackhole'
+
+export interface GalaxyStarListResponse {
+  stars: GalaxyStarView[]
+  connections: GalaxyStarConnection[]
+  hiddenStarIds: string[]
+  totalCount: number
+}
 
 export interface GalaxyStarComment {
   id: string

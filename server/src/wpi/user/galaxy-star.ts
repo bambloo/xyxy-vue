@@ -5,6 +5,7 @@ import {
   GALAXY_STAR_COLORS,
   type GalaxyStarComment,
   type GalaxyStarConnection,
+  type GalaxyStarListView,
   type GalaxyStarVote,
   type SentGalaxyStar,
   type GalaxyStarView,
@@ -41,6 +42,46 @@ function requireUser(req: WpiRequest): User {
   return req.user
 }
 
+function getListView(value: unknown): GalaxyStarListView {
+  if (value === undefined || value === 'normal') return 'normal'
+  if (value === 'blackhole') return 'blackhole'
+  throw new BamblooError(BamblooStatusCode.BadRequest, '星星列表视图无效')
+}
+
+function getBlackHoleLimit(value: unknown) {
+  if (value === undefined) return 20
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 20) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '每批黑洞星星数量必须介于 1 到 20 之间')
+  }
+  return value
+}
+
+function getStarIdSet(value: unknown, fieldName: string) {
+  if (value === undefined) return new Set<string>()
+  if (
+    !Array.isArray(value) ||
+    value.length > 100 ||
+    !value.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 128)
+  ) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, `${fieldName} 无效`)
+  }
+  return new Set(value)
+}
+
+function getBlackHoleSeedCount(value: unknown) {
+  if (value === undefined) return 5
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 100) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '测试星数量必须介于 1 到 100 之间')
+  }
+  return value
+}
+
+function isBlackHoleStar(star: Pick<GalaxyStarRecord, 'likeCount' | 'dislikeCount'>) {
+  const likeCount = star.likeCount ?? 0
+  const dislikeCount = star.dislikeCount ?? 0
+  return dislikeCount > 8 && dislikeCount > likeCount * 1.5
+}
+
 export default async function handler(
   params: Record<string, unknown>,
   req: WpiRequest,
@@ -50,6 +91,57 @@ export default async function handler(
   const now = new Date()
   const day = format_local_day(now)
   const collection = await mongo_helper.ddo((db) => db.collection<GalaxyStarRecord>('galaxy_star'))
+
+  if (params.action === 'seedBlackHole') {
+    if (!user.isAdmin) {
+      throw new BamblooError(BamblooStatusCode.Unauthorized, '只有管理员可以创建黑洞测试星')
+    }
+    const count = getBlackHoleSeedCount(params.count)
+    const samples = [
+      ['被遗忘的星球', '它曾在星图边缘闪烁，如今沉入黑洞深处。', GALAXY_STAR_COLORS[0]],
+      ['最后一束微光', '穿过漫长夜空的光，最终也被引力捕获。', GALAXY_STAR_COLORS[3]],
+      ['沉默的回声', '没有人记得它的名字，只有星尘仍在回应。', GALAXY_STAR_COLORS[4]],
+      ['坠落轨道', '它偏离了原来的轨道，缓缓靠近事件视界。', GALAXY_STAR_COLORS[2]],
+      ['深空旅人', '在无声的宇宙里，它停止了漂流。', GALAXY_STAR_COLORS[5]],
+      ['暗面微光', '微弱的光芒没有熄灭，只是再也无法逃离。', GALAXY_STAR_COLORS[1]],
+      ['失重的梦', '一场尚未醒来的梦，被引力留在此处。', GALAXY_STAR_COLORS[6]],
+      ['星尘来信', '这封来自远方的信，最终落进了黑洞。', GALAXY_STAR_COLORS[7]],
+      ['午夜星屑', '它把最后的愿望留给了无边的夜色。', GALAXY_STAR_COLORS[8]],
+      ['归于寂静', '所有旅程都有终点，它的终点是一片深邃。', GALAXY_STAR_COLORS[9]],
+    ] as const
+    const seedRecords: GalaxyStarRecord[] = Array.from({ length: count }, (_, index) => {
+      const sample = samples[index % samples.length]!
+      const suffix = index < samples.length ? '' : ` ${index + 1}`
+      return {
+        _id: `blackhole-demo:${index + 1}`,
+        id: `blackhole-demo-${index + 1}`,
+        title: `${sample[0]}${suffix}`,
+        content: sample[1],
+        color: sample[2],
+        createdAt: format_timestamp(now),
+        userTag: 'system:blackhole-demo',
+        day,
+        likeCount: 0,
+        dislikeCount: 9,
+        votes: [],
+        comments: [],
+        links: [],
+      }
+    })
+    const result = await collection.bulkWrite(
+      seedRecords.map((record) => ({
+        updateOne: {
+          filter: { _id: record._id },
+          update: { $setOnInsert: record },
+          upsert: true,
+        },
+      })),
+    )
+    return response(res, BamblooStatusCode.Success, undefined, {
+      createdCount: result.upsertedCount,
+      starIds: seedRecords.map(({ id }) => id),
+    })
+  }
 
   if (params.action === 'status') {
     const sentToday = await collection.findOne(
@@ -105,6 +197,11 @@ export default async function handler(
     return response(res, BamblooStatusCode.Success, undefined, { star })
   }
 
+  const listView = getListView(params.view)
+  const blackHoleLimit = listView === 'blackhole' ? getBlackHoleLimit(params.limit) : undefined
+  const excludedStarIds = getStarIdSet(params.excludeIds, '排除星星列表')
+  const requestedStarIds = getStarIdSet(params.includeIds, '指定星星列表')
+
   if (params.action === 'vote') {
     const starId = typeof params.starId === 'string' ? params.starId.trim() : ''
     const vote = params.vote
@@ -152,7 +249,15 @@ export default async function handler(
       throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这颗星星')
     }
 
-    return listStars(collection, user.tag, res)
+    return listStars(
+      collection,
+      user.tag,
+      res,
+      listView,
+      blackHoleLimit,
+      excludedStarIds,
+      requestedStarIds,
+    )
   }
 
   if (params.action === 'comment') {
@@ -213,13 +318,37 @@ export default async function handler(
     if (updated.modifiedCount !== 1) {
       throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
     }
-    return listStars(collection, user.tag, res)
+    return listStars(
+      collection,
+      user.tag,
+      res,
+      listView,
+      blackHoleLimit,
+      excludedStarIds,
+      requestedStarIds,
+    )
   }
 
-  return listStars(collection, user.tag, res)
+  return listStars(
+    collection,
+    user.tag,
+    res,
+    listView,
+    blackHoleLimit,
+    excludedStarIds,
+    requestedStarIds,
+  )
 }
 
-async function listStars(collection: Collection<GalaxyStarRecord>, userTag: string, res: Response) {
+async function listStars(
+  collection: Collection<GalaxyStarRecord>,
+  userTag: string,
+  res: Response,
+  view: GalaxyStarListView = 'normal',
+  limit = 100,
+  excludedStarIds = new Set<string>(),
+  requestedStarIds = new Set<string>(),
+) {
   const records = await collection
     .find(
       {},
@@ -230,20 +359,49 @@ async function listStars(collection: Collection<GalaxyStarRecord>, userTag: stri
     .sort({ createdAt: 1 })
     .toArray()
   const pairCounts = new Map<string, number>()
-  const connectionCounts = new Map<string, number>()
   records.forEach((record) => {
     record.links?.forEach(({ sourceStarId }) => {
       const pairKey = `${sourceStarId}:${record.id}`
       pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
-      connectionCounts.set(sourceStarId, (connectionCounts.get(sourceStarId) ?? 0) + 1)
-      connectionCounts.set(record.id, (connectionCounts.get(record.id) ?? 0) + 1)
     })
   })
-  const connections: GalaxyStarConnection[] = [...pairCounts].map(([key, count]) => {
+  const allConnections: GalaxyStarConnection[] = [...pairCounts].map(([key, count]) => {
     const [sourceStarId = '', targetStarId = ''] = key.split(':')
     return { sourceStarId, targetStarId, count }
   })
-  const stars: GalaxyStarView[] = records.map(
+  const hiddenRecords = records.filter(isBlackHoleStar)
+  const hiddenIds = hiddenRecords.map(({ id }) => id)
+  const visibleConnections =
+    view === 'blackhole'
+      ? []
+      : allConnections.filter(
+          ({ sourceStarId, targetStarId }) =>
+            !hiddenIds.includes(sourceStarId) && !hiddenIds.includes(targetStarId),
+        )
+  const connectionCounts = new Map<string, number>()
+  visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
+    connectionCounts.set(sourceStarId, (connectionCounts.get(sourceStarId) ?? 0) + count)
+    connectionCounts.set(targetStarId, (connectionCounts.get(targetStarId) ?? 0) + count)
+  })
+  const selectedRecords =
+    view === 'blackhole' ? hiddenRecords : records.filter((record) => !isBlackHoleStar(record))
+  const totalCount = selectedRecords.length
+  let batchRecords = selectedRecords
+  if (view === 'blackhole') {
+    const requestedRecords = selectedRecords.filter(({ id }) => requestedStarIds.has(id))
+    if (requestedRecords.length > 0) {
+      batchRecords = requestedRecords.slice(0, limit)
+    } else {
+      const candidates = selectedRecords.filter(({ id }) => !excludedStarIds.has(id))
+      const pool = candidates.length > 0 ? candidates : [...selectedRecords]
+      for (let index = pool.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1))
+        ;[pool[index], pool[swapIndex]] = [pool[swapIndex]!, pool[index]!]
+      }
+      batchRecords = pool.slice(0, limit)
+    }
+  }
+  const stars: GalaxyStarView[] = batchRecords.map(
     ({
       _id: _recordId,
       userTag: ownerTag,
@@ -264,5 +422,10 @@ async function listStars(collection: Collection<GalaxyStarRecord>, userTag: stri
       myVote: votes.find((entry) => entry.userTag === userTag)?.vote,
     }),
   )
-  return response(res, BamblooStatusCode.Success, undefined, { stars, connections })
+  return response(res, BamblooStatusCode.Success, undefined, {
+    stars,
+    connections: visibleConnections,
+    hiddenStarIds: view === 'blackhole' ? batchRecords.map(({ id }) => id) : hiddenIds,
+    totalCount,
+  })
 }

@@ -1,10 +1,14 @@
 import * as THREE from 'three'
 
 // const GRAVITY_RADIUS = 200
-const MAX_PULL_DISTANCE = 100
+const MAX_PULL_DISTANCE = 150
 // const STAR_RECOVERY_RATE = 5
 const GALAXY_RADIUS = 980
 const BLACK_HOLE_ORBIT_RADIUS = GALAXY_RADIUS * 0.3
+const BLACK_HOLE_VIEW_DIAMETER = 0.9
+const BLACK_HOLE_HORIZON_DIAMETER_RATIO = 0.7 * 0.56
+const BLACK_HOLE_SHADER_COORDINATE_SCALE = 0.7
+const BLACK_HOLE_CORE_RADIUS = 0.56
 
 export class GalaxyBlackHole {
   private readonly group = new THREE.Group()
@@ -14,10 +18,12 @@ export class GalaxyBlackHole {
   private readonly materials: THREE.Material[] = []
   private readonly blackHoleMaterial: THREE.ShaderMaterial
   private readonly camera: THREE.PerspectiveCamera
+  private readonly singularity: THREE.Mesh
   private readonly affectedStarFields: {
     points: THREE.Points
     originalPositions: Float32Array
   }[] = []
+  private blackHoleView = false
 
   constructor(
     galaxy: THREE.Group,
@@ -50,7 +56,7 @@ export class GalaxyBlackHole {
         void mainImage(out vec4 O, vec2 F) {
           float i = 0.2, a;
           vec2 r = iResolution.xy,
-               p = (F + F - r) / r.y / 0.7,
+               p = (F + F - r) / r.y / ${BLACK_HOLE_SHADER_COORDINATE_SCALE},
                d = vec2(-1.0, 1.0),
                b = p - i * d,
                c = p * mat2(1.0, 1.0, d / (0.1 + i / dot(b, b))),
@@ -71,7 +77,7 @@ export class GalaxyBlackHole {
           );
           float radius = length(p);
           float blackHoleRadius = length(p);
-          float holeMask = 1.0 - smoothstep(0.56, 0.72, blackHoleRadius);
+          float holeMask = 1.0 - smoothstep(${BLACK_HOLE_CORE_RADIUS}, 0.72, blackHoleRadius);
           O.rgb *= 1.0 - holeMask;
           float photonRing = exp(-pow((blackHoleRadius - 0.68) / 0.065, 2.0));
           O.rgb += vec3(0.72, 0.84, 1.0) * photonRing * 0.22;
@@ -95,9 +101,9 @@ export class GalaxyBlackHole {
       toneMapped: false,
     })
     this.blackHoleMaterial = blackHoleMaterial
-    const singularity = new THREE.Mesh(singularityGeometry, blackHoleMaterial)
-    singularity.position.z = -4.5
-    this.group.add(singularity)
+    this.singularity = new THREE.Mesh(singularityGeometry, blackHoleMaterial)
+    this.singularity.position.z = -4.5
+    this.group.add(this.singularity)
     this.geometries.push(singularityGeometry)
     this.materials.push(blackHoleMaterial)
 
@@ -108,19 +114,59 @@ export class GalaxyBlackHole {
   update(time: number) {
     const seconds = time * 0.001
     const phase = this.reducedMotion ? 0 : seconds
-    this.position.set(
-      Math.sin(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
-      0,
-      Math.cos(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
-    )
+    if (this.blackHoleView) {
+      const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3())
+      const cameraDirection = this.camera.getWorldDirection(new THREE.Vector3())
+      const worldPosition = cameraPosition.addScaledVector(cameraDirection, 230)
+      this.group.parent?.updateMatrixWorld(true)
+      this.position.copy(this.group.parent?.worldToLocal(worldPosition) ?? worldPosition)
+    } else {
+      this.position.set(
+        Math.sin(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
+        0,
+        Math.cos(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
+      )
+    }
     this.group.position.copy(this.position)
     const galaxyQuaternion = this.group.parent?.getWorldQuaternion(new THREE.Quaternion())
     const cameraQuaternion = this.camera.getWorldQuaternion(new THREE.Quaternion())
     this.group.quaternion.copy(
       galaxyQuaternion ? galaxyQuaternion.invert().multiply(cameraQuaternion) : cameraQuaternion,
     )
+    if (this.blackHoleView) {
+      this.updateBlackHoleViewScale()
+    } else {
+      this.singularity.scale.set(1, 1, 1)
+    }
     this.blackHoleMaterial.uniforms['iTime']!.value = this.reducedMotion ? 0 : seconds
     this.updateStarPositions()
+  }
+
+  setBlackHoleView(enabled: boolean) {
+    this.blackHoleView = enabled
+    if (!enabled) this.singularity.scale.set(1, 1, 1)
+  }
+
+  hitTest(event: PointerEvent, camera: THREE.Camera, element: HTMLElement) {
+    const bounds = element.getBoundingClientRect()
+    if (bounds.width <= 0 || bounds.height <= 0) return false
+
+    const pointer = new THREE.Vector2(
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+    )
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(pointer, camera)
+    this.group.updateMatrixWorld(true)
+    const aspect =
+      this.blackHoleMaterial.uniforms['iResolution']!.value.x /
+      this.blackHoleMaterial.uniforms['iResolution']!.value.y
+    return raycaster.intersectObject(this.singularity, false).some(({ uv }) => {
+      if (!uv) return false
+      const shaderX = ((uv.x * 2 - 1) * aspect) / BLACK_HOLE_SHADER_COORDINATE_SCALE
+      const shaderY = (uv.y * 2 - 1) / BLACK_HOLE_SHADER_COORDINATE_SCALE
+      return Math.hypot(shaderX, shaderY) <= BLACK_HOLE_CORE_RADIUS
+    })
   }
 
   destroy(galaxy: THREE.Group) {
@@ -143,6 +189,20 @@ export class GalaxyBlackHole {
         originalPositions: Float32Array.from(positionAttribute.array),
       })
     })
+  }
+
+  private updateBlackHoleViewScale() {
+    const aspect = Math.max(this.camera.aspect, 0.01)
+    const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3())
+    this.group.updateMatrixWorld(true)
+    const holePosition = this.singularity.getWorldPosition(new THREE.Vector3())
+    const distance = cameraPosition.distanceTo(holePosition)
+    const viewportHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
+    const targetDiameter = viewportHeight * Math.min(1, aspect) * BLACK_HOLE_VIEW_DIAMETER
+    const planeHeight = targetDiameter / BLACK_HOLE_HORIZON_DIAMETER_RATIO
+    const planeWidth = planeHeight * aspect
+    this.singularity.scale.set(planeWidth / 112, planeHeight / 112, 1)
+    this.blackHoleMaterial.uniforms['iResolution']!.value.set(256 * aspect, 256, 1)
   }
 
   private updateStarPositions() {

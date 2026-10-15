@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createGalaxyStarLabelCanvas } from './starTexture'
 import type {
   GalaxyStarConnection,
   GalaxyStarView,
@@ -46,12 +47,22 @@ type SentStarVisual = {
   labelMaterial: THREE.SpriteMaterial
 }
 
+type HiddenStarAssignment = {
+  field: THREE.Points
+  index: number
+  color: THREE.Color
+}
+
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
   private readonly links: GalaxyLink[] = []
   private readonly socialLinks = new Map<string, GalaxyLink>()
   private readonly sentStars = new Map<string, SentStarVisual>()
+  private readonly hiddenStarAssignments = new Map<string, HiddenStarAssignment>()
+  private downvotedStarIds = new Set<string>()
+  private currentConnections: GalaxyStarConnection[] = []
+  private blackHoleView = false
   private selectionMarker?: THREE.Mesh
   private selectedStar?: GalaxyStar
   private pointerStartX = 0
@@ -228,6 +239,7 @@ export class GalaxyManager {
       star.labelMaterial.dispose()
     })
     this.sentStars.clear()
+    this.hiddenStarAssignments.clear()
   }
 
   private recordInteraction() {
@@ -344,11 +356,13 @@ export class GalaxyManager {
 
   setSentStars(stars: GalaxyStarView[]) {
     const incomingIds = new Set(stars.map((star) => star.id))
-    const usedStarKeys = new Set(
-      [...this.sentStars.values()].map(({ star }) => `${star.field.uuid}:${star.index}`),
-    )
+    const usedStarKeys = new Set(this.stars.keys())
+    this.hiddenStarAssignments.forEach(({ field, index }) => {
+      usedStarKeys.add(`${field.uuid}:${index}`)
+    })
     this.sentStars.forEach((star, id) => {
       if (incomingIds.has(id)) return
+      star.star.setVisible(this.isStarVisible(id))
       this.options.galaxy.remove(star.label)
       star.labelTexture.dispose()
       star.labelMaterial.dispose()
@@ -362,12 +376,19 @@ export class GalaxyManager {
       if (existing) {
         existing.data = data
         existing.star.setConnectionCount(data.connectionCount)
+        existing.star.setVisible(this.isStarVisible(data.id))
+        existing.label.visible = this.isStarVisible(data.id)
         return
       }
-      const { field, index } = this.originalStarForId(data.id, usedStarKeys)
+      const hiddenAssignment = this.hiddenStarAssignments.get(data.id)
+      if (hiddenAssignment) this.setHiddenStarPointVisible(data.id, hiddenAssignment, true)
+      const { field, index } = hiddenAssignment
+        ? { field: hiddenAssignment.field, index: hiddenAssignment.index }
+        : this.originalStarForId(data.id, usedStarKeys)
       const star = this.getOrCreateStar(field, index, data.color)
       star.setColor(data.color)
       star.setConnectionCount(data.connectionCount)
+      star.setVisible(this.isStarVisible(data.id))
       usedStarKeys.add(`${field.uuid}:${index}`)
 
       const labelTexture = this.makeLabelTexture(data.title, data.color)
@@ -380,6 +401,7 @@ export class GalaxyManager {
       const label = new THREE.Sprite(labelMaterial)
       label.position.copy(star.position)
       label.scale.set(72, 20, 1)
+      label.visible = this.isStarVisible(data.id)
       this.options.galaxy.add(label)
       this.options.materials.push(labelMaterial)
       this.sentStars.set(data.id, {
@@ -392,9 +414,80 @@ export class GalaxyManager {
     })
   }
 
+  setDownvotedStarIds(ids: string[]) {
+    if (this.blackHoleView) return
+    this.downvotedStarIds = new Set(ids)
+    const usedStarKeys = new Set(this.stars.keys())
+    this.hiddenStarAssignments.forEach(({ field, index }) => {
+      usedStarKeys.add(`${field.uuid}:${index}`)
+    })
+    ids.forEach((id) => {
+      if (this.hiddenStarAssignments.has(id)) return
+      const sentStar = this.sentStars.get(id)?.star
+      if (sentStar) {
+        sentStar.setVisible(true)
+      }
+      const { field, index } = sentStar
+        ? { field: sentStar.field, index: sentStar.index }
+        : this.originalStarForId(id, usedStarKeys)
+      const fieldColors = field.geometry.getAttribute('color')
+      const color = fieldColors
+        ? new THREE.Color().fromBufferAttribute(fieldColors, index)
+        : new THREE.Color(1, 1, 1)
+      this.hiddenStarAssignments.set(id, { field, index, color })
+      usedStarKeys.add(`${field.uuid}:${index}`)
+    })
+    this.hiddenStarAssignments.forEach((assignment, id) => {
+      if (this.downvotedStarIds.has(id)) {
+        const sentStar = this.sentStars.get(id)?.star
+        if (sentStar) sentStar.setVisible(false)
+        else this.setHiddenStarPointVisible(id, assignment, false)
+        return
+      }
+      this.setHiddenStarPointVisible(id, assignment, true)
+      this.hiddenStarAssignments.delete(id)
+    })
+    this.sentStars.forEach((star, id) => {
+      const visible = this.isStarVisible(id)
+      star.star.setVisible(visible)
+      star.label.visible = visible
+    })
+    this.setConnections(this.currentConnections)
+  }
+
+  setBlackHoleView(enabled: boolean) {
+    this.blackHoleView = enabled
+    this.options.starFields.forEach((field) => {
+      field.visible = !enabled
+    })
+    if (enabled) {
+      this.links.forEach((link) => link.destroy(this.options.galaxy))
+      this.links.length = 0
+      this.clearSelection(this.options.galaxy)
+    }
+    this.sentStars.forEach((star, id) => {
+      const visible = this.isStarVisible(id)
+      star.star.setVisible(visible)
+      star.label.visible = visible
+    })
+    this.hiddenStarAssignments.forEach((assignment, id) => {
+      const sentStar = this.sentStars.get(id)?.star
+      if (sentStar) sentStar.setVisible(this.isStarVisible(id))
+      else this.setHiddenStarPointVisible(id, assignment, this.isStarVisible(id))
+    })
+    this.setConnections(this.currentConnections)
+  }
+
   setConnections(connections: GalaxyStarConnection[]) {
+    this.currentConnections = connections
+    const visibleConnections = this.blackHoleView
+      ? []
+      : connections.filter(
+          ({ sourceStarId, targetStarId }) =>
+            !this.downvotedStarIds.has(sourceStarId) && !this.downvotedStarIds.has(targetStarId),
+        )
     const incomingKeys = new Set(
-      connections.map(({ sourceStarId, targetStarId }) => `${sourceStarId}:${targetStarId}`),
+      visibleConnections.map(({ sourceStarId, targetStarId }) => `${sourceStarId}:${targetStarId}`),
     )
     this.socialLinks.forEach((link, key) => {
       if (incomingKeys.has(key)) return
@@ -402,7 +495,7 @@ export class GalaxyManager {
       this.socialLinks.delete(key)
     })
 
-    connections.forEach(({ sourceStarId, targetStarId, count }) => {
+    visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
       const key = `${sourceStarId}:${targetStarId}`
       const existing = this.socialLinks.get(key)
       if (existing) {
@@ -441,6 +534,27 @@ export class GalaxyManager {
     return star
   }
 
+  private setHiddenStarPointVisible(
+    id: string,
+    assignment: HiddenStarAssignment,
+    visible: boolean,
+  ) {
+    const sentStar = this.sentStars.get(id)?.star
+    if (sentStar) {
+      sentStar.setVisible(visible)
+      return
+    }
+    const fieldColors = assignment.field.geometry.getAttribute('color')
+    if (!fieldColors) return
+    const color = visible ? assignment.color : new THREE.Color(0, 0, 0)
+    fieldColors.setXYZ(assignment.index, color.r, color.g, color.b)
+    fieldColors.needsUpdate = true
+  }
+
+  private isStarVisible(id: string) {
+    return !this.blackHoleView && !this.downvotedStarIds.has(id)
+  }
+
   private updateSentStarLabels() {
     const { camera, galaxy } = this.options
     if (this.sentStars.size === 0) return
@@ -452,12 +566,27 @@ export class GalaxyManager {
       .normalize()
     this.sentStars.forEach((star) => {
       const worldPosition = galaxy.localToWorld(star.star.position.clone())
-      star.label.position.copy(worldPosition).addScaledVector(cameraUp, SENT_STAR_LABEL_OFFSET)
-      galaxy.worldToLocal(star.label.position)
       const cameraSpacePosition = camera.worldToLocal(worldPosition.clone())
-      star.label.visible =
-        cameraSpacePosition.z < 0 &&
+      const inFrontOfCamera = cameraSpacePosition.z < 0
+      const withinLabelRange =
         worldPosition.distanceTo(cameraPosition) <= SENT_STAR_LABEL_MAX_DISTANCE
+      star.label.visible = this.isStarVisible(star.data.id) && inFrontOfCamera && withinLabelRange
+      if (!star.label.visible) return
+
+      const labelWorldPosition = worldPosition
+        .clone()
+        .addScaledVector(cameraUp, SENT_STAR_LABEL_OFFSET)
+      const labelCameraPosition = camera.worldToLocal(labelWorldPosition)
+      const minimumLabelDepth = camera.near + 5
+      const labelDepth = -labelCameraPosition.z
+      if (labelDepth < minimumLabelDepth) {
+        const depthScale = minimumLabelDepth / Math.max(labelDepth, camera.near)
+        labelCameraPosition.x *= depthScale
+        labelCameraPosition.y *= depthScale
+        labelCameraPosition.z = -minimumLabelDepth
+      }
+      camera.localToWorld(labelCameraPosition)
+      star.label.position.copy(galaxy.worldToLocal(labelCameraPosition))
     })
   }
 
@@ -505,6 +634,7 @@ export class GalaxyManager {
       })
 
     if (!nearest || nearest.distance > 32) return
+    if (this.blackHoleView) return
     const star = this.getOrCreateStar(
       nearest.field,
       nearest.index,
@@ -612,20 +742,7 @@ export class GalaxyManager {
   }
 
   private makeLabelTexture(title: string, color: string) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 384
-    canvas.height = 96
-    const context = canvas.getContext('2d')
-    if (context) {
-      context.font = '30px "Microsoft YaHei", sans-serif'
-      context.textAlign = 'center'
-      context.textBaseline = 'middle'
-      context.shadowColor = color
-      context.shadowBlur = 14
-      context.fillStyle = '#ffffff'
-      context.fillText(title, 192, 48, 360)
-    }
-    const texture = new THREE.CanvasTexture(canvas)
+    const texture = new THREE.CanvasTexture(createGalaxyStarLabelCanvas(title, color))
     texture.colorSpace = THREE.SRGBColorSpace
     return texture
   }

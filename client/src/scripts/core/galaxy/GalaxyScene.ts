@@ -9,18 +9,23 @@ import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
 import { SpiralGalaxyDistribution } from './distribution/SpiralGalaxyDistribution'
+import { createGalaxyStarTextureCanvas } from './starTexture'
 
 const galaxyArmColors = ['#72d7ff', '#a78bfa', '#ff83ca', '#7dffe3', '#ffd27d']
 
 export class GalaxyScene {
   private readonly host: HTMLElement
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  private readonly onBlackHoleClick: () => void
   private animationFrame = 0
   private renderer?: THREE.WebGLRenderer
   private resizeObserver?: ResizeObserver
   private scene?: THREE.Scene
   private camera?: THREE.PerspectiveCamera
   private galaxy?: THREE.Group
+  private nebulaSky?: THREE.Mesh
+  private starFields: THREE.Points[] = []
+  private blackHoleView = false
   private manager?: GalaxyManager
   private blackHole?: GalaxyBlackHole
   private geometries: THREE.BufferGeometry[] = []
@@ -28,6 +33,7 @@ export class GalaxyScene {
   private starTexture?: THREE.CanvasTexture
   private meteorEffect?: GalaxyMeteorEffect
   private readonly activeTouchPointers = new Set<number>()
+  private readonly pointerStartPositions = new Map<number, THREE.Vector2>()
   private readonly starDistribution: StarDistribution = new SpiralGalaxyDistribution()
 
   constructor(
@@ -35,13 +41,30 @@ export class GalaxyScene {
     onDestinationClick: () => void,
     onStarSendLocatorClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
+    onBlackHoleClick: () => void,
+    blackHoleView = false,
   ) {
     this.host = host
-    this.createGalaxy(onDestinationClick, onStarSendLocatorClick, onSentStarClick)
+    this.onBlackHoleClick = onBlackHoleClick
+    this.createGalaxy(onDestinationClick, onStarSendLocatorClick, onSentStarClick, blackHoleView)
   }
 
   setSentStars(stars: GalaxyStarView[]) {
     this.manager?.setSentStars(stars)
+  }
+
+  setDownvotedStarIds(ids: string[]) {
+    this.manager?.setDownvotedStarIds(ids)
+  }
+
+  setBlackHoleView(enabled: boolean) {
+    this.blackHoleView = enabled
+    this.manager?.setBlackHoleView(enabled)
+    this.blackHole?.setBlackHoleView(enabled)
+    this.meteorEffect?.setEnabled(!enabled)
+    this.starFields.forEach((field) => {
+      field.visible = !enabled
+    })
   }
 
   setConnections(connections: GalaxyStarConnection[]) {
@@ -53,6 +76,7 @@ export class GalaxyScene {
   }
 
   pointerDown(event: PointerEvent) {
+    this.pointerStartPositions.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY))
     if (event.pointerType === 'touch') {
       this.activeTouchPointers.add(event.pointerId)
       if (this.activeTouchPointers.size === 1) {
@@ -72,9 +96,24 @@ export class GalaxyScene {
 
   pointerUp(event: PointerEvent) {
     const isMultiTouch = event.pointerType === 'touch' && this.activeTouchPointers.size > 1
+    const pointerStart = this.pointerStartPositions.get(event.pointerId)
+    this.pointerStartPositions.delete(event.pointerId)
+    const isTap =
+      event.type !== 'pointercancel' &&
+      !isMultiTouch &&
+      pointerStart !== undefined &&
+      pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) <= 6
+    const hitBlackHole =
+      isTap && this.camera
+        ? (this.blackHole?.hitTest(event, this.camera, this.host) ?? false)
+        : false
     if (event.pointerType === 'touch') this.activeTouchPointers.delete(event.pointerId)
-    const hitDestination = isMultiTouch ? false : (this.meteorEffect?.pointerUp(event) ?? false)
-    this.manager?.pointerUp(event, hitDestination || isMultiTouch)
+    const hitDestination =
+      isMultiTouch || hitBlackHole
+        ? (this.meteorEffect?.cancelPointer(), false)
+        : (this.meteorEffect?.pointerUp(event) ?? false)
+    this.manager?.pointerUp(event, hitDestination || isMultiTouch || hitBlackHole)
+    if (hitBlackHole) this.onBlackHoleClick()
   }
 
   wheel(event: WheelEvent) {
@@ -99,8 +138,11 @@ export class GalaxyScene {
     this.geometries = []
     this.materials = []
     this.activeTouchPointers.clear()
+    this.pointerStartPositions.clear()
     this.manager = undefined
     this.blackHole = undefined
+    this.nebulaSky = undefined
+    this.starFields = []
     this.renderer = undefined
     this.scene = undefined
     this.camera = undefined
@@ -110,31 +152,7 @@ export class GalaxyScene {
   }
 
   private makeStarTexture() {
-    const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 128
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.globalCompositeOperation = 'lighter'
-    const halo = context.createRadialGradient(64, 64, 2, 64, 64, 50)
-    halo.addColorStop(0, 'rgba(255,255,255,1)')
-    halo.addColorStop(0.12, 'rgba(231,249,255,.98)')
-    halo.addColorStop(0.34, 'rgba(111,207,255,.72)')
-    halo.addColorStop(0.7, 'rgba(62,157,255,.18)')
-    halo.addColorStop(1, 'rgba(30,98,255,0)')
-    context.fillStyle = halo
-    context.beginPath()
-    context.arc(64, 64, 50, 0, Math.PI * 2)
-    context.fill()
-    const core = context.createRadialGradient(64, 64, 0, 64, 64, 17)
-    core.addColorStop(0, '#ffffff')
-    core.addColorStop(0.35, 'rgba(255,255,255,.98)')
-    core.addColorStop(1, 'rgba(182,235,255,0)')
-    context.fillStyle = core
-    context.beginPath()
-    context.arc(64, 64, 17, 0, Math.PI * 2)
-    context.fill()
-    this.starTexture = new THREE.CanvasTexture(canvas)
+    this.starTexture = new THREE.CanvasTexture(createGalaxyStarTextureCanvas())
     this.starTexture.colorSpace = THREE.SRGBColorSpace
   }
 
@@ -178,6 +196,14 @@ export class GalaxyScene {
     }
     if (this.starTexture) options.map = this.starTexture
     const material = new THREE.PointsMaterial(options)
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        if (dot(diffuseColor.rgb, diffuseColor.rgb) < 1e-8) discard;`,
+      )
+    }
+    material.customProgramCacheKey = () => 'hide-black-galaxy-points'
     this.geometries.push(geometry)
     this.materials.push(material)
     return new THREE.Points(geometry, material)
@@ -283,6 +309,7 @@ export class GalaxyScene {
     onDestinationClick: () => void,
     onStarSendLocatorClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
+    blackHoleView: boolean,
   ) {
     this.scene = new THREE.Scene()
     this.makeStarTexture()
@@ -297,12 +324,19 @@ export class GalaxyScene {
     const nebulaTimeUniform = nebulaSky.material.uniforms['u_time']
     if (!nebulaTimeUniform) throw new Error('Nebula shader time uniform is missing')
     nebulaSky.renderOrder = -1
+    nebulaSky.visible = true
+    this.nebulaSky = nebulaSky
     this.scene.add(nebulaSky)
     this.galaxy = new THREE.Group()
     const distantStars = this.makeStars(4800, 980, 2.4, 0.78)
     const spiralStars = this.makeStars(2600, 520, 3.8, 0.92)
     const innerStars = this.makeStars(1000, 250, 5.2, 0.95)
     const starFields = [distantStars, spiralStars, innerStars]
+    this.starFields = starFields
+    this.blackHoleView = blackHoleView
+    starFields.forEach((field) => {
+      field.visible = !blackHoleView
+    })
     this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
     this.blackHole = new GalaxyBlackHole(this.galaxy, starFields, this.reducedMotion, this.camera)
@@ -314,6 +348,7 @@ export class GalaxyScene {
       onDestinationClick,
       onStarSendLocatorClick,
     )
+    this.meteorEffect.setEnabled(!blackHoleView)
     this.manager = new GalaxyManager({
       host: this.host,
       renderer: this.renderer,
@@ -325,6 +360,8 @@ export class GalaxyScene {
       materials: this.materials,
       onSentStarClick,
     })
+    this.manager.setBlackHoleView(blackHoleView)
+    this.blackHole.setBlackHoleView(blackHoleView)
 
     const resize = () => {
       if (!this.camera || !this.renderer) return

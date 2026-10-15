@@ -134,6 +134,7 @@ export class GalaxyMeteorEffect {
   private pointerStart?: THREE.Vector2
   private fortuneReady = isTimeFortuneReady()
   private starSendAvailable = false
+  private enabled = true
   private fortuneLocatorDismissed: boolean
   private readonly handleFortuneLocatorDismissed = () => {
     this.fortuneLocatorDismissed = true
@@ -148,6 +149,12 @@ export class GalaxyMeteorEffect {
     this.fortuneReady = (event as CustomEvent<boolean>).detail
     const locator = this.destinations.find((destination) => destination.fortuneLocator)
     if (!locator) return
+    if (!this.enabled) {
+      locator.group.visible = false
+      locator.ring.visible = false
+      this.removeDestinationMeteors(locator)
+      return
+    }
     if (!this.fortuneReady) {
       locator.group.visible = false
       this.removeDestinationMeteors(locator)
@@ -289,6 +296,7 @@ export class GalaxyMeteorEffect {
   }
 
   pointerDown(event: PointerEvent) {
+    if (!this.enabled) return
     this.pointerStart = new THREE.Vector2(event.clientX, event.clientY)
   }
 
@@ -305,7 +313,7 @@ export class GalaxyMeteorEffect {
     locator.ring.visible = false
     locator.selected = false
     this.removeDestinationMeteors(locator)
-    if (!available) return
+    if (!available || !this.enabled) return
     if (this.reducedMotion) {
       locator.group.visible = true
     } else {
@@ -313,7 +321,65 @@ export class GalaxyMeteorEffect {
     }
   }
 
+  setEnabled(enabled: boolean) {
+    if (this.enabled === enabled) return
+    this.enabled = enabled
+    this.pointerStart = undefined
+    if (!enabled) {
+      this.activeMeteors.forEach((meteor) => {
+        this.scene.remove(meteor.mesh)
+        meteor.mesh.geometry.dispose()
+        meteor.mesh.material.dispose()
+      })
+      this.activeMeteors.length = 0
+      this.destinations.forEach((destination) => {
+        destination.group.visible = false
+        destination.ring.visible = false
+      })
+      return
+    }
+
+    const now = performance.now()
+    this.destinations.forEach((destination) => {
+      destination.group.visible = false
+      if (destination.fortuneLocator) {
+        if (this.fortuneLocatorDismissed) return
+        if (this.reducedMotion) {
+          destination.group.visible = this.fortuneReady
+        } else {
+          this.spawnFortuneMeteor(destination, now, this.fortuneReady)
+        }
+        return
+      }
+      if (destination.starSendLocator) {
+        if (!this.starSendAvailable) return
+        if (this.reducedMotion) {
+          destination.group.visible = true
+        } else {
+          this.spawnFortuneMeteor(destination, now, true)
+        }
+        return
+      }
+      if (this.reducedMotion) {
+        destination.group.visible = !destination.revealsPortal
+      } else {
+        this.spawnMeteor(
+          destination,
+          this.destinationFromScreen(destination.screenX, destination.screenY),
+          0.42,
+          now,
+          1800,
+          true,
+        )
+      }
+    })
+  }
+
   pointerUp(event: PointerEvent) {
+    if (!this.enabled) {
+      this.pointerStart = undefined
+      return false
+    }
     const start = this.pointerStart
     this.pointerStart = undefined
     if (!start || start.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 6)
@@ -338,6 +404,7 @@ export class GalaxyMeteorEffect {
   }
 
   update(nowMs: number) {
+    if (!this.enabled) return
     this.camera.updateMatrixWorld(true)
     const mainStarPosition = this.mainStarScreenPosition()
     this.destinations.forEach((destination, index) => {
