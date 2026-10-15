@@ -25,10 +25,14 @@ const CAMERA_PITCH_LIMIT = Math.PI / 2 - 0.04
 const CAMERA_LOOK_SENSITIVITY = 0.0035
 const IDLE_WANDER_DELAY = 8000
 const IDLE_WANDER_SPEED = 1
-const IDLE_WANDER_RETURN_SPEED = 8
+const IDLE_WANDER_RETURN_SPEED = 3
+const IDLE_WANDER_ACCELERATION = 0.8
 const IDLE_WANDER_TURN_SPEED = 0.03
 const IDLE_WANDER_ROLL_SPEED = 0.14
+const CAMERA_ROLL_ACCELERATION = 0.8
+const CAMERA_ROLL_MAX_SPEED = 1.2
 const WANDER_TARGET_REACHED_DISTANCE = 70
+const WANDER_TARGET_BOUNDARY_MARGIN = 80
 
 type SentStarVisual = {
   data: SentGalaxyStar
@@ -56,11 +60,14 @@ export class GalaxyManager {
   private readonly touchPointers = new Map<number, THREE.Vector2>()
   private pinchDistance?: number
   private pinchAngle?: number
+  private pinchAngleTime = 0
   private touchGesture = false
   private lastInteractionTime = performance.now()
   private lastUpdateTime = this.lastInteractionTime
   private wanderTarget?: THREE.Vector3
-  private targetRoll = 0
+  private readonly wanderVelocity = new THREE.Vector3()
+  private rollVelocity = 0
+  private targetRollVelocity = 0
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
@@ -84,6 +91,8 @@ export class GalaxyManager {
         this.pointerMoved = true
         this.pinchDistance = this.currentPinchDistance()
         this.pinchAngle = this.currentPinchAngle()
+        this.pinchAngleTime = performance.now()
+        this.targetRollVelocity = 0
         this.recordInteraction()
         this.capturePointer(event)
         return
@@ -105,6 +114,7 @@ export class GalaxyManager {
       if (this.touchPointers.size > 1) {
         const distance = this.currentPinchDistance()
         const angle = this.currentPinchAngle()
+        const now = performance.now()
         let angleDelta = 0
         if (distance !== undefined && this.pinchDistance !== undefined) {
           this.moveForward((distance - this.pinchDistance) * 0.4)
@@ -114,11 +124,20 @@ export class GalaxyManager {
             THREE.MathUtils.euclideanModulo(angle - this.pinchAngle + Math.PI, Math.PI * 2) -
             Math.PI
         }
+        const angleElapsed = Math.max(1 / 120, (now - this.pinchAngleTime) / 1000)
         this.pinchDistance = distance
         this.pinchAngle = angle
+        this.pinchAngleTime = now
         this.pointerMoved = true
         this.recordInteraction()
-        if (Math.abs(angleDelta) > 0.0001) this.targetRoll += angleDelta
+        this.targetRollVelocity =
+          Math.abs(angleDelta) > 0.0001
+            ? THREE.MathUtils.clamp(
+                angleDelta / angleElapsed,
+                -CAMERA_ROLL_MAX_SPEED,
+                CAMERA_ROLL_MAX_SPEED,
+              )
+            : 0
         return
       }
     }
@@ -142,6 +161,7 @@ export class GalaxyManager {
       if (this.touchPointers.size < 2) {
         this.pinchDistance = undefined
         this.pinchAngle = undefined
+        this.targetRollVelocity = 0
       }
       if (this.touchPointers.size === 0) this.touchGesture = false
     }
@@ -171,6 +191,9 @@ export class GalaxyManager {
     const deltaSeconds = Math.min(0.05, Math.max(0, (time - this.lastUpdateTime) / 1000))
     this.lastUpdateTime = time
     const isIdleWandering = time - this.lastInteractionTime >= IDLE_WANDER_DELAY
+    if (this.touchPointers.size < 2) {
+      this.targetRollVelocity = isIdleWandering ? IDLE_WANDER_ROLL_SPEED : 0
+    }
     this.updateCameraLook(deltaSeconds, isIdleWandering)
     if (isIdleWandering) {
       this.updateIdleWander(deltaSeconds)
@@ -202,7 +225,7 @@ export class GalaxyManager {
   private recordInteraction() {
     this.lastInteractionTime = performance.now()
     this.wanderTarget = undefined
-    this.targetRoll = this.options.camera.rotation.z
+    this.wanderVelocity.set(0, 0, 0)
   }
 
   private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
@@ -214,10 +237,13 @@ export class GalaxyManager {
     camera.rotation.y += yawDifference * Math.min(1, deltaSeconds * turnSpeed)
     camera.rotation.x +=
       (this.targetPitch - camera.rotation.x) * Math.min(1, deltaSeconds * turnSpeed)
-    const rollDifference =
-      THREE.MathUtils.euclideanModulo(this.targetRoll - camera.rotation.z + Math.PI, Math.PI * 2) -
-      Math.PI
-    camera.rotation.z += rollDifference * Math.min(1, deltaSeconds * turnSpeed)
+    const maxRollVelocityChange = CAMERA_ROLL_ACCELERATION * deltaSeconds
+    this.rollVelocity += THREE.MathUtils.clamp(
+      this.targetRollVelocity - this.rollVelocity,
+      -maxRollVelocityChange,
+      maxRollVelocityChange,
+    )
+    camera.rotation.z += this.rollVelocity * deltaSeconds
   }
 
   private moveForward(distance: number) {
@@ -247,32 +273,43 @@ export class GalaxyManager {
   private updateIdleWander(deltaSeconds: number) {
     const camera = this.options.camera
     const distanceFromCenter = camera.position.length()
+    const desiredVelocity = new THREE.Vector3()
+    const movementBoundary =
+      distanceFromCenter > IDLE_WANDER_BOUNDARY ? GALAXY_CAMERA_BOUNDARY : IDLE_WANDER_BOUNDARY
+
     if (distanceFromCenter > IDLE_WANDER_BOUNDARY) {
-      const distanceToBoundary = distanceFromCenter - IDLE_WANDER_BOUNDARY
-      const returnDistance = Math.min(IDLE_WANDER_RETURN_SPEED * deltaSeconds, distanceToBoundary)
-      camera.position.addScaledVector(camera.position.clone().normalize().negate(), returnDistance)
-      return
+      this.wanderTarget = undefined
+      desiredVelocity
+        .copy(camera.position)
+        .normalize()
+        .negate()
+        .multiplyScalar(IDLE_WANDER_RETURN_SPEED)
+    } else {
+      if (!this.wanderTarget) this.wanderTarget = this.randomWanderTarget()
+
+      const direction = this.wanderTarget.clone().sub(camera.position)
+      if (direction.length() <= WANDER_TARGET_REACHED_DISTANCE) {
+        this.wanderTarget = this.randomWanderTarget()
+        direction.copy(this.wanderTarget).sub(camera.position)
+      }
+      desiredVelocity.copy(direction).normalize().multiplyScalar(IDLE_WANDER_SPEED)
     }
 
-    if (!this.wanderTarget) this.wanderTarget = this.randomWanderTarget()
+    const velocityBlend = 1 - Math.exp(-IDLE_WANDER_ACCELERATION * deltaSeconds)
+    this.wanderVelocity.lerp(desiredVelocity, velocityBlend)
+    camera.position.addScaledVector(this.wanderVelocity, deltaSeconds)
+    this.constrainCameraPosition(camera.position, movementBoundary)
 
-    const direction = this.wanderTarget.clone().sub(camera.position)
-    if (direction.length() <= WANDER_TARGET_REACHED_DISTANCE) {
-      this.wanderTarget = this.randomWanderTarget()
-      return
+    const velocityLength = this.wanderVelocity.length()
+    if (velocityLength > 0.001) {
+      const direction = this.wanderVelocity.clone().divideScalar(velocityLength)
+      this.targetYaw = Math.atan2(-direction.x, -direction.z)
+      this.targetPitch = THREE.MathUtils.clamp(
+        Math.asin(direction.y),
+        -CAMERA_PITCH_LIMIT,
+        CAMERA_PITCH_LIMIT,
+      )
     }
-
-    const distance = Math.min(IDLE_WANDER_SPEED * deltaSeconds, direction.length())
-    direction.normalize()
-    camera.position.addScaledVector(direction, distance)
-    this.constrainCameraPosition(camera.position)
-    this.targetYaw = Math.atan2(-direction.x, -direction.z)
-    this.targetPitch = THREE.MathUtils.clamp(
-      Math.asin(direction.y),
-      -CAMERA_PITCH_LIMIT,
-      CAMERA_PITCH_LIMIT,
-    )
-    this.targetRoll += IDLE_WANDER_ROLL_SPEED * deltaSeconds
   }
 
   private randomWanderTarget() {
@@ -285,7 +322,7 @@ export class GalaxyManager {
     return this.options.camera.position
       .clone()
       .addScaledVector(direction, distance)
-      .clampLength(GALAXY_CAMERA_CENTER_LIMIT, IDLE_WANDER_BOUNDARY)
+      .clampLength(GALAXY_CAMERA_CENTER_LIMIT, IDLE_WANDER_BOUNDARY - WANDER_TARGET_BOUNDARY_MARGIN)
   }
 
   private constrainCameraPosition(position: THREE.Vector3, boundary = GALAXY_CAMERA_BOUNDARY) {
