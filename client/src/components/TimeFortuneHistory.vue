@@ -26,6 +26,13 @@ function orderedTimeFortunes(fortunes: TimeFortune[]) {
 function orderedDays(historyDays: FortuneDay[]) {
   return [...historyDays].sort((first, second) => second.date.localeCompare(first.date))
 }
+
+function toggleHistoryEntry(event: MouseEvent) {
+  const entry = event.currentTarget
+  if (!(entry instanceof HTMLDetailsElement)) return
+  event.preventDefault()
+  entry.open = !entry.open
+}
 </script>
 
 <template>
@@ -39,7 +46,7 @@ function orderedDays(historyDays: FortuneDay[]) {
     <details
       v-if="day.dailyFortune"
       class="history-entry daily-history-entry daily-fortune-sparkle"
-      :open="false"
+      @click="toggleHistoryEntry"
     >
       <summary>每日锦言</summary>
       <p>{{ day.dailyFortune }}</p>
@@ -48,7 +55,7 @@ function orderedDays(historyDays: FortuneDay[]) {
       v-for="fortune in orderedTimeFortunes(day.timeFortunes)"
       :key="fortune.timeName"
       class="history-entry time-history-entry"
-      :open="false"
+      @click="toggleHistoryEntry"
     >
       <summary>{{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）</summary>
       <p>{{ fortune.message }}</p>
@@ -114,6 +121,7 @@ function orderedDays(historyDays: FortuneDay[]) {
   border: 1px solid rgba(149, 186, 227, .17);
   border-radius: 16px;
   background: rgba(137, 177, 226, .07);
+  cursor: pointer;
 }
 
 .daily-history-entry,
@@ -131,6 +139,8 @@ function orderedDays(historyDays: FortuneDay[]) {
 
 .history-entry > summary {
   display: flex;
+  width: 100%;
+  box-sizing: border-box;
   align-items: center;
   gap: 10px;
   color: #edc981;
