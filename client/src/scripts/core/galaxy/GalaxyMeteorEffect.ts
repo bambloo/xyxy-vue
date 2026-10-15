@@ -292,6 +292,10 @@ export class GalaxyMeteorEffect {
     this.pointerStart = new THREE.Vector2(event.clientX, event.clientY)
   }
 
+  cancelPointer() {
+    this.pointerStart = undefined
+  }
+
   setStarSendAvailable(available: boolean) {
     if (this.starSendAvailable === available) return
     this.starSendAvailable = available

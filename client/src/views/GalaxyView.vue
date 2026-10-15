@@ -116,6 +116,7 @@ onBeforeUnmount(() => {
       @pointercancel="handlePointerUp"
       @wheel.prevent="handleWheel"
     ></section>
+    <p class="mobile-control-hint" aria-hidden="true">拖动视角 · 双指穿行</p>
     <GalaxyStarComposer />
     <p v-if="sceneError" class="galaxy-scene-error" role="alert">{{ sceneError }}</p>
     <aside
@@ -170,6 +171,19 @@ onBeforeUnmount(() => {
   max-width: none;
   width: 100%;
   height: 100%;
+}
+
+.mobile-control-hint {
+  position: absolute;
+  z-index: 3;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  color: rgba(224, 237, 255, 0.7);
+  font-size: 12px;
+  pointer-events: none;
+  text-shadow: 0 1px 8px #02040b;
 }
 
 .galaxy-scene-error {

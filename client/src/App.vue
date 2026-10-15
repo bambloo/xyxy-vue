@@ -17,7 +17,7 @@ const auth = useAuthStore()
 const isHomeRoute = computed(() => route.name === 'home')
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
 const isPortalRoute = computed(() => isHomeRoute.value || isGalaxyRoute.value)
-const portalLabel = computed(() => isHomeRoute.value ? '上划进入星空' : '下滑返回主页')
+const portalLabel = computed(() => (isHomeRoute.value ? '上划进入星空' : '下滑返回主页'))
 const tag = computed(() => {
   const routeTag = route.params.tag
   if (Array.isArray(routeTag)) return routeTag.join('/')
@@ -61,7 +61,9 @@ async function loadTagState() {
   }
 }
 
-watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, { immediate: true })
+watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, {
+  immediate: true,
+})
 
 function handlePortalSwipeUp() {
   if (isHomeRoute.value) void router.push({ name: 'galaxy' })
@@ -83,8 +85,12 @@ function handleFortuneActivate() {
 <template>
   <div class="app-shell">
     <template v-if="isTagRoute">
-      <TagUserView v-if="tagState === 'inactive' || tagState === 'active'" :key="`${tag}-${tagState}`" :tag="tag!"
-        :active="tagState === 'active'" />
+      <TagUserView
+        v-if="tagState === 'inactive' || tagState === 'active'"
+        :key="`${tag}-${tagState}`"
+        :tag="tag!"
+        :active="tagState === 'active'"
+      />
       <div v-else class="empty-page" aria-hidden="true"></div>
     </template>
     <RouterView v-else-if="appState === 'ready'" v-slot="{ Component }">
@@ -94,11 +100,17 @@ function handleFortuneActivate() {
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
     <TimeFortuneDialog />
-    <SunPortalButton v-if="isPortalRoute && auth.isSessionValidated" class="sun-portal-control" :label="portalLabel"
+    <SunPortalButton
+      v-if="isPortalRoute"
+      class="sun-portal-control"
+      :label="portalLabel"
       :title="portalLabel"
-      @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown"
-      @swipe-left="handleFortuneSwipe" @swipe-right="handleFortuneSwipe"
-      @activate="handleFortuneActivate" />
+      @swipe-up="handlePortalSwipeUp"
+      @swipe-down="handlePortalSwipeDown"
+      @swipe-left="handleFortuneSwipe"
+      @swipe-right="handleFortuneSwipe"
+      @activate="handleFortuneActivate"
+    />
   </div>
 </template>
 
@@ -106,9 +118,9 @@ function handleFortuneActivate() {
 :root {
   --space-ink: #071426;
   --space-blue: #102846;
-  --space-panel: rgba(10, 29, 53, .78);
-  --space-panel-soft: rgba(19, 45, 77, .64);
-  --space-line: rgba(166, 202, 239, .18);
+  --space-panel: rgba(10, 29, 53, 0.78);
+  --space-panel-soft: rgba(19, 45, 77, 0.64);
+  --space-line: rgba(166, 202, 239, 0.18);
   --space-text: #e8f1fb;
   --space-muted: #9db4cb;
   --space-gold: #f0bd63;
@@ -130,8 +142,8 @@ body {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 78% 12%, rgba(44, 103, 166, .26), transparent 28rem),
-    radial-gradient(circle at 12% 84%, rgba(26, 78, 132, .2), transparent 25rem),
+    radial-gradient(circle at 78% 12%, rgba(44, 103, 166, 0.26), transparent 28rem),
+    radial-gradient(circle at 12% 84%, rgba(26, 78, 132, 0.2), transparent 25rem),
     linear-gradient(135deg, #061020 0%, #0a1b34 52%, #081426 100%);
   color: var(--space-text);
 }
@@ -140,7 +152,7 @@ body {
   min-height: 100vh;
 }
 
-.app-shell>.sun-portal-control {
+.app-shell > .sun-portal-control {
   position: fixed;
   z-index: 20;
   left: 50vw;
@@ -153,7 +165,9 @@ body {
   position: absolute;
   inset: 0;
   width: 100%;
-  transition: opacity 420ms ease, transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 420ms ease,
+    transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .portal-route-enter-from {
@@ -167,7 +181,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .portal-route-enter-active,
   .portal-route-leave-active {
     transition: none;

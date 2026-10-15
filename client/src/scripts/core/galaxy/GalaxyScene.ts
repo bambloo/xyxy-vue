@@ -19,6 +19,7 @@ export class GalaxyScene {
   private materials: THREE.Material[] = []
   private starTexture?: THREE.CanvasTexture
   private meteorEffect?: GalaxyMeteorEffect
+  private readonly activeTouchPointers = new Set<number>()
   private readonly starDistribution: StarDistribution = new GaussianCloudDistribution()
 
   constructor(
@@ -40,7 +41,16 @@ export class GalaxyScene {
   }
 
   pointerDown(event: PointerEvent) {
-    this.meteorEffect?.pointerDown(event)
+    if (event.pointerType === 'touch') {
+      this.activeTouchPointers.add(event.pointerId)
+      if (this.activeTouchPointers.size === 1) {
+        this.meteorEffect?.pointerDown(event)
+      } else {
+        this.meteorEffect?.cancelPointer()
+      }
+    } else {
+      this.meteorEffect?.pointerDown(event)
+    }
     this.manager?.pointerDown(event)
   }
 
@@ -49,8 +59,10 @@ export class GalaxyScene {
   }
 
   pointerUp(event: PointerEvent) {
-    const hitDestination = this.meteorEffect?.pointerUp(event) ?? false
-    this.manager?.pointerUp(event, hitDestination)
+    const isMultiTouch = event.pointerType === 'touch' && this.activeTouchPointers.size > 1
+    if (event.pointerType === 'touch') this.activeTouchPointers.delete(event.pointerId)
+    const hitDestination = isMultiTouch ? false : (this.meteorEffect?.pointerUp(event) ?? false)
+    this.manager?.pointerUp(event, hitDestination || isMultiTouch)
   }
 
   wheel(event: WheelEvent) {
@@ -73,6 +85,7 @@ export class GalaxyScene {
     this.starTexture?.dispose()
     this.geometries = []
     this.materials = []
+    this.activeTouchPointers.clear()
     this.manager = undefined
     this.renderer = undefined
     this.scene = undefined
@@ -134,6 +147,102 @@ export class GalaxyScene {
     return new THREE.Points(geometry, material)
   }
 
+  private makeNebulaSky() {
+    const geometry = new THREE.SphereGeometry(1800, 48, 32)
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        u_time: { value: 0 },
+        u_seed: { value: Math.random() * 1000 },
+      },
+      vertexShader: `
+        varying vec3 v_direction;
+        void main() {
+          v_direction = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 v_direction;
+        uniform float u_time;
+        uniform float u_seed;
+
+        float hash31(vec3 point) {
+          point = fract(point * 0.3183099 + 0.1);
+          point *= 17.0;
+          return fract(point.x * point.y * point.z * (point.x + point.y + point.z));
+        }
+
+        float noise3D(vec3 point) {
+          vec3 cell = floor(point);
+          vec3 blend = fract(point);
+          blend = blend * blend * (3.0 - 2.0 * blend);
+          float a = hash31(cell);
+          float b = hash31(cell + vec3(1.0, 0.0, 0.0));
+          float c = hash31(cell + vec3(0.0, 1.0, 0.0));
+          float d = hash31(cell + vec3(1.0, 1.0, 0.0));
+          float e = hash31(cell + vec3(0.0, 0.0, 1.0));
+          float f = hash31(cell + vec3(1.0, 0.0, 1.0));
+          float g = hash31(cell + vec3(0.0, 1.0, 1.0));
+          float h = hash31(cell + vec3(1.0, 1.0, 1.0));
+          return mix(
+            mix(mix(a, b, blend.x), mix(c, d, blend.x), blend.y),
+            mix(mix(e, f, blend.x), mix(g, h, blend.x), blend.y),
+            blend.z
+          );
+        }
+
+        float fbm(vec3 point) {
+          float value = 0.0;
+          float amplitude = 0.5;
+          for (int octave = 0; octave < 4; octave++) {
+            value += noise3D(point) * amplitude;
+            point = point * 2.03 + 13.7;
+            amplitude *= 0.5;
+          }
+          return value;
+        }
+
+        void main() {
+          vec3 direction = normalize(v_direction);
+          vec3 seedOffset = vec3(u_seed, u_seed * 1.73, u_seed * 2.41);
+          vec3 drift = vec3(u_time * 0.003, -u_time * 0.002, u_time * 0.001);
+          vec3 warp = vec3(
+            noise3D(direction * 5.2 + seedOffset + drift),
+            noise3D(direction * 5.2 + seedOffset + vec3(17.2, 4.8, 9.1) - drift * 0.8),
+            noise3D(direction * 5.2 + seedOffset + vec3(3.7, 21.4, 11.6) + drift * 0.6)
+          ) - 0.5;
+          vec3 perturbedDirection = direction + warp * 0.12;
+          float broadClouds = fbm(perturbedDirection * 3.1 + drift);
+          float fineClouds = fbm(perturbedDirection * 8.0 - drift * 1.7);
+          float colorNoise = noise3D(perturbedDirection * 2.3 + seedOffset);
+          float cloudField = broadClouds * 0.68 + fineClouds * 0.32;
+          float cloudShape = smoothstep(0.3, 0.7, cloudField);
+          float wisps = smoothstep(0.4, 0.72, fineClouds) * cloudShape;
+          float colorFlow = smoothstep(0.18, 0.88, colorNoise + fineClouds * 0.32);
+
+          vec3 color = vec3(0.014, 0.018, 0.065);
+          color += mix(vec3(0.34, 0.035, 0.68), vec3(0.08, 0.34, 0.88), colorFlow)
+            * (0.18 + cloudShape * 0.62);
+          color += vec3(0.02, 0.58, 0.78) * wisps * (0.38 + colorNoise * 0.62);
+          color += vec3(0.95, 0.08, 0.42) * cloudShape
+            * smoothstep(0.34, 0.8, colorNoise) * 0.72;
+          color += vec3(1.0, 0.38, 0.09) * wisps
+            * smoothstep(0.62, 0.9, fineClouds) * 0.5;
+          color += vec3(0.32, 0.76, 1.0) * pow(wisps, 2.0) * 0.42;
+          gl_FragColor = vec4(color * 0.32, 0.16);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    })
+    this.geometries.push(geometry)
+    this.materials.push(material)
+    return new THREE.Mesh(geometry, material)
+  }
+
   private createGalaxy(
     onDestinationClick: () => void,
     onStarSendLocatorClick: () => void,
@@ -141,12 +250,18 @@ export class GalaxyScene {
   ) {
     this.scene = new THREE.Scene()
     this.makeStarTexture()
-    this.camera = new THREE.PerspectiveCamera(52, 1, 1, 2400)
-    this.camera.position.set(0, 260, 720)
-    this.camera.lookAt(0, 0, 0)
+    this.camera = new THREE.PerspectiveCamera(52, 1, 1, 3000)
+    this.camera.position.set(0, 0, 0)
+    this.camera.rotation.order = 'YXZ'
+    this.camera.rotation.set(0, 0, 0)
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.host.appendChild(this.renderer.domElement)
+    const nebulaSky = this.makeNebulaSky()
+    const nebulaTimeUniform = nebulaSky.material.uniforms['u_time']
+    if (!nebulaTimeUniform) throw new Error('Nebula shader time uniform is missing')
+    nebulaSky.renderOrder = -1
+    this.scene.add(nebulaSky)
     this.galaxy = new THREE.Group()
     const distantStars = this.makeStars(4800, 980, 2.4, 0.78)
     const spiralStars = this.makeStars(2600, 520, 3.8, 0.92)
@@ -186,6 +301,8 @@ export class GalaxyScene {
 
     const animate = (timestamp: number) => {
       if (!this.galaxy || !this.camera || !this.renderer || !this.scene || !this.manager) return
+      nebulaTimeUniform.value = timestamp * 0.001
+      nebulaSky.position.copy(this.camera.position)
       this.meteorEffect?.update(timestamp)
       this.manager.update(performance.now())
       this.renderer.render(this.scene, this.camera)

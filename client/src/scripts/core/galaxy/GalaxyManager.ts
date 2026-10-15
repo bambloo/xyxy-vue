@@ -18,6 +18,15 @@ type GalaxyManagerOptions = {
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
 const SENT_STAR_LABEL_OFFSET = 7
 const SENT_STAR_LABEL_MAX_DISTANCE = 360
+const GALAXY_CAMERA_BOUNDARY = 900
+const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.4
+const GALAXY_CAMERA_CENTER_LIMIT = 40
+const CAMERA_PITCH_LIMIT = Math.PI / 2 - 0.04
+const CAMERA_LOOK_SENSITIVITY = 0.0035
+const IDLE_WANDER_DELAY = 8000
+const IDLE_WANDER_SPEED = 24
+const IDLE_WANDER_TURN_SPEED = 1.8
+const WANDER_TARGET_REACHED_DISTANCE = 70
 
 type SentStarVisual = {
   data: SentGalaxyStar
@@ -36,62 +45,120 @@ export class GalaxyManager {
   private selectedStar?: GalaxyStar
   private pointerStartX = 0
   private pointerStartY = 0
-  private pointerRotationX = 0
-  private pointerRotationY = 0
-  private targetRotationX = 0
-  private targetRotationY = 0
+  private pointerYaw = 0
+  private pointerPitch = 0
+  private targetYaw = 0
+  private targetPitch = 0
   private isDragging = false
   private pointerMoved = false
+  private readonly touchPointers = new Map<number, THREE.Vector2>()
+  private pinchDistance?: number
+  private touchGesture = false
+  private lastInteractionTime = performance.now()
+  private lastUpdateTime = this.lastInteractionTime
+  private nextWanderDecisionTime = 0
+  private wanderTarget?: THREE.Vector3
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
+    const initialDirection = options.camera.getWorldDirection(new THREE.Vector3())
+    this.targetYaw = Math.atan2(-initialDirection.x, -initialDirection.z)
+    this.targetPitch = THREE.MathUtils.clamp(
+      Math.asin(initialDirection.y),
+      -CAMERA_PITCH_LIMIT,
+      CAMERA_PITCH_LIMIT,
+    )
+    options.camera.rotation.order = 'YXZ'
+    options.camera.rotation.set(this.targetPitch, this.targetYaw, 0)
   }
 
   pointerDown(event: PointerEvent) {
+    if (event.pointerType === 'touch') {
+      this.touchPointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY))
+      if (this.touchPointers.size > 1) {
+        this.touchGesture = true
+        this.isDragging = false
+        this.pointerMoved = true
+        this.pinchDistance = this.currentPinchDistance()
+        this.recordInteraction()
+        this.capturePointer(event.pointerId)
+        return
+      }
+    }
     this.isDragging = true
     this.pointerMoved = false
     this.pointerStartX = event.clientX
     this.pointerStartY = event.clientY
-    this.pointerRotationX = this.targetRotationX
-    this.pointerRotationY = this.targetRotationY
-    this.options.host.setPointerCapture(event.pointerId)
+    this.pointerYaw = this.targetYaw
+    this.pointerPitch = this.targetPitch
+    this.recordInteraction()
+    this.capturePointer(event.pointerId)
   }
 
   pointerMove(event: PointerEvent) {
+    if (event.pointerType === 'touch' && this.touchPointers.has(event.pointerId)) {
+      this.touchPointers.get(event.pointerId)!.set(event.clientX, event.clientY)
+      if (this.touchPointers.size > 1) {
+        const distance = this.currentPinchDistance()
+        if (distance !== undefined && this.pinchDistance !== undefined) {
+          this.moveForward((distance - this.pinchDistance) * 0.4)
+        }
+        this.pinchDistance = distance
+        this.pointerMoved = true
+        this.recordInteraction()
+        return
+      }
+    }
     if (!this.isDragging) return
     if (Math.hypot(event.clientX - this.pointerStartX, event.clientY - this.pointerStartY) > 6)
       this.pointerMoved = true
-    this.targetRotationY = this.pointerRotationY + (event.clientX - this.pointerStartX) * 0.006
-    this.targetRotationX = Math.max(
-      -0.9,
-      Math.min(0.9, this.pointerRotationX + (event.clientY - this.pointerStartY) * 0.004),
+    this.targetYaw =
+      this.pointerYaw - (event.clientX - this.pointerStartX) * CAMERA_LOOK_SENSITIVITY
+    this.targetPitch = THREE.MathUtils.clamp(
+      this.pointerPitch - (event.clientY - this.pointerStartY) * CAMERA_LOOK_SENSITIVITY,
+      -CAMERA_PITCH_LIMIT,
+      CAMERA_PITCH_LIMIT,
     )
+    this.recordInteraction()
   }
 
   pointerUp(event: PointerEvent, suppressSelection = false) {
-    if (!this.pointerMoved && !suppressSelection) this.selectStar(event)
-    this.isDragging = false
-    this.options.host.releasePointerCapture(event.pointerId)
+    const suppressTouchTap = this.touchGesture
+    if (event.pointerType === 'touch') {
+      this.touchPointers.delete(event.pointerId)
+      if (this.touchPointers.size < 2) this.pinchDistance = undefined
+      if (this.touchPointers.size === 0) this.touchGesture = false
+    }
+    if (!this.pointerMoved && !suppressSelection && !suppressTouchTap) this.selectStar(event)
+    this.isDragging = this.touchPointers.size === 1 && !suppressTouchTap
+    if (this.options.host.hasPointerCapture(event.pointerId)) {
+      this.options.host.releasePointerCapture(event.pointerId)
+    }
   }
 
   wheel(event: WheelEvent) {
-    this.options.camera.position.z = Math.max(
-      430,
-      Math.min(1050, this.options.camera.position.z + event.deltaY * 0.35),
-    )
+    this.moveForward(-event.deltaY * 0.12)
   }
 
   resetView() {
-    this.targetRotationX = 0
-    this.targetRotationY = 0
-    this.options.camera.position.set(0, 260, 720)
-    this.options.camera.lookAt(0, 0, 0)
+    const camera = this.options.camera
+    camera.position.set(0, 0, 0)
+    this.targetYaw = 0
+    this.targetPitch = 0
+    camera.rotation.set(0, 0, 0)
+    this.recordInteraction()
   }
 
   update(time: number) {
     const { galaxy } = this.options
-    galaxy.rotation.y += (this.targetRotationY - galaxy.rotation.y) * 0.08 + 0.0018
-    galaxy.rotation.x += (this.targetRotationX - galaxy.rotation.x) * 0.08
+    galaxy.rotation.y += 0.00006
+    const deltaSeconds = Math.min(0.05, Math.max(0, (time - this.lastUpdateTime) / 1000))
+    this.lastUpdateTime = time
+    const isIdleWandering = time - this.lastInteractionTime >= IDLE_WANDER_DELAY
+    this.updateCameraLook(deltaSeconds, isIdleWandering)
+    if (isIdleWandering) {
+      this.updateIdleWander(time, deltaSeconds)
+    }
     this.updateSentStarLabels()
     this.stars.forEach((star) => star.update(time))
     this.links.forEach((link) => link.update(time))
@@ -99,6 +166,7 @@ export class GalaxyManager {
   }
 
   destroy() {
+    this.touchPointers.clear()
     if (this.selectionMarker) {
       this.options.galaxy.remove(this.selectionMarker)
       this.selectionMarker = undefined
@@ -113,6 +181,89 @@ export class GalaxyManager {
       star.labelMaterial.dispose()
     })
     this.sentStars.clear()
+  }
+
+  private recordInteraction() {
+    this.lastInteractionTime = performance.now()
+    this.nextWanderDecisionTime = 0
+    this.wanderTarget = undefined
+  }
+
+  private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
+    const camera = this.options.camera
+    const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : 10
+    const yawDifference =
+      THREE.MathUtils.euclideanModulo(this.targetYaw - camera.rotation.y + Math.PI, Math.PI * 2) -
+      Math.PI
+    camera.rotation.y += yawDifference * Math.min(1, deltaSeconds * turnSpeed)
+    camera.rotation.x +=
+      (this.targetPitch - camera.rotation.x) * Math.min(1, deltaSeconds * turnSpeed)
+  }
+
+  private moveForward(distance: number) {
+    const direction = this.options.camera.getWorldDirection(new THREE.Vector3())
+    const nextPosition = this.options.camera.position.clone().addScaledVector(direction, distance)
+    this.constrainCameraPosition(nextPosition)
+    this.options.camera.position.copy(nextPosition)
+    this.recordInteraction()
+  }
+
+  private capturePointer(event: PointerEvent) {
+    this.options.host.setPointerCapture(event.pointerId)
+  }
+
+  private currentPinchDistance() {
+    if (this.touchPointers.size < 2) return undefined
+    const [first, second] = [...this.touchPointers.values()]
+    return first && second ? first.distanceTo(second) : undefined
+  }
+
+  private updateIdleWander(time: number, deltaSeconds: number) {
+    const camera = this.options.camera
+    if (!this.wanderTarget || time >= this.nextWanderDecisionTime) {
+      this.wanderTarget = this.randomWanderTarget()
+      this.nextWanderDecisionTime = time + 5000 + Math.random() * 5000
+    }
+
+    const direction = this.wanderTarget.clone().sub(camera.position)
+    if (direction.length() <= WANDER_TARGET_REACHED_DISTANCE) {
+      this.wanderTarget = this.randomWanderTarget()
+      this.nextWanderDecisionTime = time + 5000 + Math.random() * 5000
+      return
+    }
+
+    const distance = Math.min(IDLE_WANDER_SPEED * deltaSeconds, direction.length())
+    direction.normalize()
+    camera.position.addScaledVector(direction, distance)
+    this.constrainCameraPosition(camera.position, IDLE_WANDER_BOUNDARY)
+    this.targetYaw = Math.atan2(-direction.x, -direction.z)
+    this.targetPitch = THREE.MathUtils.clamp(
+      Math.asin(direction.y),
+      -CAMERA_PITCH_LIMIT,
+      CAMERA_PITCH_LIMIT,
+    )
+  }
+
+  private randomWanderTarget() {
+    const direction = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      (Math.random() - 0.5) * 0.8,
+      Math.random() * 2 - 1,
+    ).normalize()
+    const distance = 220 + Math.random() * 560
+    return this.options.camera.position
+      .clone()
+      .addScaledVector(direction, distance)
+      .clampLength(GALAXY_CAMERA_CENTER_LIMIT, IDLE_WANDER_BOUNDARY)
+  }
+
+  private constrainCameraPosition(position: THREE.Vector3, boundary = GALAXY_CAMERA_BOUNDARY) {
+    const distance = position.length()
+    if (distance > boundary) {
+      position.setLength(boundary)
+    } else if (distance < GALAXY_CAMERA_CENTER_LIMIT) {
+      position.setLength(GALAXY_CAMERA_CENTER_LIMIT)
+    }
   }
 
   setSentStars(stars: SentGalaxyStar[]) {
