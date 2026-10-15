@@ -1,18 +1,36 @@
 import * as THREE from 'three'
 import type { GalaxyStar } from './GalaxyStar'
 
+function addCameraDistanceFade(material: THREE.LineBasicMaterial) {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vCameraDistance;')
+      .replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\nvCameraDistance = length(mvPosition.xyz);',
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vCameraDistance;')
+      .replace(
+        '#include <opaque_fragment>',
+        `float cameraFade = pow(1.0 - smoothstep(80.0, 600.0, vCameraDistance), 2.0);
+diffuseColor.rgb *= cameraFade;
+diffuseColor.a *= cameraFade;
+#include <opaque_fragment>`,
+      )
+  }
+  material.customProgramCacheKey = () => 'galaxy-link-camera-distance-fade'
+}
+
 export class GalaxyLink {
   private readonly glow: THREE.Line
   private readonly core: THREE.Line
   private readonly lineGeometry: THREE.BufferGeometry
   private readonly glowMaterial: THREE.LineBasicMaterial
   private readonly coreMaterial: THREE.LineBasicMaterial
-  private readonly travelers: THREE.Mesh[] = []
-  private readonly travelerMaterials: THREE.MeshBasicMaterial[] = []
   private readonly curve: THREE.CubicBezierCurve3
   private readonly startColor: THREE.Color
   private readonly endColor: THREE.Color
-  private readonly travelerGeometry: THREE.ConeGeometry
   private readonly side: THREE.Vector3
   private readonly controlStart: THREE.Vector3
   private readonly controlEnd: THREE.Vector3
@@ -73,6 +91,8 @@ export class GalaxyLink {
       blending: THREE.AdditiveBlending,
       vertexColors: true,
     })
+    addCameraDistanceFade(this.glowMaterial)
+    addCameraDistanceFade(this.coreMaterial)
     this.glow = new THREE.LineSegments(this.lineGeometry, this.glowMaterial)
     this.core = new THREE.LineSegments(this.lineGeometry, this.coreMaterial)
     this.glow.frustumCulled = false
@@ -80,23 +100,6 @@ export class GalaxyLink {
     galaxy.add(this.glow, this.core)
     geometries.push(this.lineGeometry)
     materials.push(this.glowMaterial, this.coreMaterial)
-
-    this.travelerGeometry = new THREE.ConeGeometry(1.3, 4.5, 6)
-    geometries.push(this.travelerGeometry)
-    for (let index = 0; index < 2; index += 1) {
-      const material = new THREE.MeshBasicMaterial({
-        color: this.startColor,
-        transparent: true,
-        opacity: 0.82,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      })
-      const traveler = new THREE.Mesh(this.travelerGeometry, material)
-      galaxy.add(traveler)
-      this.travelers.push(traveler)
-      this.travelerMaterials.push(material)
-      materials.push(material)
-    }
   }
 
   update(time: number) {
@@ -116,22 +119,10 @@ export class GalaxyLink {
     const bundleFade = 1 / Math.sqrt(Math.max(1, visibleLineCount))
     this.glowMaterial.opacity = (0.08 + pulse * 0.12) * visibility * bundleFade
     this.coreMaterial.opacity = (0.3 + pulse * 0.28) * visibility * bundleFade
-    this.travelers.forEach((traveler, index) => {
-      const cycle = (time * 0.00012 + this.phase / (Math.PI * 2) + index * 0.5) % 2
-      const progress = cycle <= 1 ? cycle : 2 - cycle
-      const position = this.curve.getPointAt(progress)
-      const tangent = this.curve.getTangentAt(progress).normalize()
-      if (cycle > 1) tangent.negate()
-      traveler.position.copy(position)
-      traveler.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent)
-      this.travelerMaterials[index]?.color.copy(this.startColor).lerp(this.endColor, progress)
-      traveler.scale.setScalar(0.65 + pulse * 0.24)
-      if (this.travelerMaterials[index]) this.travelerMaterials[index].opacity = 0.55 + pulse * 0.4
-    })
   }
 
   destroy(galaxy: THREE.Group) {
-    galaxy.remove(this.glow, this.core, ...this.travelers)
+    galaxy.remove(this.glow, this.core)
   }
 
   setConnectionCount(count: number) {
@@ -173,8 +164,10 @@ export class GalaxyLink {
         const endPoint = points[index + 1]
         if (!startPoint || !endPoint) continue
         positions.push(startPoint.x, startPoint.y, startPoint.z, endPoint.x, endPoint.y, endPoint.z)
-        const startColor = this.startColor.clone().lerp(this.endColor, index / segments)
-        const endColor = this.startColor.clone().lerp(this.endColor, (index + 1) / segments)
+        const startProgress = index / segments
+        const endProgress = (index + 1) / segments
+        const startColor = this.startColor.clone().lerp(this.endColor, startProgress)
+        const endColor = this.startColor.clone().lerp(this.endColor, endProgress)
         colors.push(startColor.r, startColor.g, startColor.b, endColor.r, endColor.g, endColor.b)
       }
     }

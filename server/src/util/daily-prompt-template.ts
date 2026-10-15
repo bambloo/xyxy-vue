@@ -348,7 +348,7 @@ export function build_daily_prompt(user: PromptUser, date: string, now = new Dat
   return [
     `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} 的每日锦言。`,
     user.hobbies?.trim() ? `兴趣参考：${user.hobbies.trim()}` : '',
-    '请按以下从工作簿读取的写作指令创作，不要输出指令说明：',
+    '请按以下从工作簿读取的写作指令创作，不要输出指令说明，不要使用示例内容：',
     ...selected.map(
       (variable) =>
         `【${variable.dimension}：${variable.name}】${writingInstruction(variable, user)}`,
@@ -390,7 +390,7 @@ export function build_time_prompt(user: PromptUser, date: string, timeIndex: num
     `请以这条时辰动作作为祈使建议的参考：${action.action}`,
     action.indoorAlternative ? `雨天或室内替代：${action.indoorAlternative}` : '',
     `动作场景：${action.scene}；强度：${action.intensity}。`,
-    '「锦言+时辰」写法变量适用于每日锦言与时辰锦言；请按以下工作簿指令创作，不要输出指令说明：',
+    '「锦言+时辰」写法变量适用于每日锦言与时辰锦言；请按以下工作簿指令创作，不要输出指令说明，不要使用示例内容：',
     ...selected.map(
       (variable) =>
         `【${variable.dimension}：${variable.name}】${writingInstruction(variable, user)}`,
