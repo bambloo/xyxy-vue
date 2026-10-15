@@ -15,6 +15,7 @@ export class GalaxyStar {
   private readonly regularOpacity: number
   private readonly regularColor: THREE.Color
   private sentStarColor?: THREE.Color
+  private connectionCount = 0
 
   private static readonly labels = [
     '星河',
@@ -85,12 +86,14 @@ export class GalaxyStar {
   update(time = 0) {
     const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
     const isSentStar = Boolean(this.sentStarColor)
+    const connectionLevel = Math.min(10, Math.ceil(this.connectionCount / 10))
+    const brightness = 1 + connectionLevel * 0.06
     const opacity = isSentStar
       ? 1
-      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12
-    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1))
+      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12 + connectionLevel * 0.018
+    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1) * brightness)
     this.material.opacity = isSentStar ? 1 : opacity
-    this.material.color.copy(this.sentStarColor ?? this.regularColor)
+    this.material.color.copy(this.sentStarColor ?? this.regularColor).multiplyScalar(brightness)
     if (this.label && this.labelMaterial) {
       this.labelMaterial.opacity = 0.48
       this.label.scale.set(72, 18, 1 + Math.sin(time * 0.004 + this.index) * 0.025)
@@ -103,6 +106,10 @@ export class GalaxyStar {
     this.material.color.copy(this.sentStarColor)
     this.material.opacity = 1
     this.sprite.scale.setScalar(this.size * 2.2)
+  }
+
+  setConnectionCount(count: number) {
+    this.connectionCount = Math.max(0, Math.min(100, count))
   }
 
   private static makeLabelTexture(text: string) {

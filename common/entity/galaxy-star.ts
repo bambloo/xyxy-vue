@@ -18,3 +18,29 @@ export interface SentGalaxyStar {
   color: (typeof GALAXY_STAR_COLORS)[number]
   createdAt: string
 }
+
+export type GalaxyStarVote = 'like' | 'dislike'
+
+export interface GalaxyStarComment {
+  id: string
+  sourceStarId: string
+  sourceStarTitle: string
+  content: string
+  createdAt: string
+  parentCommentId?: string
+}
+
+export interface GalaxyStarConnection {
+  sourceStarId: string
+  targetStarId: string
+  count: number
+}
+
+export interface GalaxyStarView extends SentGalaxyStar {
+  likeCount: number
+  dislikeCount: number
+  connectionCount: number
+  comments: GalaxyStarComment[]
+  isOwn: boolean
+  myVote?: GalaxyStarVote
+}

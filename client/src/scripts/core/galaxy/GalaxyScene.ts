@@ -1,5 +1,9 @@
 import * as THREE from 'three'
-import type { SentGalaxyStar } from '../../../../../common/entity/galaxy-star'
+import type {
+  GalaxyStarConnection,
+  GalaxyStarView,
+  SentGalaxyStar,
+} from '../../../../../common/entity/galaxy-star'
 import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
@@ -34,8 +38,12 @@ export class GalaxyScene {
     this.createGalaxy(onDestinationClick, onStarSendLocatorClick, onSentStarClick)
   }
 
-  setSentStars(stars: SentGalaxyStar[]) {
+  setSentStars(stars: GalaxyStarView[]) {
     this.manager?.setSentStars(stars)
+  }
+
+  setConnections(connections: GalaxyStarConnection[]) {
+    this.manager?.setConnections(connections)
   }
 
   setStarSendAvailable(available: boolean) {

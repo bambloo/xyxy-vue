@@ -1,5 +1,9 @@
 import * as THREE from 'three'
-import type { SentGalaxyStar } from '../../../../../common/entity/galaxy-star'
+import type {
+  GalaxyStarConnection,
+  GalaxyStarView,
+  SentGalaxyStar,
+} from '../../../../../common/entity/galaxy-star'
 import { GalaxyLink } from './GalaxyLink'
 import { GalaxyStar } from './GalaxyStar'
 
@@ -46,6 +50,7 @@ export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
   private readonly links: GalaxyLink[] = []
+  private readonly socialLinks = new Map<string, GalaxyLink>()
   private readonly sentStars = new Map<string, SentStarVisual>()
   private selectionMarker?: THREE.Mesh
   private selectedStar?: GalaxyStar
@@ -201,6 +206,7 @@ export class GalaxyManager {
     this.updateSentStarLabels()
     this.stars.forEach((star) => star.update(time))
     this.links.forEach((link) => link.update(time))
+    this.socialLinks.forEach((link) => link.update(time))
     this.updateSelectionMarker()
   }
 
@@ -212,6 +218,8 @@ export class GalaxyManager {
     }
     this.links.forEach((link) => link.destroy(this.options.galaxy))
     this.links.length = 0
+    this.socialLinks.forEach((link) => link.destroy(this.options.galaxy))
+    this.socialLinks.clear()
     this.selectedStar = undefined
     this.stars.clear()
     this.sentStars.forEach((star) => {
@@ -334,7 +342,7 @@ export class GalaxyManager {
     }
   }
 
-  setSentStars(stars: SentGalaxyStar[]) {
+  setSentStars(stars: GalaxyStarView[]) {
     const incomingIds = new Set(stars.map((star) => star.id))
     const usedStarKeys = new Set(
       [...this.sentStars.values()].map(({ star }) => `${star.field.uuid}:${star.index}`),
@@ -350,10 +358,16 @@ export class GalaxyManager {
     })
 
     stars.forEach((data) => {
-      if (this.sentStars.has(data.id)) return
+      const existing = this.sentStars.get(data.id)
+      if (existing) {
+        existing.data = data
+        existing.star.setConnectionCount(data.connectionCount)
+        return
+      }
       const { field, index } = this.originalStarForId(data.id, usedStarKeys)
       const star = this.getOrCreateStar(field, index, data.color)
       star.setColor(data.color)
+      star.setConnectionCount(data.connectionCount)
       usedStarKeys.add(`${field.uuid}:${index}`)
 
       const labelTexture = this.makeLabelTexture(data.title, data.color)
@@ -375,6 +389,39 @@ export class GalaxyManager {
         labelTexture,
         labelMaterial,
       })
+    })
+  }
+
+  setConnections(connections: GalaxyStarConnection[]) {
+    const incomingKeys = new Set(
+      connections.map(({ sourceStarId, targetStarId }) => `${sourceStarId}:${targetStarId}`),
+    )
+    this.socialLinks.forEach((link, key) => {
+      if (incomingKeys.has(key)) return
+      link.destroy(this.options.galaxy)
+      this.socialLinks.delete(key)
+    })
+
+    connections.forEach(({ sourceStarId, targetStarId, count }) => {
+      const key = `${sourceStarId}:${targetStarId}`
+      const existing = this.socialLinks.get(key)
+      if (existing) {
+        existing.setConnectionCount(count)
+        return
+      }
+      const source = this.sentStars.get(sourceStarId)?.star
+      const target = this.sentStars.get(targetStarId)?.star
+      if (!source || !target) return
+      const link = new GalaxyLink(
+        source,
+        target,
+        this.options.galaxy,
+        this.options.geometries,
+        this.options.materials,
+        count,
+        true,
+      )
+      this.socialLinks.set(key, link)
     })
   }
 

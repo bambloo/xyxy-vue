@@ -17,6 +17,9 @@ const auth = useAuthStore()
 const isHomeRoute = computed(() => route.name === 'home')
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
 const isPortalRoute = computed(() => isHomeRoute.value || isGalaxyRoute.value)
+const canShowPortalButton = computed(
+  () => isPortalRoute.value && auth.isSessionValidated && Boolean(auth.currentUser?.tag),
+)
 const portalLabel = computed(() => (isHomeRoute.value ? '上划进入星空' : '下滑返回主页'))
 const tag = computed(() => {
   const routeTag = route.params.tag
@@ -102,7 +105,7 @@ function handleFortuneActivate() {
     <TimeFortuneDialog />
     <Teleport to="body">
       <SunPortalButton
-        v-if="isPortalRoute"
+        v-if="canShowPortalButton"
         class="sun-portal-control"
         :label="portalLabel"
         :title="portalLabel"
