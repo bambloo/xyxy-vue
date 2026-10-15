@@ -100,17 +100,19 @@ function handleFortuneActivate() {
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
     <TimeFortuneDialog />
-    <SunPortalButton
-      v-if="isPortalRoute"
-      class="sun-portal-control"
-      :label="portalLabel"
-      :title="portalLabel"
-      @swipe-up="handlePortalSwipeUp"
-      @swipe-down="handlePortalSwipeDown"
-      @swipe-left="handleFortuneSwipe"
-      @swipe-right="handleFortuneSwipe"
-      @activate="handleFortuneActivate"
-    />
+    <Teleport to="body">
+      <SunPortalButton
+        v-if="isPortalRoute"
+        class="sun-portal-control"
+        :label="portalLabel"
+        :title="portalLabel"
+        @swipe-up="handlePortalSwipeUp"
+        @swipe-down="handlePortalSwipeDown"
+        @swipe-left="handleFortuneSwipe"
+        @swipe-right="handleFortuneSwipe"
+        @activate="handleFortuneActivate"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -152,9 +154,9 @@ body {
   min-height: 100vh;
 }
 
-.app-shell > .sun-portal-control {
+.sun-portal-control {
   position: fixed;
-  z-index: 20;
+  z-index: 1000;
   left: 50vw;
   bottom: clamp(112px, 13vh, 168px);
   transform: translateX(-50%);
