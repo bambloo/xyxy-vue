@@ -16,8 +16,8 @@ type GalaxyManagerOptions = {
 }
 
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
-const SENT_STAR_LABEL_OFFSET = 13
-const SENT_STAR_LABEL_MAX_DISTANCE = 560
+const SENT_STAR_LABEL_OFFSET = 7
+const SENT_STAR_LABEL_MAX_DISTANCE = 360
 
 type SentStarVisual = {
   data: SentGalaxyStar

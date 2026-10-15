@@ -88,8 +88,8 @@ export class GalaxyStar {
     const opacity = isSentStar
       ? 1
       : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12
-    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 1.7 : 1))
-    this.material.opacity = opacity
+    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1))
+    this.material.opacity = isSentStar ? 1 : opacity
     this.material.color.copy(this.sentStarColor ?? this.regularColor)
     if (this.label && this.labelMaterial) {
       this.labelMaterial.opacity = 0.48
@@ -102,7 +102,7 @@ export class GalaxyStar {
     this.sentStarColor = new THREE.Color(color)
     this.material.color.copy(this.sentStarColor)
     this.material.opacity = 1
-    this.sprite.scale.setScalar(this.size * 1.7)
+    this.sprite.scale.setScalar(this.size * 2.2)
   }
 
   private static makeLabelTexture(text: string) {
