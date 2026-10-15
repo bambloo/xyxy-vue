@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import '@/styles/daily-fortune.css'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
+import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
+import { timeFortuneRange } from '@/utils/time-fortune'
 import {
   dismissTimeFortuneLocator,
   setTimeFortuneReady,
@@ -26,6 +29,7 @@ interface FortuneDetails {
   ready?: boolean
   timeName: string
   days: FortuneDay[]
+  history: boolean
 }
 
 const auth = useAuthStore()
@@ -94,7 +98,7 @@ watch(
   { immediate: true },
 )
 
-async function openFortuneDialog(dismissLocator: boolean) {
+async function openFortuneDialog(dismissLocator: boolean, history: boolean) {
   if (dismissLocator) {
     const userTag = auth.currentUser?.tag
     if (userTag) dismissTimeFortuneLocator(userTag)
@@ -109,12 +113,28 @@ async function openFortuneDialog(dismissLocator: boolean) {
 
   detailsLoading.value = true
   try {
-    const packet = await post('/wpi/user/time-fortune', detailsLoading, { history: true })
+    const packet = await post(
+      '/wpi/user/time-fortune',
+      detailsLoading,
+      history ? { history: true } : { details: true },
+    )
     const result = responseData(packet)
-    if (!result || !Array.isArray(result.days)) {
+    if (!result) {
       throw new Error('星言星语暂不可用，请稍后重试。')
     }
-    details.value = result
+    if (history) {
+      if (!Array.isArray(result.days)) {
+        throw new Error('星言星语暂不可用，请稍后重试。')
+      }
+      details.value = { ...result, history: true }
+    } else {
+      const today = result.days?.[0] ?? {
+        date: localDate(),
+        dailyFortune: result.dailyFortune ?? '',
+        timeFortunes: result.timeFortunes ?? [],
+      }
+      details.value = { ...result, days: [today], history: false }
+    }
   } catch (error) {
     detailsError.value =
       (error as { msg?: string; message?: string }).msg ||
@@ -125,22 +145,20 @@ async function openFortuneDialog(dismissLocator: boolean) {
   }
 }
 
-function timeRange(timeName: string) {
-  const timeNames = ['子时', '丑时', '寅时', '卯时', '辰时', '巳时', '午时', '未时', '申时', '酉时', '戌时', '亥时']
-  const index = timeNames.indexOf(timeName)
-  if (index < 0) return ''
-  const startHour = (23 + index * 2) % 24
-  const endHour = (startHour + 2) % 24
-  const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`
-  return `${formatHour(startHour)}-${formatHour(endHour)}`
+function localDate() {
+  const now = new Date()
+  const year = String(now.getFullYear()).padStart(4, '0')
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function handleLocatorOpen() {
-  void openFortuneDialog(true)
+  void openFortuneDialog(true, false)
 }
 
 function handleHistoryOpen() {
-  void openFortuneDialog(false)
+  void openFortuneDialog(false, true)
 }
 
 function handleButtonToggle() {
@@ -148,7 +166,7 @@ function handleButtonToggle() {
     dialogOpen.value = false
     return
   }
-  void openFortuneDialog(false)
+  void openFortuneDialog(false, false)
 }
 
 function handleDialogPointerDown(event: PointerEvent) {
@@ -213,39 +231,33 @@ onBeforeUnmount(() => {
           </p>
           <template v-else-if="details">
             <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
-            <details
-              v-for="(day, index) in details.days"
-              :key="day.date"
-              class="fortune-day"
-              :open="index === 0"
-            >
-              <summary>{{ day.date }}</summary>
-              <article v-if="day.dailyFortune" class="fortune-entry">
-                <h3>每日锦言</h3>
-                <p>{{ day.dailyFortune }}</p>
-              </article>
-              <article
-                v-for="fortune in day.timeFortunes"
-                :key="fortune.timeName"
-                :class="[
-                  'fortune-entry',
-                  'time-entry',
-                  {
-                    'current-time-entry':
-                      index === 0 && fortune.timeName === details.timeName,
-                  },
-                ]"
-              >
-                <h3>
-                  {{ fortune.timeName }}（{{ timeRange(fortune.timeName) }}）· 时辰锦言
-                  <span
-                    v-if="index === 0 && fortune.timeName === details.timeName"
-                    class="current-time-label"
-                  >当前时辰</span>
-                </h3>
-                <p>{{ fortune.message }}</p>
-              </article>
-            </details>
+            <TimeFortuneHistory v-else-if="details.history" :days="details.days" />
+            <template v-else>
+              <section v-for="day in details.days" :key="day.date">
+                <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
+                  <h3>每日锦言</h3>
+                  <p>{{ day.dailyFortune }}</p>
+                </article>
+                <article
+                  v-for="fortune in day.timeFortunes"
+                  :key="fortune.timeName"
+                  :class="[
+                    'fortune-entry',
+                    'time-entry',
+                    { 'current-time-entry': fortune.timeName === details.timeName },
+                  ]"
+                >
+                  <h3>
+                    {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
+                    <span
+                      v-if="fortune.timeName === details.timeName"
+                      class="current-time-label"
+                    >当前时辰</span>
+                  </h3>
+                  <p>{{ fortune.message }}</p>
+                </article>
+              </section>
+            </template>
           </template>
           <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
         </section>
@@ -274,6 +286,7 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   scrollbar-width: none;
   touch-action: pan-y;
+  interpolate-size: allow-keywords;
   cursor: grab;
   padding: 34px clamp(24px, 6vw, 48px) 24px;
   border: 1px solid rgba(163, 207, 255, .38);
@@ -326,27 +339,6 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(149, 186, 227, .17);
   border-radius: 16px;
   background: rgba(137, 177, 226, .07);
-}
-
-.fortune-day {
-  margin-top: 12px;
-}
-
-.fortune-day summary {
-  padding: 13px 16px;
-  border: 1px solid rgba(149, 186, 227, .22);
-  border-radius: 12px;
-  background: rgba(137, 177, 226, .1);
-  color: #f4e6bf;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-  list-style-position: inside;
-}
-
-.fortune-day[open] summary {
-  margin-bottom: 12px;
-  border-color: rgba(163, 207, 255, .38);
 }
 
 .fortune-entry+.fortune-entry {
@@ -430,4 +422,5 @@ onBeforeUnmount(() => {
 .fortune-dialog-leave-to .fortune-dialog {
   transform: translateY(12px) scale(.98);
 }
+
 </style>

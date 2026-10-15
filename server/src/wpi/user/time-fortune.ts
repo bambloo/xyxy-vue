@@ -26,7 +26,7 @@ export default function handler(params: Record<string, unknown>, req: WpiRequest
       trigger_fortune_generation(user.tag, false, true)
     }
     const data =
-      params.details === true && fortune.ready
+      params.details === true
         ? fortune
         : { ready: fortune.ready, timeName: fortune.timeName }
     return response(res, BamblooStatusCode.Success, undefined, data)
