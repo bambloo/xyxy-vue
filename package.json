@@ -19,10 +19,12 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
+    "@vant/area-data": "^2.2.0",
     "@vuestic/tailwind": "^0.1.5",
     "axios": "^1.20.0",
     "express": "^5.2.1",
     "ionicons": "^8.1.0",
+    "localized-countries-states": "^2.0.0",
     "mongodb": "^7.6.0",
     "pinia": "^4.0.2",
     "qrcode": "^1.5.4",

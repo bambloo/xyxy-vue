@@ -6,6 +6,7 @@ interface PromptUser {
   tag: string
   name?: string
   hobbies?: string
+  city?: string
 }
 
 interface WritingVariable {
@@ -347,6 +348,9 @@ export function build_daily_prompt(user: PromptUser, date: string, now = new Dat
 
   return [
     `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} 的每日锦言。`,
+    user.city?.trim()
+      ? `所在城市参考：${user.city.trim()}。请结合当地生活环境，不要臆测实时天气，但是可以根据实际天气进行合理推测。`
+      : '',
     user.hobbies?.trim() ? `兴趣参考：${user.hobbies.trim()}` : '',
     '请按以下从工作簿读取的写作指令创作，不要输出指令说明，不要使用示例内容：',
     ...selected.map(
@@ -384,6 +388,9 @@ export function build_time_prompt(user: PromptUser, date: string, timeIndex: num
 
   return [
     `请为名为'${user.name?.trim() || '用户'}'的用户写一条 ${date} ${theme.name}（${theme.time}）时辰锦言。`,
+    user.city?.trim()
+      ? `所在城市参考：${user.city.trim()}。请结合当地生活环境，不要臆测实时天气。`
+      : '',
     user.hobbies?.trim() ? `兴趣参考：${user.hobbies.trim()}` : '',
     `本时辰主题：${theme.topic}；写作提示：${theme.hint}`,
     `默认语气：${theme.tone}。`,

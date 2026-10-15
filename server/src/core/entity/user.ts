@@ -1,4 +1,4 @@
-import type { UserPublicProfile } from '../../../../common/entity/user'
+import { format_user_location, type UserLocation, type UserPublicProfile } from '../../../../common/entity/user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { trigger_fortune_generation } from '../manager/daily-fortune'
 import {
@@ -70,6 +70,8 @@ export interface UserProfile {
   isActive?: boolean
   permissions?: string[]
   email?: string
+  city?: string
+  location?: UserLocation
   avatar?: string
   lastFortuneGeneratedAt?: string
   createdAt?: string
@@ -88,6 +90,8 @@ export function to_public_user(user: UserProfile): UserPublicProfile {
     isAdmin,
     permissions,
     email,
+    city,
+    location,
     avatar,
     createdAt,
     updatedAt,
@@ -104,6 +108,8 @@ export function to_public_user(user: UserProfile): UserPublicProfile {
     isAdmin,
     permissions,
     email,
+    city,
+    location,
     avatar,
     createdAt,
     updatedAt,
@@ -122,6 +128,8 @@ export class User implements UserProfile {
   isActive?: boolean | undefined
   permissions?: string[] | undefined
   email?: string | undefined
+  city?: string | undefined
+  location?: UserLocation | undefined
   avatar?: string | undefined
   lastFortuneGeneratedAt?: string | undefined
   createdAt?: string | undefined
@@ -139,6 +147,8 @@ export class User implements UserProfile {
     this.isActive = init.isActive
     this.permissions = init.permissions
     this.email = init.email
+    this.city = init.city
+    this.location = init.location
     this.avatar = init.avatar
     this.lastFortuneGeneratedAt = init.lastFortuneGeneratedAt
     this.createdAt = init.createdAt
@@ -193,6 +203,26 @@ export class User implements UserProfile {
       }
       this.passwordHash = passwordHash
       this.updatedAt = updatedAt
+    })
+  }
+
+  updateProfile(
+    profile: Partial<
+      Pick<UserProfile, 'name' | 'phone' | 'email' | 'birthday' | 'hobbies' | 'city' | 'location'>
+    >,
+  ) {
+    return mongo_helper.ddo(async (db) => {
+      const updatedAt = format_timestamp(new Date())
+      const updatedProfile = profile.location
+        ? { ...profile, city: format_user_location(profile.location) }
+        : profile
+      const result = await db
+        .collection('user')
+        .updateOne({ tag: this.tag }, { $set: { ...updatedProfile, updatedAt } })
+      if (!result.matchedCount) {
+        throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
+      }
+      Object.assign(this, updatedProfile, { updatedAt })
     })
   }
 

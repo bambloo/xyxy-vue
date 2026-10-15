@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { post } from '../../../scripts/request'
 import { useI18n } from 'vue-i18n'
+import type { UserLocation } from '../../../../../common/entity/user'
+
+const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
 
 interface ImportedUser {
   tag: string
   account: string
   name: string
   phone?: string
+  city?: string
+  location?: UserLocation
   isActive?: boolean
 }
 
@@ -16,6 +21,8 @@ type QueryField = 'tag' | 'account' | 'phone'
 const loading = ref(false)
 const { t } = useI18n()
 const queryLoading = ref(false)
+const cityLoading = ref(false)
+const savingCityTag = ref('')
 const errorMessage = ref('')
 const users = ref<ImportedUser[]>([])
 const queryField = ref<QueryField>('tag')
@@ -92,6 +99,36 @@ async function queryUser() {
   }
 }
 
+async function saveCity(user: ImportedUser) {
+  if (savingCityTag.value) return
+  errorMessage.value = ''
+  savingCityTag.value = user.tag
+  user.location ??= {
+    countryCode: '',
+    country: '',
+    region: '',
+    city: '',
+    custom: user.city?.trim() ?? '',
+  }
+  try {
+    const packet = await post('/wpi/user/update-city', cityLoading, {
+      tag: user.tag,
+      location: user.location,
+    })
+    const updatedUser = packet.data as ImportedUser | undefined
+    if (!updatedUser || updatedUser.tag !== user.tag) {
+      throw new Error(t('users.cityUpdateError'))
+    }
+    user.city = updatedUser.city ?? ''
+    user.location = updatedUser.location
+  } catch (error: unknown) {
+    const result = error as { msg?: string; message?: string }
+    errorMessage.value = result.msg || result.message || t('users.cityUpdateError')
+  } finally {
+    savingCityTag.value = ''
+  }
+}
+
 async function addTag() {
   const tag = newTag.value.trim()
   if (!tag) {
@@ -161,6 +198,8 @@ async function addTag() {
             <th>{{ t('common.account') }}</th>
             <th>{{ t('common.name') }}</th>
             <th>{{ t('common.phone') }}</th>
+            <th>{{ t('profile.city') }}</th>
+            <th>{{ t('common.save') }}</th>
             <th>{{ t('common.status') }}</th>
           </tr>
         </thead>
@@ -170,6 +209,18 @@ async function addTag() {
             <td>{{ user.account }}</td>
             <td>{{ user.name }}</td>
             <td>{{ user.phone || '-' }}</td>
+            <td>
+              <LocationPicker
+                v-model="user.location"
+                :legacy-value="user.city"
+                :disabled="savingCityTag === user.tag"
+              />
+            </td>
+            <td>
+              <button type="button" :disabled="Boolean(savingCityTag)" @click="saveCity(user)">
+                {{ savingCityTag === user.tag ? t('users.savingCity') : t('common.save') }}
+              </button>
+            </td>
             <td><span class="status">{{ user.isActive === false ? t('common.inactive') : t('common.active') }}</span>
             </td>
           </tr>
@@ -338,6 +389,35 @@ td {
 th {
   color: var(--space-muted);
   font-size: .8rem;
+}
+
+td input,
+td select {
+  min-width: 120px;
+  box-sizing: border-box;
+  padding: .55rem .65rem;
+  border: 1px solid var(--space-line);
+  border-radius: 8px;
+  background: rgba(13, 38, 67, .72);
+  color: var(--space-text);
+  font: inherit;
+}
+
+td button {
+  border: 0;
+  border-radius: 8px;
+  padding: .55rem .8rem;
+  background: var(--space-gold);
+  color: #091728;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+td button:disabled {
+  cursor: wait;
+  opacity: .6;
 }
 
 .status {

@@ -25,6 +25,7 @@ export default function handler(params: { [key: string]: unknown }, req: Request
     email: typeof params.email === 'string' ? params.email.trim() : '',
     birthday: typeof params.birthday === 'string' ? params.birthday.trim() : '',
     hobbies: typeof params.hobbies === 'string' ? params.hobbies.trim() : '',
+    city: typeof params.city === 'string' ? params.city.trim() : '',
     avatar: typeof params.avatar === 'string' ? params.avatar.trim() : '',
     isActive: true,
     updatedAt: format_timestamp(new Date()),

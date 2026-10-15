@@ -1,13 +1,29 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '../../../stores/auth'
-import { is_at_least_five_years_old, is_valid_phone } from '../../../utils/user-validator'
+import { useAuthStore, type AuthUser } from '../../../stores/auth'
+import { post } from '../../../scripts/request'
+import type { UserLocation } from '../../../../../common/entity/user'
+import {
+  is_at_least_five_years_old,
+  is_valid_email,
+  is_valid_name,
+  is_valid_phone,
+} from '../../../utils/user-validator'
 
 const statusMessage = ref('')
+const loading = ref(false)
 const { t } = useI18n()
 const auth = useAuthStore()
+const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
 
+const emptyLocation = (): UserLocation => ({
+  countryCode: 'CN',
+  country: '中国',
+  region: '',
+  city: '',
+  custom: '',
+})
 const user = reactive({
   account: '',
   name: '',
@@ -15,6 +31,7 @@ const user = reactive({
   email: '',
   birthday: '',
   hobbies: '',
+  location: emptyLocation(),
 })
 
 watch(() => auth.currentUser, (currentUser) => {
@@ -25,9 +42,18 @@ watch(() => auth.currentUser, (currentUser) => {
   user.email = currentUser.email || ''
   user.birthday = currentUser.birthday || ''
   user.hobbies = currentUser.hobbies || ''
+  user.location = currentUser.location ?? {
+    ...emptyLocation(),
+    custom: currentUser.city || '',
+  }
 }, { immediate: true })
 
-function saveProfile() {
+async function saveProfile() {
+  if (!is_valid_name(user.name)) {
+    statusMessage.value = t('profile.nameRequired')
+    return
+  }
+
   if (!is_valid_phone(user.phone)) {
     statusMessage.value = t('profile.phoneFormat')
     return
@@ -38,7 +64,31 @@ function saveProfile() {
     return
   }
 
-  statusMessage.value = t('profile.saved')
+  if (!is_valid_email(user.email)) {
+    statusMessage.value = t('profile.emailFormat')
+    return
+  }
+
+  statusMessage.value = ''
+  try {
+    const packet = await post('/wpi/user/profile', loading, {
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+      birthday: user.birthday,
+      hobbies: user.hobbies,
+      location: user.location,
+    })
+    const profile = packet.data as AuthUser | undefined
+    if (!profile?.tag) {
+      throw new Error(t('profile.saveFailed'))
+    }
+    auth.updateUserProfile(profile)
+    statusMessage.value = t('profile.saved')
+  } catch (error) {
+    const result = error as { msg?: string; message?: string }
+    statusMessage.value = result.msg || result.message || t('profile.saveFailed')
+  }
 }
 </script>
 
@@ -49,7 +99,7 @@ function saveProfile() {
         <p class="eyebrow">{{ t('profile.eyebrow') }}</p>
         <h2>{{ t('profile.title') }}</h2>
       </div>
-      <button class="primary-button" type="button" @click="saveProfile">{{ t('profile.save') }}</button>
+      <button class="primary-button" type="button" :disabled="loading" @click="saveProfile">{{ t('profile.save') }}</button>
     </div>
 
     <div v-if="statusMessage" class="status-banner" role="status">
@@ -77,6 +127,10 @@ function saveProfile() {
         <span>{{ t('profile.birthday') }}</span>
         <input v-model="user.birthday" type="date" required />
       </label>
+      <div class="full-width location-field">
+        <span>{{ t('profile.city') }}</span>
+        <LocationPicker v-model="user.location" />
+      </div>
       <label class="full-width">
         <span>{{ t('profile.hobbies') }}</span>
         <textarea v-model="user.hobbies" rows="4" />
@@ -171,6 +225,15 @@ textarea {
 
 .full-width {
   grid-column: 1 / -1;
+}
+
+.location-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  color: #c3d5e7;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 @media (max-width: 860px) {

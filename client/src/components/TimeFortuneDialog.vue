@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
+import UserProfileEditDialog from '@/components/UserProfileEditDialog.vue'
 import { timeFortuneRange } from '@/utils/time-fortune'
 import {
   dismissTimeFortuneLocator,
@@ -41,6 +42,7 @@ const detailsLoading = ref(false)
 const runId = ref(0)
 const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
+const profileDialogOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
 const fortuneDialog = ref<HTMLElement | null>(null)
@@ -226,9 +228,26 @@ onBeforeUnmount(() => {
           @pointerup="clearDialogDrag"
           @pointercancel="clearDialogDrag"
         >
-          <button class="dialog-close" type="button" aria-label="关闭" @click="dialogOpen = false">
-            ×
-          </button>
+          <div class="dialog-header-actions">
+            <button
+              v-if="details?.history"
+              class="dialog-icon-button dialog-profile"
+              type="button"
+              :aria-label="t('timeFortune.editProfile')"
+              :title="t('timeFortune.editProfile')"
+              @click="profileDialogOpen = true"
+            >
+              <ion-icon name="create-outline" aria-hidden="true"></ion-icon>
+            </button>
+            <button
+              class="dialog-icon-button dialog-close"
+              type="button"
+              aria-label="关闭"
+              @click="dialogOpen = false"
+            >
+              ×
+            </button>
+          </div>
           <p class="dialog-eyebrow">Words From the Stars</p>
           <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
           <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
@@ -268,6 +287,10 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </Transition>
+    <UserProfileEditDialog
+      :open="profileDialogOpen"
+      @close="profileDialogOpen = false"
+    />
   </Teleport>
 </template>
 
@@ -313,15 +336,43 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-.dialog-close {
+.dialog-header-actions {
   position: absolute;
   top: 12px;
-  right: 16px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dialog-icon-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: #b7cde4;
-  font-size: 28px;
   cursor: pointer;
+}
+
+.dialog-icon-button:hover {
+  background: rgba(137, 177, 226, .14);
+}
+
+.dialog-profile {
+  color: #f5d58e;
+}
+
+.dialog-profile ion-icon {
+  font-size: 21px;
+}
+
+.dialog-close {
+  font-size: 26px;
+  line-height: 1;
 }
 
 .dialog-eyebrow {

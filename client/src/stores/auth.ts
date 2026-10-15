@@ -69,6 +69,10 @@ export const useAuthStore = defineStore('auth', () => {
     isSessionValidated.value = true
   }
 
+  function updateUserProfile(profile: AuthUser) {
+    if (user.value?.tag === profile.tag) user.value = profile
+  }
+
   async function logout() {
     try {
       await post('/wpi/user/logout', ref(false))
@@ -86,6 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
     isSessionValidated,
     currentUser,
     login,
+    updateUserProfile,
     logout,
     clear,
     hydrate,
