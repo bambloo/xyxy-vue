@@ -6,14 +6,26 @@ import { useAuthStore } from '@/stores/auth'
 import {
   dismissTimeFortuneLocator,
   setTimeFortuneReady,
+  TIME_FORTUNE_HISTORY_EVENT,
   TIME_FORTUNE_OPEN_EVENT,
+  TIME_FORTUNE_TOGGLE_EVENT,
 } from '@/events/time-fortune'
 
-interface FortuneDetails {
-  ready: boolean
+interface TimeFortune {
   timeName: string
-  dailyFortune?: string
-  timeFortunes?: { timeName: string; message: string }[]
+  message: string
+}
+
+interface FortuneDay {
+  date: string
+  dailyFortune: string
+  timeFortunes: TimeFortune[]
+}
+
+interface FortuneDetails {
+  ready?: boolean
+  timeName: string
+  days: FortuneDay[]
 }
 
 const auth = useAuthStore()
@@ -25,6 +37,8 @@ const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
+const fortuneDialog = ref<HTMLElement | null>(null)
+let dragStart: { pointerId: number; y: number; scrollTop: number } | undefined
 
 function responseData(packet: { data?: unknown }): FortuneDetails | undefined {
   return packet.data as FortuneDetails | undefined
@@ -80,27 +94,25 @@ watch(
   { immediate: true },
 )
 
-async function openFortuneDialog() {
-  const userTag = auth.currentUser?.tag
-  if (userTag) dismissTimeFortuneLocator(userTag)
+async function openFortuneDialog(dismissLocator: boolean) {
+  if (dismissLocator) {
+    const userTag = auth.currentUser?.tag
+    if (userTag) dismissTimeFortuneLocator(userTag)
+  }
   dialogOpen.value = true
   detailsError.value = ''
   details.value = undefined
   if (status.value === 'hidden') {
-    detailsError.value = '请先登录后查看每日锦言和时辰锦言。'
-    return
-  }
-  if (status.value !== 'ready') {
-    detailsError.value = '当前时辰锦言仍在生成中，请稍后再查看。'
+    detailsError.value = '请先登录后查看星言星语。'
     return
   }
 
   detailsLoading.value = true
   try {
-    const packet = await post('/wpi/user/time-fortune', detailsLoading, { details: true })
+    const packet = await post('/wpi/user/time-fortune', detailsLoading, { history: true })
     const result = responseData(packet)
-    if (!result?.ready || !result.dailyFortune || !result.timeFortunes?.length) {
-      throw new Error('锦言内容暂不可用，请稍后重试。')
+    if (!result || !Array.isArray(result.days)) {
+      throw new Error('星言星语暂不可用，请稍后重试。')
     }
     details.value = result
   } catch (error) {
@@ -113,13 +125,67 @@ async function openFortuneDialog() {
   }
 }
 
+function timeRange(timeName: string) {
+  const timeNames = ['子时', '丑时', '寅时', '卯时', '辰时', '巳时', '午时', '未时', '申时', '酉时', '戌时', '亥时']
+  const index = timeNames.indexOf(timeName)
+  if (index < 0) return ''
+  const startHour = (23 + index * 2) % 24
+  const endHour = (startHour + 2) % 24
+  const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`
+  return `${formatHour(startHour)}-${formatHour(endHour)}`
+}
+
+function handleLocatorOpen() {
+  void openFortuneDialog(true)
+}
+
+function handleHistoryOpen() {
+  void openFortuneDialog(false)
+}
+
+function handleButtonToggle() {
+  if (dialogOpen.value) {
+    dialogOpen.value = false
+    return
+  }
+  void openFortuneDialog(false)
+}
+
+function handleDialogPointerDown(event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || event.button !== 0) return
+  const target = event.target
+  if (target instanceof Element && target.closest('button, summary')) return
+  const dialog = fortuneDialog.value
+  if (!dialog || dialog.scrollHeight <= dialog.clientHeight) return
+  event.preventDefault()
+  dragStart = { pointerId: event.pointerId, y: event.clientY, scrollTop: dialog.scrollTop }
+  dialog.setPointerCapture(event.pointerId)
+}
+
+function handleDialogPointerMove(event: PointerEvent) {
+  if (!dragStart || dragStart.pointerId !== event.pointerId) return
+  const dialog = fortuneDialog.value
+  if (!dialog) return
+  dialog.scrollTop = dragStart.scrollTop + dragStart.y - event.clientY
+}
+
+function clearDialogDrag(event: PointerEvent) {
+  if (dragStart?.pointerId !== event.pointerId) return
+  dragStart = undefined
+}
+
 onMounted(() => {
-  window.addEventListener(TIME_FORTUNE_OPEN_EVENT, openFortuneDialog)
+  window.addEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
+  window.addEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
+  window.addEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener(TIME_FORTUNE_OPEN_EVENT, openFortuneDialog)
+  window.removeEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
+  window.removeEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
+  window.removeEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
   runId.value += 1
+  dragStart = undefined
 })
 </script>
 
@@ -128,43 +194,58 @@ onBeforeUnmount(() => {
     <Transition name="fortune-dialog">
       <div v-if="dialogOpen" class="fortune-overlay" @click.self="dialogOpen = false">
         <section
+          ref="fortuneDialog"
           class="fortune-dialog"
           role="dialog"
           aria-modal="true"
           aria-labelledby="fortune-title"
+          @pointerdown="handleDialogPointerDown"
+          @pointermove="handleDialogPointerMove"
+          @pointerup="clearDialogDrag"
+          @pointercancel="clearDialogDrag"
         >
-          <button
-            class="dialog-close"
-            type="button"
-            aria-label="关闭"
-            @click="dialogOpen = false"
-          >×</button>
-          <p class="dialog-eyebrow">TODAY'S CONSTELLATION</p>
+          <button class="dialog-close" type="button" aria-label="关闭" @click="dialogOpen = false">×</button>
+          <p class="dialog-eyebrow">Words From the Stars</p>
           <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
           <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
           <p v-else-if="detailsError" class="dialog-status dialog-error" role="alert">
             {{ detailsError }}
           </p>
           <template v-else-if="details">
-            <article class="fortune-entry">
-              <h3>每日锦言</h3>
-              <p>{{ details.dailyFortune }}</p>
-            </article>
-            <article
-              v-for="fortune in details.timeFortunes"
-              :key="fortune.timeName"
-              :class="[
-                'fortune-entry',
-                'time-entry',
-                { 'current-time-entry': fortune.timeName === details.timeName },
-              ]"
+            <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
+            <details
+              v-for="(day, index) in details.days"
+              :key="day.date"
+              class="fortune-day"
+              :open="index === 0"
             >
-              <h3>
-                {{ fortune.timeName }} · 时辰锦言
-                <span v-if="fortune.timeName === details.timeName" class="current-time-label">当前时辰</span>
-              </h3>
-              <p>{{ fortune.message }}</p>
-            </article>
+              <summary>{{ day.date }}</summary>
+              <article v-if="day.dailyFortune" class="fortune-entry">
+                <h3>每日锦言</h3>
+                <p>{{ day.dailyFortune }}</p>
+              </article>
+              <article
+                v-for="fortune in day.timeFortunes"
+                :key="fortune.timeName"
+                :class="[
+                  'fortune-entry',
+                  'time-entry',
+                  {
+                    'current-time-entry':
+                      index === 0 && fortune.timeName === details.timeName,
+                  },
+                ]"
+              >
+                <h3>
+                  {{ fortune.timeName }}（{{ timeRange(fortune.timeName) }}）· 时辰锦言
+                  <span
+                    v-if="index === 0 && fortune.timeName === details.timeName"
+                    class="current-time-label"
+                  >当前时辰</span>
+                </h3>
+                <p>{{ fortune.message }}</p>
+              </article>
+            </details>
           </template>
           <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
         </section>
@@ -190,6 +271,10 @@ onBeforeUnmount(() => {
   width: min(100%, 520px);
   max-height: min(80vh, 720px);
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: pan-y;
+  cursor: grab;
   padding: 34px clamp(24px, 6vw, 48px) 24px;
   border: 1px solid rgba(163, 207, 255, .38);
   border-radius: 24px;
@@ -198,6 +283,14 @@ onBeforeUnmount(() => {
     linear-gradient(145deg, rgba(13, 34, 65, .98), rgba(5, 15, 32, .98));
   box-shadow: 0 28px 90px rgba(0, 0, 0, .55), inset 0 0 36px rgba(121, 175, 241, .08);
   color: #e8f1fb;
+}
+
+.fortune-dialog::-webkit-scrollbar {
+  display: none;
+}
+
+.fortune-dialog:active {
+  cursor: grabbing;
 }
 
 .dialog-close {
@@ -235,7 +328,28 @@ onBeforeUnmount(() => {
   background: rgba(137, 177, 226, .07);
 }
 
-.fortune-entry + .fortune-entry {
+.fortune-day {
+  margin-top: 12px;
+}
+
+.fortune-day summary {
+  padding: 13px 16px;
+  border: 1px solid rgba(149, 186, 227, .22);
+  border-radius: 12px;
+  background: rgba(137, 177, 226, .1);
+  color: #f4e6bf;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.fortune-day[open] summary {
+  margin-bottom: 12px;
+  border-color: rgba(163, 207, 255, .38);
+}
+
+.fortune-entry+.fortune-entry {
   margin-top: 14px;
 }
 
@@ -316,5 +430,4 @@ onBeforeUnmount(() => {
 .fortune-dialog-leave-to .fortune-dialog {
   transform: translateY(12px) scale(.98);
 }
-
 </style>

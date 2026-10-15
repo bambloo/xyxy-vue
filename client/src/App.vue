@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
+import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
@@ -69,6 +70,14 @@ function handlePortalSwipeUp() {
 function handlePortalSwipeDown() {
   if (isGalaxyRoute.value) void router.push({ name: 'home' })
 }
+
+function handleFortuneSwipe() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
+}
+
+function handleFortuneActivate() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
+}
 </script>
 
 <template>
@@ -87,7 +96,9 @@ function handlePortalSwipeDown() {
     <TimeFortuneDialog />
     <SunPortalButton v-if="isPortalRoute && auth.isSessionValidated" class="sun-portal-control" :label="portalLabel"
       :title="portalLabel"
-      @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown" />
+      @swipe-up="handlePortalSwipeUp" @swipe-down="handlePortalSwipeDown"
+      @swipe-left="handleFortuneSwipe" @swipe-right="handleFortuneSwipe"
+      @activate="handleFortuneActivate" />
   </div>
 </template>
 

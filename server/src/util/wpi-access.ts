@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { BamblooError, BamblooStatusCode } from '../../../common/status'
+import type { User } from '../core/entity/user'
 import { user_manager } from '../core/manager/user'
 import { refresh_session } from './session'
 import { response } from './secretary'
@@ -12,6 +13,7 @@ export interface WpiConfig {
 }
 
 export interface WpiRequest extends Request {
+  user?: User
   auth?: {
     userTag: string
     account: string
@@ -32,10 +34,11 @@ export function authorize_wpi(
   return refresh_session(req, res)
     .then((session) => {
       req.auth = session.payload
-      if (config.access !== 'private' || !config.permissions?.length) return true
-
       return user_manager.instance().then((manager) =>
         manager.get({ tag: session.payload.userTag }).then((user) => {
+          req.user = user
+          if (config.access !== 'private' || !config.permissions?.length) return true
+
           const hasPermission =
             user.isAdmin ||
             config.permissions!.every((permission) => user.permissions?.includes(permission))

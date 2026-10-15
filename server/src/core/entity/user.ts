@@ -1,7 +1,12 @@
 import type { UserPublicProfile } from '../../../../common/entity/user'
 import { BamblooError, BamblooStatusCode } from '../../../../common/status'
 import { trigger_fortune_generation } from '../manager/daily-fortune'
-import { current_time_name, type TimeName } from '../../util/daily-prompt-template'
+import {
+  current_time_name,
+  time_name_for_index,
+  type TimeName,
+} from '../../util/daily-prompt-template'
+import { format_timestamp } from '../../util/date-time'
 import { mongo_helper } from '../../util/mongo-helper'
 
 interface FortuneGeneration {
@@ -16,6 +21,41 @@ interface DailyFortuneRecord {
   fortune: FortuneGeneration
   time_fortune?: Partial<Record<TimeName, FortuneGeneration>>
   createdAt: string
+}
+
+export interface UserTimeFortuneDay {
+  date: string
+  dailyFortune: string
+  timeFortunes: { timeName: TimeName; message: string }[]
+}
+
+export interface UserTimeFortuneHistory {
+  timeName: TimeName
+  days: UserTimeFortuneDay[]
+}
+
+export interface UserTimeFortuneDetails {
+  ready: boolean
+  timeName: TimeName
+  dailyFortune: string
+  timeFortunes: { timeName: TimeName; message: string }[]
+}
+
+function timeFortunesFor(record: DailyFortuneRecord | undefined) {
+  return Array.from({ length: 12 }, (_, offset) => {
+    const timeName = time_name_for_index(11 - offset)
+    const fortune = record?.time_fortune?.[timeName]
+    return fortune?.prompt && fortune.message
+      ? { timeName, message: fortune.message }
+      : undefined
+  }).filter((fortune) => fortune !== undefined)
+}
+
+function formatLocalDay(date: Date) {
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export interface UserProfile {
@@ -139,6 +179,66 @@ export class User implements UserProfile {
           )
         }
         return fortune
+      })
+  }
+
+  updatePassword(passwordHash: string) {
+    return mongo_helper.ddo(async (db) => {
+      const updatedAt = format_timestamp(new Date())
+      const result = await db
+        .collection('user')
+        .updateOne({ tag: this.tag }, { $set: { passwordHash, updatedAt } })
+      if (!result.matchedCount) {
+        throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
+      }
+      this.passwordHash = passwordHash
+      this.updatedAt = updatedAt
+    })
+  }
+
+  get_time_fortune(day: string, now = new Date()): Promise<UserTimeFortuneDetails> {
+    const id = `${this.tag}:${day}`
+    const timeName = current_time_name(now)
+
+    return mongo_helper
+      .ddo((db) => db.collection<DailyFortuneRecord>('daily_fortune').findOne({ _id: id }))
+      .then((record) => {
+        const fortune = record?.time_fortune?.[timeName]
+        return {
+          ready: Boolean(fortune?.prompt && fortune.message),
+          timeName,
+          dailyFortune: record?.fortune?.message ?? '',
+          timeFortunes: timeFortunesFor(record ?? undefined),
+        }
+      })
+  }
+
+  get_time_fortune_history(now = new Date()): Promise<UserTimeFortuneHistory> {
+    const days = Array.from({ length: 7 }, (_, offset) => {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
+      return formatLocalDay(date)
+    })
+    const ids = days.map((date) => `${this.tag}:${date}`)
+
+    return mongo_helper
+      .ddo((db) =>
+        db.collection<DailyFortuneRecord>('daily_fortune').find({ _id: { $in: ids } }).toArray(),
+      )
+      .then((records) => {
+        const recordsById = new Map(records.map((record) => [record._id, record]))
+        const recentDays = days.flatMap((date) => {
+          const record = recordsById.get(`${this.tag}:${date}`)
+          const timeFortunes = timeFortunesFor(record)
+          const dailyFortune = record?.fortune?.message ?? ''
+          return dailyFortune || timeFortunes.length
+            ? [{ date, dailyFortune, timeFortunes }]
+            : []
+        })
+
+        return {
+          timeName: current_time_name(now),
+          days: recentDays,
+        }
       })
   }
 }

@@ -1,4 +1,6 @@
 export const TIME_FORTUNE_OPEN_EVENT = 'time-fortune:open'
+export const TIME_FORTUNE_TOGGLE_EVENT = 'time-fortune:toggle'
+export const TIME_FORTUNE_HISTORY_EVENT = 'time-fortune:history'
 export const TIME_FORTUNE_STATE_EVENT = 'time-fortune:state'
 export const TIME_FORTUNE_DISMISSED_EVENT = 'time-fortune:dismissed'
 

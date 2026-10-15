@@ -13,13 +13,17 @@ withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
+  activate: []
   'swipe-up': []
   'swipe-down': []
+  'swipe-left': []
+  'swipe-right': []
 }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 let effect: StarCoronaCanvasEffect | undefined
 let pointerStart: { id: number; x: number; y: number } | undefined
+let suppressNextClick = false
 
 onMounted(() => {
   if (canvas.value) effect = new StarCoronaCanvasEffect(canvas.value)
@@ -34,10 +38,25 @@ function handlePointerDown(event: PointerEvent) {
 function handlePointerUp(event: PointerEvent) {
   if (!pointerStart || pointerStart.id !== event.pointerId) return
   const deltaY = pointerStart.y - event.clientY
-  const deltaX = Math.abs(pointerStart.x - event.clientX)
+  const deltaX = pointerStart.x - event.clientX
   pointerStart = undefined
-  if (Math.abs(deltaY) < 48 || Math.abs(deltaY) <= deltaX) return
-  emit(deltaY > 0 ? 'swipe-up' : 'swipe-down')
+  if (Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY)) {
+    suppressNextClick = true
+    emit(deltaX > 0 ? 'swipe-left' : 'swipe-right')
+    return
+  }
+  if (Math.abs(deltaY) >= 48 && Math.abs(deltaY) > Math.abs(deltaX)) {
+    suppressNextClick = true
+    emit(deltaY > 0 ? 'swipe-up' : 'swipe-down')
+  }
+}
+
+function handleClick() {
+  if (suppressNextClick) {
+    suppressNextClick = false
+    return
+  }
+  emit('activate')
 }
 
 function clearPointer() {
@@ -50,9 +69,10 @@ onBeforeUnmount(() => effect?.destroy())
 <template>
   <button class="sun-portal-button" type="button" :aria-label="label" :title="title" :disabled="disabled"
     @pointerdown.stop="handlePointerDown" @pointermove.stop @pointerup.stop="handlePointerUp"
-    @pointercancel.stop="clearPointer" @keydown.enter.prevent="emit('swipe-up')"
+    @pointercancel.stop="clearPointer" @click.stop="handleClick" @keydown.enter.prevent="emit('swipe-up')"
     @keydown.space.prevent="emit('swipe-up')" @keydown.arrow-up.prevent="emit('swipe-up')"
-    @keydown.arrow-down.prevent="emit('swipe-down')">
+    @keydown.arrow-down.prevent="emit('swipe-down')" @keydown.arrow-left.prevent="emit('swipe-left')"
+    @keydown.arrow-right.prevent="emit('swipe-right')">
     <canvas ref="canvas" class="sun-portal-canvas" aria-hidden="true"></canvas>
   </button>
 </template>

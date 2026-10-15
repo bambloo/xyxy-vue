@@ -1,10 +1,10 @@
-import type { Request, Response } from 'express'
+import type { Response } from 'express'
 import { read, utils } from 'xlsx'
-import { BamblooError, BamblooStatusCode } from '../../../../common/status'
+import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
 import { response } from '../../util/secretary'
-import { refresh_session } from '../../util/session'
 import { to_public_user } from '../../core/entity/user'
+import type { WpiRequest } from '../../util/wpi-access'
 
 export const config = { access: 'private' as const, permissions: ['users.import'] }
 
@@ -31,49 +31,37 @@ function parseTags(fileName: string, content: Buffer) {
 
 export default function handler(
   params: { [key: string]: unknown },
-  req: Request,
+  req: WpiRequest,
   res: Response,
 ) {
-  return refresh_session(req, res)
-    .then((session) => {
-      const fileName = typeof params.fileName === 'string' ? params.fileName : ''
-      const contentBase64 = typeof params.contentBase64 === 'string' ? params.contentBase64 : ''
-      if (!fileName || !contentBase64 || !/\.(txt|xls|xlsx)$/i.test(fileName)) {
-        return response(res, BamblooStatusCode.FormatError, '仅支持 TXT、XLS 或 XLSX 文件')
-      }
+  const fileName = typeof params.fileName === 'string' ? params.fileName : ''
+  const contentBase64 = typeof params.contentBase64 === 'string' ? params.contentBase64 : ''
+  if (!fileName || !contentBase64 || !/\.(txt|xls|xlsx)$/i.test(fileName)) {
+    return response(res, BamblooStatusCode.FormatError, '仅支持 TXT、XLS 或 XLSX 文件')
+  }
 
-      let tags: string[]
-      try {
-        tags = parseTags(fileName, Buffer.from(contentBase64, 'base64'))
-      } catch {
-        return response(res, BamblooStatusCode.FormatError, '文件解析失败')
-      }
-      if (tags.length === 0) {
-        return response(res, BamblooStatusCode.FormatError, '文件中没有找到用户 Tag')
-      }
+  let tags: string[]
+  try {
+    tags = parseTags(fileName, Buffer.from(contentBase64, 'base64'))
+  } catch {
+    return response(res, BamblooStatusCode.FormatError, '文件解析失败')
+  }
+  if (tags.length === 0) {
+    return response(res, BamblooStatusCode.FormatError, '文件中没有找到用户 Tag')
+  }
 
-      return user_manager
-        .instance()
-        .then((manager) =>
-          manager.get({ tag: session.payload.userTag }).then((operator) => ({ manager, operator })),
-        )
-        .then(({ manager, operator }) => {
-          if (!operator.isAdmin) {
-            return response(res, BamblooStatusCode.Unauthorized, '只有管理员可以导入用户')
-          }
-          return manager.importInactiveTags(tags).then((users) =>
-            response(res, BamblooStatusCode.Success, '用户导入成功', {
-              users: users.map(to_public_user),
-              count: users.length,
-            }),
-          )
-        })
-        .catch(() => response(res, BamblooStatusCode.BadRequest, '用户导入失败'))
-    })
-    .catch((error: unknown) => {
-      if (error instanceof BamblooError && error.code === BamblooStatusCode.Unauthorized) {
-        return response(res, BamblooStatusCode.Unauthorized, '登录已失效')
-      }
-      throw error
-    })
+  if (!req.user?.isAdmin) {
+    return response(res, BamblooStatusCode.Unauthorized, '只有管理员可以导入用户')
+  }
+
+  return user_manager
+    .instance()
+    .then((manager) => manager.importInactiveTags(tags))
+    .then((users) =>
+      response(res, BamblooStatusCode.Success, '用户导入成功', {
+        users: users.map(to_public_user),
+        count: users.length,
+      }),
+    )
+    .catch(() => response(res, BamblooStatusCode.BadRequest, '用户导入失败'))
 }
