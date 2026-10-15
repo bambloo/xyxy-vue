@@ -20,6 +20,7 @@ export interface SiteSuggestion {
   userTag: string
   content: string
   createdAt: string
+  isRead: boolean
 }
 
 export function isSiteDeclarationId(value: string): value is SiteDeclarationId {

@@ -264,6 +264,9 @@ onBeforeUnmount(() => {
           <div>
             <span class="sent-star-dialog-eyebrow">星际回响</span>
             <h2 id="sent-star-dialog-title">{{ selectedStar.title }}</h2>
+            <p class="sent-star-created-at">
+              发送时间：<time>{{ selectedStar.createdAt }}</time>
+            </p>
           </div>
           <button
             class="sent-star-close"
@@ -481,10 +484,39 @@ onBeforeUnmount(() => {
   font-size: 24px;
 }
 
-.sent-star-dialog-eyebrow {
-  color: #9db4cb;
+.sent-star-created-at {
+  margin: 6px 0 0;
+  color: #8098b3;
   font-size: 11px;
-  letter-spacing: 0.18em;
+}
+
+.sent-star-dialog-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--star-color) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--star-color) 9%, transparent);
+  color: color-mix(in srgb, var(--star-color) 68%, white);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  line-height: 1;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--star-color) 45%, transparent);
+}
+
+.sent-star-dialog-eyebrow::before,
+.sent-star-dialog-eyebrow::after {
+  color: var(--star-color);
+  content: '✦';
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+.sent-star-dialog-eyebrow::after {
+  opacity: 0.65;
+  transform: scale(0.72);
 }
 
 .sent-star-dialog-scroll {

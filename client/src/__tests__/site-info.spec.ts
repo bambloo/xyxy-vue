@@ -123,6 +123,7 @@ describe('website declarations and suggestions', () => {
 
   it('lets administrators edit declarations and review suggestions', async () => {
     login(true)
+    let resolveSave!: (value: Awaited<ReturnType<typeof post>>) => void
     vi.mocked(post)
       .mockResolvedValueOnce({
         data: {
@@ -136,17 +137,18 @@ describe('website declarations and suggestions', () => {
               userTag: 'visitor-tag',
               content: 'Please add dark mode',
               createdAt: '2026-10-15 12:00:00',
+              isRead: false,
             },
           ],
         },
       } as never)
-      .mockResolvedValueOnce({
-        data: {
-          id: SITE_DECLARATIONS[0].id,
-          content: 'Updated declaration',
-          updatedAt: '2026-10-15 12:30:00',
-        },
-      } as never)
+      .mockResolvedValueOnce({ data: { id: 'suggestion-1', isRead: true } } as never)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSave = resolve
+          }),
+      )
 
     const wrapper = mount(SiteInfoView, { global: { plugins: [i18n] } })
     await flushPromises()
@@ -159,8 +161,22 @@ describe('website declarations and suggestions', () => {
       .findAll('.page-list-item')
       .find((item) => item.text().includes('反馈与建议'))!
       .trigger('click')
+    expect(wrapper.text()).not.toContain('你的建议将提交给网站管理员')
     expect(wrapper.text()).toContain('visitor-tag')
     expect(wrapper.text()).toContain('Please add dark mode')
+    await wrapper.get('.suggestion-filters button:nth-child(2)').trigger('click')
+    expect(wrapper.text()).toContain('Please add dark mode')
+    await wrapper.get('.suggestion-filters button:nth-child(3)').trigger('click')
+    expect(wrapper.text()).toContain('此筛选下没有建议')
+    await wrapper.get('.suggestion-filters button:nth-child(1)').trigger('click')
+    await wrapper.get('.suggestion-card .secondary-button').trigger('click')
+    await flushPromises()
+    expect(post).toHaveBeenCalledWith(
+      '/wpi/site-info/suggestion/read',
+      expect.anything(),
+      { id: 'suggestion-1' },
+    )
+    expect(wrapper.text()).toContain('已读')
     await wrapper.get('.back-button').trigger('click')
 
     const declaration = SITE_DECLARATIONS[0]!
@@ -176,11 +192,23 @@ describe('website declarations and suggestions', () => {
       .findAll('button')
       .find((button) => button.text() === i18n.global.t('siteInfo.saveDeclaration'))
     await saveButton!.trigger('click')
+    const textarea = wrapper.get(`textarea[aria-label="${declarationLabel}"]`)
+    expect(textarea.element.disabled).toBe(false)
+    expect(textarea.element.readOnly).toBe(true)
+    expect(wrapper.find('.detail-panel').exists()).toBe(true)
+
+    resolveSave({
+      data: {
+        id: declaration.id,
+        content: 'Updated declaration',
+        updatedAt: '2026-10-15 12:30:00',
+      },
+    } as never)
     await flushPromises()
 
-    expect(vi.mocked(post)).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(post).mock.calls[1]?.[0]).toBe('/wpi/site-info/declaration')
-    expect(vi.mocked(post).mock.calls[1]?.[2]).toEqual({
+    expect(vi.mocked(post)).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(post).mock.calls[2]?.[0]).toBe('/wpi/site-info/declaration')
+    expect(vi.mocked(post).mock.calls[2]?.[2]).toEqual({
       id: declaration.id,
       content: 'Updated declaration',
     })

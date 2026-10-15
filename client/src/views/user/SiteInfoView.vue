@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toggleLocale } from '@/i18n'
 import {
@@ -16,17 +16,30 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const auth = useAuthStore()
 const loading = ref(false)
+const declarationSaving = ref(false)
 const suggestionLoading = ref(false)
+const suggestionReadSavingId = ref('')
 const savingDeclarationId = ref('')
 const errorMessage = ref('')
 const statusMessage = ref('')
 const suggestion = ref('')
 const selectedPage = ref<SiteDeclarationId | 'suggestions' | ''>('')
+const suggestionFilter = ref<'all' | 'unread' | 'read'>('all')
 const declarations = ref<SiteDeclaration[]>(
   SITE_DECLARATIONS.map((item) => ({ id: item.id, content: '' })),
 )
 const dataLoaded = ref(false)
 const suggestions = ref<SiteSuggestion[]>([])
+const filteredSuggestions = computed(() => {
+  const filtered = suggestions.value.filter((entry) => {
+    if (suggestionFilter.value === 'unread') return !entry.isRead
+    if (suggestionFilter.value === 'read') return entry.isRead
+    return true
+  })
+  return filtered.sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+  )
+})
 const currentDeclaration = () =>
   declarations.value.find((item) => item.id === selectedPage.value)
 const selectedDeclarationInfo = () =>
@@ -84,13 +97,28 @@ async function submitSuggestion() {
   }
 }
 
+async function markSuggestionRead(entry: SiteSuggestion) {
+  if (entry.isRead || suggestionReadSavingId.value) return
+  suggestionReadSavingId.value = entry.id
+  errorMessage.value = ''
+  try {
+    await post('/wpi/site-info/suggestion/read', suggestionLoading, { id: entry.id })
+    entry.isRead = true
+  } catch (error) {
+    const result = error as { msg?: string; message?: string }
+    errorMessage.value = result.msg || result.message || t('siteInfo.suggestionReadFailed')
+  } finally {
+    suggestionReadSavingId.value = ''
+  }
+}
+
 async function saveDeclaration(declaration: SiteDeclaration) {
   if (savingDeclarationId.value) return
   errorMessage.value = ''
   statusMessage.value = ''
   savingDeclarationId.value = declaration.id
   try {
-    const packet = await post('/wpi/site-info/declaration', loading, {
+    const packet = await post('/wpi/site-info/declaration', declarationSaving, {
       id: declaration.id,
       content: declaration.content,
     })
@@ -172,7 +200,7 @@ onMounted(() => {
     </nav>
 
     <section v-else-if="selectedPage === 'suggestions'" class="detail-panel">
-      <p>{{ t('siteInfo.feedbackIntro') }}</p>
+      <p v-if="!canManage()">{{ t('siteInfo.feedbackIntro') }}</p>
       <form v-if="!canManage()" @submit.prevent="submitSuggestion">
         <textarea
           v-model="suggestion"
@@ -187,11 +215,44 @@ onMounted(() => {
       </form>
 
       <div v-else class="suggestion-list">
+        <div class="suggestion-filters" :aria-label="t('siteInfo.suggestionFilters')">
+          <button
+            v-for="filter in ['all', 'unread', 'read'] as const"
+            :key="filter"
+            type="button"
+            :class="{ active: suggestionFilter === filter }"
+            :aria-pressed="suggestionFilter === filter"
+            @click="suggestionFilter = filter"
+          >
+            {{ t(`siteInfo.suggestionFilter.${filter}`) }}
+          </button>
+        </div>
         <p v-if="!suggestions.length" class="empty-state">{{ t('siteInfo.noSuggestions') }}</p>
-        <article v-for="entry in suggestions" :key="entry.id" class="suggestion-card">
+        <p v-else-if="!filteredSuggestions.length" class="empty-state">
+          {{ t('siteInfo.noFilteredSuggestions') }}
+        </p>
+        <article v-for="entry in filteredSuggestions" :key="entry.id" class="suggestion-card">
           <header>
-            <strong>{{ entry.userTag }}</strong>
-            <time>{{ entry.createdAt }}</time>
+            <div class="suggestion-meta">
+              <strong>{{ entry.userTag }}</strong>
+              <time>{{ entry.createdAt }}</time>
+              <span :class="['suggestion-read-status', { read: entry.isRead }]">
+                {{ entry.isRead ? t('siteInfo.suggestionRead') : t('siteInfo.suggestionUnread') }}
+              </span>
+            </div>
+            <button
+              v-if="!entry.isRead"
+              class="secondary-button"
+              type="button"
+              :disabled="Boolean(suggestionReadSavingId)"
+              @click="markSuggestionRead(entry)"
+            >
+              {{
+                suggestionReadSavingId === entry.id
+                  ? t('common.loading')
+                  : t('siteInfo.markSuggestionRead')
+              }}
+            </button>
           </header>
           <p>{{ entry.content }}</p>
         </article>
@@ -203,7 +264,8 @@ onMounted(() => {
         v-if="canManage()"
         :value="currentDeclaration()!.content"
         :maxlength="20000"
-        :disabled="loading || savingDeclarationId === currentDeclaration()!.id"
+        :disabled="loading"
+        :readonly="savingDeclarationId === currentDeclaration()!.id"
         :aria-label="t(`siteInfo.declarationTitles.${selectedDeclarationInfo()!.titleKey}`)"
         :placeholder="t('siteInfo.declarationPlaceholder')"
         rows="12"
@@ -318,6 +380,28 @@ h2 {
   gap: .8rem;
 }
 
+.suggestion-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.suggestion-filters button {
+  border: 1px solid var(--space-line);
+  border-radius: 999px;
+  padding: .45rem .8rem;
+  background: transparent;
+  color: var(--space-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.suggestion-filters button.active {
+  border-color: var(--space-gold);
+  background: rgba(233, 180, 94, .16);
+  color: var(--space-gold);
+}
+
 .page-list,
 .detail-panel,
 .suggestion-card {
@@ -368,6 +452,22 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.suggestion-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6rem 1rem;
+}
+
+.suggestion-read-status {
+  color: #ffd27d;
+  font-size: .8rem;
+}
+
+.suggestion-read-status.read {
+  color: var(--space-muted);
 }
 
 .back-button {
@@ -479,6 +579,12 @@ button:disabled {
   .suggestion-card header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .suggestion-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: .35rem;
   }
 }
 </style>

@@ -22,6 +22,7 @@ interface SuggestionRecord {
   userTag: string
   content: string
   createdAt: string
+  isRead?: boolean
 }
 
 export default async function handler(
@@ -57,13 +58,14 @@ export default async function handler(
         const records = await db
           .collection<SuggestionRecord>('site_suggestion')
           .find({})
-          .sort({ createdAt: -1 })
+          .sort({ createdAt: -1, _id: -1 })
           .toArray()
         return records.map((record) => ({
           id: record._id.toString(),
           userTag: record.userTag,
           content: record.content,
           createdAt: record.createdAt,
+          isRead: record.isRead ?? false,
         }))
       })
     }

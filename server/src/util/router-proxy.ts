@@ -43,7 +43,7 @@ async function register_module(application: Express, base: string, filePath: str
   const config = loaded.config || {}
 
   logout(modulePath)
-  application.use(modulePath, (req, res, next) => {
+  application.all(modulePath, (req, res, next) => {
     void handle_request(loaded.default, config, modulePath, req, res, next)
   })
 }
