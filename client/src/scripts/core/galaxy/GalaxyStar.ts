@@ -92,12 +92,12 @@ export class GalaxyStar {
   update(time = 0) {
     const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
     const isSentStar = Boolean(this.sentStarColor)
-    const connectionLevel = Math.min(10, Math.ceil(this.connectionCount / 10))
-    const brightness = 1 + connectionLevel * 0.06
+    const interactionGlow = Math.min(1, Math.log2(this.connectionCount + 1) / 5)
+    const brightness = 1 + interactionGlow * 1.2
     const opacity = isSentStar
       ? 1
-      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12 + connectionLevel * 0.018
-    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1) * brightness)
+      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12 + interactionGlow * 0.18
+    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1))
     this.material.opacity = isSentStar ? 1 : opacity
     this.material.color.copy(this.sentStarColor ?? this.regularColor).multiplyScalar(brightness)
     if (this.label && this.labelMaterial) {

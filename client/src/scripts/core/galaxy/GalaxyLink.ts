@@ -115,10 +115,11 @@ export class GalaxyLink {
     if (visibleLineCount !== previousLineCount) this.updateLineGeometry(visibleLineCount)
 
     const pulse = 0.5 + Math.sin(time * 0.0028 + this.phase) * 0.5
+    const interactionGlow = Math.min(1, Math.log2(this.displayedConnectionCount + 1) / 5)
     const visibility = Math.min(1, this.displayedConnectionCount)
-    const bundleFade = 1 / Math.sqrt(Math.max(1, visibleLineCount))
-    this.glowMaterial.opacity = (0.08 + pulse * 0.12) * visibility * bundleFade
-    this.coreMaterial.opacity = (0.3 + pulse * 0.28) * visibility * bundleFade
+    const brightness = 1 + interactionGlow * 1.8
+    this.glowMaterial.opacity = (0.08 + pulse * 0.12) * visibility * brightness
+    this.coreMaterial.opacity = (0.3 + pulse * 0.28) * visibility * brightness
   }
 
   destroy(galaxy: THREE.Group) {
@@ -130,7 +131,7 @@ export class GalaxyLink {
   }
 
   private getVisibleLineCount() {
-    return Math.ceil(this.displayedConnectionCount)
+    return this.displayedConnectionCount > 0 ? 1 : 0
   }
 
   private createLineGeometry(connectionCount: number) {
@@ -147,18 +148,8 @@ export class GalaxyLink {
     const positions: number[] = []
     const colors: number[] = []
     const segments = 24
-    for (let lane = 0; lane < connectionCount; lane += 1) {
-      const laneOffset =
-        connectionCount <= 1
-          ? 0
-          : ((lane / (connectionCount - 1)) * 2 - 1) * Math.min(18, this.amplitude * 0.18)
-      const curve = new THREE.CubicBezierCurve3(
-        this.curve.v0,
-        this.controlStart.clone().addScaledVector(this.side, laneOffset),
-        this.controlEnd.clone().addScaledVector(this.side, laneOffset),
-        this.curve.v3,
-      )
-      const points = curve.getPoints(segments)
+    if (connectionCount > 0) {
+      const points = this.curve.getPoints(segments)
       for (let index = 0; index < segments; index += 1) {
         const startPoint = points[index]
         const endPoint = points[index + 1]
