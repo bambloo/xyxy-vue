@@ -40,6 +40,7 @@ const blackHoleTotalCount = ref(0)
 const blackHoleEntries = ref<GalaxyBlackHoleEntry[]>([])
 const blackHoleContentLoading = ref(false)
 const selectedCommentId = ref('')
+const selectedBlackHoleEntryKind = ref<GalaxyBlackHoleEntry['kind']>()
 const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
 const hasSentToday = computed(() => Boolean(todayStarId.value))
@@ -47,6 +48,45 @@ const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValid
 const blackHoleWaveSize = 20
 const blackHoleWave = computed(() => blackHoleEntries.value)
 const blackHoleWaveKey = computed(() => blackHoleWave.value.map((entry) => entry.id).join(':'))
+const blackHoleLayoutSeed = ref(Math.random().toString(36).slice(2))
+const blackHoleEntryStyles = computed(() => {
+  const placed: Array<{ x: number; y: number }> = []
+
+  return blackHoleWave.value.map((entry, index) => {
+    const random = createBlackHoleEntryRandom(entry.id, index, blackHoleLayoutSeed.value)
+    let position = { x: 50, y: 50 }
+    let bestDistance = -1
+
+    for (let attempt = 0; attempt < 160; attempt++) {
+      const angle = random() * Math.PI * 2
+      const radius = Math.sqrt(random()) * 35
+      const candidate = {
+        x: 50 + Math.cos(angle) * radius,
+        y: 50 + Math.sin(angle) * radius,
+      }
+      const distance = placed.length
+        ? Math.min(
+            ...placed.map((other) => Math.hypot(candidate.x - other.x, candidate.y - other.y)),
+          )
+        : Number.POSITIVE_INFINITY
+
+      if (distance > bestDistance) {
+        bestDistance = distance
+        position = candidate
+      }
+      if (distance >= 13) {
+        position = candidate
+        break
+      }
+    }
+
+    placed.push(position)
+    return blackHoleEntryStyle(entry, index, position)
+  })
+})
+watch(blackHoleWaveKey, () => {
+  blackHoleLayoutSeed.value = Math.random().toString(36).slice(2)
+})
 let galaxyScene: GalaxyScene | undefined
 let dailyResetTimer: number | undefined
 
@@ -68,27 +108,50 @@ function currentListViewParams(preserveBlackHoleWave = false) {
   }
 }
 
-function blackHoleEntryStyle(entry: GalaxyBlackHoleEntry, index: number) {
+function createBlackHoleEntryRandom(id: string, index: number, layoutSeed: string) {
   let seed = 2166136261
-  for (const character of `${entry.id}:${index}`) {
+  for (const character of `${layoutSeed}:${id}:${index}`) {
     seed = Math.imul(seed ^ character.charCodeAt(0), 16777619)
   }
-  const random = () => {
+  return () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
     return seed / 0x100000000
   }
+}
 
-  const drift = () => `${Math.round(random() * 72 - 36)}px`
+function blackHoleEntryStyle(
+  entry: GalaxyBlackHoleEntry,
+  index: number,
+  position: { x: number; y: number },
+) {
+  const random = createBlackHoleEntryRandom(entry.id, index, blackHoleLayoutSeed.value)
+  const driftOffsets = Array.from({ length: 5 }, () => ({
+    x: Math.round(random() * 36 - 18),
+    y: Math.round(random() * 36 - 18),
+  }))
+  const angle = Math.round(random() * 14 - 7)
+  const angleSway = random() * 3 + 1
   return {
-    '--entry-x': `${Math.round(random() * 48 + 22)}%`,
-    '--entry-y': `${Math.round(random() * 48 + 22)}%`,
-    '--drift-x': drift(),
-    '--drift-y': drift(),
-    '--drift-duration': `${Math.round(random() * 12 + 13)}s`,
+    '--entry-x': `${position.x.toFixed(2)}%`,
+    '--entry-y': `${position.y.toFixed(2)}%`,
+    '--drift-x-1': `${driftOffsets[0]!.x}px`,
+    '--drift-y-1': `${driftOffsets[0]!.y}px`,
+    '--drift-x-2': `${driftOffsets[1]!.x}px`,
+    '--drift-y-2': `${driftOffsets[1]!.y}px`,
+    '--drift-x-3': `${driftOffsets[2]!.x}px`,
+    '--drift-y-3': `${driftOffsets[2]!.y}px`,
+    '--drift-x-4': `${driftOffsets[3]!.x}px`,
+    '--drift-y-4': `${driftOffsets[3]!.y}px`,
+    '--drift-x-5': `${driftOffsets[4]!.x}px`,
+    '--drift-y-5': `${driftOffsets[4]!.y}px`,
+    '--drift-duration': `${Math.round(random() * 20 + 26)}s`,
     '--drift-delay': `${Math.round(random() * -20)}s`,
-    '--entry-angle': `${Math.round(random() * 12 - 6)}deg`,
+    '--entry-angle': `${angle}deg`,
+    '--entry-angle-27': `${Math.round(angle + angleSway * 0.35)}deg`,
+    '--entry-angle-61': `${Math.round(angle - angleSway * 0.55)}deg`,
+    '--entry-angle-100': `${Math.round(angle + angleSway)}deg`,
     '--entry-opacity': `${(random() * 0.22 + 0.68).toFixed(2)}`,
-    '--entry-size': `${Math.round(random() * 5 + 13)}px`,
+    '--entry-size': `${Math.round(random() * 2 + 11)}px`,
   }
 }
 
@@ -240,6 +303,7 @@ function selectSentStar(star: SentGalaxyStar) {
   if (blackHoleSwipeHandled.value || !canViewStarDetails.value) return
   selectedStar.value = sentStars.value.find((candidate) => candidate.id === star.id)
   selectedCommentId.value = ''
+  selectedBlackHoleEntryKind.value = undefined
   voteError.value = ''
 }
 
@@ -256,11 +320,16 @@ async function openBlackHoleEntry(entry: GalaxyBlackHoleEntry) {
     if (!data?.star) throw new Error('黑洞内容详情格式无效')
     selectedStar.value = data.star
     selectedCommentId.value = data.selectedCommentId ?? ''
+    selectedBlackHoleEntryKind.value = entry.kind
     voteError.value = ''
     await nextTick()
     if (selectedCommentId.value) {
       document
         .getElementById(`sent-star-comment-${selectedCommentId.value}`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    } else if (entry.kind === 'star') {
+      document
+        .getElementById('sent-star-black-hole-content')
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }
   } catch (error) {
@@ -464,7 +533,7 @@ onBeforeUnmount(() => {
       <button type="button" @click="router.push({ name: 'galaxy' })">返回星空</button>
       <div>
         <h1>黑洞星域</h1>
-        <p>踩数 > 赞数 × 1.5 且踩数 > 8 · 共 {{ blackHoleTotalCount }} 条内容</p>
+        <p>踩数 > 赞数 × 1.5 且踩数 > 8</p>
       </div>
     </header>
     <section
@@ -486,7 +555,7 @@ onBeforeUnmount(() => {
               v-for="(entry, index) in blackHoleWave"
               :key="entry.id"
               class="black-hole-content-entry"
-              :style="blackHoleEntryStyle(entry, index)"
+              :style="blackHoleEntryStyles[index]"
             >
               <button
                 class="black-hole-content-text"
@@ -499,9 +568,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </Transition>
-        <p class="black-hole-wave-hint">
-          {{ blackHoleWave.length }} / {{ blackHoleTotalCount }} 条 · 滑动屏幕刷新下一批
-        </p>
       </template>
     </section>
     <section
@@ -544,7 +610,13 @@ onBeforeUnmount(() => {
           </button>
         </header>
         <div class="sent-star-dialog-scroll">
-          <p class="sent-star-content">{{ selectedStar.content }}</p>
+          <p
+            id="sent-star-black-hole-content"
+            class="sent-star-content"
+            :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }"
+          >
+            {{ selectedStar.content }}
+          </p>
           <div class="sent-star-votes">
             <button
               type="button"
@@ -751,7 +823,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(90vw, 90vh);
+  width: min(90vw, 90dvh);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   clip-path: circle(50%);
@@ -782,9 +854,9 @@ onBeforeUnmount(() => {
   position: absolute;
   top: var(--entry-y);
   left: var(--entry-x);
-  width: min(68%, 300px);
+  width: 14%;
   padding: 4px;
-  transform: rotate(var(--entry-angle));
+  transform: translate(-50%, -50%) rotate(var(--entry-angle));
   animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite alternate;
   border: 0;
   background: transparent;
@@ -804,22 +876,36 @@ onBeforeUnmount(() => {
 
 @keyframes black-hole-drift {
   0% {
-    transform: translate3d(0, 0, 0) rotate(var(--entry-angle));
+    transform: translate3d(-50%, -50%, 0) rotate(var(--entry-angle));
   }
 
-  27% {
-    transform: translate3d(var(--drift-x), calc(var(--drift-y) * -0.45), 0)
-      rotate(calc(var(--entry-angle) * -0.6));
+  17% {
+    transform: translate3d(calc(-50% + var(--drift-x-1)), calc(-50% + var(--drift-y-1)), 0)
+      rotate(var(--entry-angle-27));
   }
 
-  61% {
-    transform: translate3d(calc(var(--drift-x) * -0.5), var(--drift-y), 0)
-      rotate(calc(var(--entry-angle) * 0.4));
+  39% {
+    transform: translate3d(calc(-50% + var(--drift-x-2)), calc(-50% + var(--drift-y-2)), 0)
+      rotate(var(--entry-angle-61));
+  }
+
+  57% {
+    transform: translate3d(calc(-50% + var(--drift-x-3)), calc(-50% + var(--drift-y-3)), 0)
+      rotate(var(--entry-angle-27));
+  }
+
+  78% {
+    transform: translate3d(calc(-50% + var(--drift-x-4)), calc(-50% + var(--drift-y-4)), 0)
+      rotate(var(--entry-angle-61));
+  }
+
+  94% {
+    transform: translate3d(calc(-50% + var(--drift-x-5)), calc(-50% + var(--drift-y-5)), 0)
+      rotate(var(--entry-angle-100));
   }
 
   100% {
-    transform: translate3d(var(--drift-x), var(--drift-y), 0)
-      rotate(calc(var(--entry-angle) * -0.35));
+    transform: translate3d(-50%, -50%, 0) rotate(var(--entry-angle));
   }
 }
 
@@ -833,36 +919,20 @@ onBeforeUnmount(() => {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: var(--entry-size);
+  font-size: clamp(9px, var(--entry-size), 16px);
   font-weight: 500;
   line-height: 1.45;
   overflow-wrap: anywhere;
   text-align: left;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .black-hole-content-entry {
     animation: none;
   }
-}
-
-.black-hole-wave-hint {
-  position: absolute;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(2, 5, 16, 0.58);
-  color: #d4def0;
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-  text-shadow: 0 1px 8px #02040b;
 }
 
 .black-hole-empty {
@@ -1000,6 +1070,14 @@ onBeforeUnmount(() => {
   color: #e2edf9;
   font-size: 16px;
   line-height: 1.85;
+}
+
+.sent-star-content.selected-black-hole-content {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--star-color) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--star-color) 65%, transparent), 0 0 24px
+    color-mix(in srgb, var(--star-color) 42%, transparent);
+  animation: black-hole-target-highlight 1.2s ease-out 2;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1082,6 +1160,14 @@ onBeforeUnmount(() => {
 .sent-star-comment.selected-comment {
   border-color: color-mix(in srgb, var(--star-color) 72%, transparent);
   background: color-mix(in srgb, var(--star-color) 14%, rgba(86, 121, 168, 0.1));
+  animation: black-hole-target-highlight 1.2s ease-out 2;
+}
+
+@keyframes black-hole-target-highlight {
+  50% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--star-color) 82%, transparent), 0 0 30px
+      color-mix(in srgb, var(--star-color) 56%, transparent);
+  }
 }
 
 .sent-star-comment-author {

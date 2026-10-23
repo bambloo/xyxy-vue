@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { createGalaxyStarLabelCanvas } from './starTexture'
+import { createGalaxyStarLabelSdfCanvas } from './starTexture'
 import type {
   GalaxyStarConnection,
   GalaxyStarView,
@@ -21,9 +21,9 @@ type GalaxyManagerOptions = {
 }
 
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
-const SENT_STAR_LABEL_OFFSET_PIXELS = 18
-const SENT_STAR_LABEL_WIDTH_PIXELS = 112
-const SENT_STAR_LABEL_HEIGHT_PIXELS = 28
+const SENT_STAR_LABEL_OFFSET_PIXELS = 48
+const SENT_STAR_LABEL_WIDTH_PIXELS = 144
+const SENT_STAR_LABEL_HEIGHT_PIXELS = 36
 const SENT_STAR_LABEL_MAX_DISTANCE = 160
 const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
@@ -44,10 +44,35 @@ const WANDER_TARGET_BOUNDARY_MARGIN = 80
 type SentStarVisual = {
   data: SentGalaxyStar
   star: GalaxyStar
-  label: THREE.Sprite
+  label: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
   labelTexture: THREE.CanvasTexture
-  labelMaterial: THREE.SpriteMaterial
+  labelMaterial: THREE.ShaderMaterial
 }
+
+const starLabelVertexShader = `
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const starLabelFragmentShader = `
+  varying vec2 vUv;
+  uniform sampler2D u_sdf;
+  uniform vec3 u_color;
+
+  void main() {
+    float distance = texture2D(u_sdf, vUv).r;
+    float smoothing = max(fwidth(distance) * 0.8, 0.003);
+    float fill = smoothstep(0.5 - smoothing, 0.5 + smoothing, distance);
+    float glow = smoothstep(0.38, 0.5, distance) * (1.0 - fill);
+    float alpha = fill + glow * 0.58;
+    vec3 color = mix(u_color, vec3(1.0), fill * 0.82);
+    gl_FragColor = vec4(color, alpha);
+  }
+`
 
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
@@ -253,6 +278,7 @@ export class GalaxyManager {
       this.options.galaxy.remove(star.label)
       star.labelTexture.dispose()
       star.labelMaterial.dispose()
+      star.label.geometry.dispose()
     })
     this.sentStars.clear()
   }
@@ -378,6 +404,9 @@ export class GalaxyManager {
       this.options.galaxy.remove(star.label)
       star.labelTexture.dispose()
       star.labelMaterial.dispose()
+      star.label.geometry.dispose()
+      const geometryIndex = this.options.geometries.indexOf(star.label.geometry)
+      if (geometryIndex >= 0) this.options.geometries.splice(geometryIndex, 1)
       const materialIndex = this.options.materials.indexOf(star.labelMaterial)
       if (materialIndex >= 0) this.options.materials.splice(materialIndex, 1)
       this.sentStars.delete(id)
@@ -388,11 +417,11 @@ export class GalaxyManager {
       if (existing) {
         if (existing.data.title !== data.title) {
           const previousTexture = existing.labelTexture
-          existing.labelTexture = this.makeLabelTexture(data.title, data.color)
-          existing.labelMaterial.map = existing.labelTexture
-          existing.labelMaterial.needsUpdate = true
+          existing.labelTexture = this.makeLabelTexture(data.title)
+          existing.labelMaterial.uniforms['u_sdf']!.value = existing.labelTexture
           previousTexture.dispose()
         }
+        existing.labelMaterial.uniforms['u_color']!.value.set(data.color)
         existing.data = data
         existing.star.setConnectionCount(data.connectionCount)
         existing.star.setVisible(this.isStarVisible())
@@ -406,16 +435,26 @@ export class GalaxyManager {
       star.setVisible(this.isStarVisible())
       usedStarKeys.add(`${field.uuid}:${index}`)
 
-      const labelTexture = this.makeLabelTexture(data.title, data.color)
-      const labelMaterial = new THREE.SpriteMaterial({
-        map: labelTexture,
+      const labelTexture = this.makeLabelTexture(data.title)
+      const labelMaterial = new THREE.ShaderMaterial({
+        vertexShader: starLabelVertexShader,
+        fragmentShader: starLabelFragmentShader,
+        uniforms: {
+          u_sdf: { value: labelTexture },
+          u_color: { value: new THREE.Color(data.color) },
+        },
         transparent: true,
+        depthTest: false,
         opacity: 0.9,
         depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
       })
-      const label = new THREE.Sprite(labelMaterial)
+      const labelGeometry = new THREE.PlaneGeometry(1, 1)
+      this.options.geometries.push(labelGeometry)
+      const label = new THREE.Mesh(labelGeometry, labelMaterial)
       label.position.copy(star.position)
-      label.scale.set(SENT_STAR_LABEL_WIDTH_PIXELS, SENT_STAR_LABEL_HEIGHT_PIXELS, 1)
+      label.renderOrder = 5
       label.visible = this.isStarVisible()
       this.options.galaxy.add(label)
       this.options.materials.push(labelMaterial)
@@ -558,6 +597,9 @@ export class GalaxyManager {
       const viewHeight = 2 * safeDepth * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5))
       const worldUnitsPerPixel = viewHeight / viewportHeight
       labelCameraPosition.y += worldUnitsPerPixel * SENT_STAR_LABEL_OFFSET_PIXELS
+      const galaxyQuaternion = galaxy.getWorldQuaternion(new THREE.Quaternion())
+      const cameraQuaternion = camera.getWorldQuaternion(new THREE.Quaternion())
+      star.label.quaternion.copy(galaxyQuaternion.invert().multiply(cameraQuaternion))
       star.label.scale.set(
         worldUnitsPerPixel * SENT_STAR_LABEL_WIDTH_PIXELS,
         worldUnitsPerPixel * SENT_STAR_LABEL_HEIGHT_PIXELS,
@@ -719,9 +761,11 @@ export class GalaxyManager {
     throw new Error('没有可绑定的未占用星星')
   }
 
-  private makeLabelTexture(title: string, color: string) {
-    const texture = new THREE.CanvasTexture(createGalaxyStarLabelCanvas(title, color))
-    texture.colorSpace = THREE.SRGBColorSpace
+  private makeLabelTexture(title: string) {
+    const texture = new THREE.CanvasTexture(createGalaxyStarLabelSdfCanvas(title))
+    texture.colorSpace = THREE.NoColorSpace
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
     return texture
   }
 }

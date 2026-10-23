@@ -62,13 +62,19 @@ export class GalaxyStar {
   update(time = 0) {
     const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
     const isSentStar = Boolean(this.sentStarColor)
-    const interactionGlow = Math.min(1, Math.log2(this.connectionCount + 1) / 5)
-    const brightness = 1 + interactionGlow * 1.2
-    const opacity = isSentStar
-      ? 1
-      : this.regularOpacity + Math.sin(time * 0.003 + this.phase) * 0.12 + interactionGlow * 0.18
-    this.sprite.scale.setScalar(this.size * pulse * (isSentStar ? 3.5 : 1))
-    this.material.opacity = isSentStar ? 1 : opacity
+    const interactionGlow = Math.min(
+      1,
+      Math.log2(this.connectionCount + 1) / (isSentStar ? 4 : 5),
+    )
+    const brightness = isSentStar ? 1.18 + interactionGlow * 1.35 : 1 + interactionGlow * 1.2
+    const opacity =
+      this.regularOpacity +
+      Math.sin(time * 0.003 + this.phase) * 0.12 +
+      interactionGlow * (isSentStar ? 0.23 : 0.18) +
+      (isSentStar ? 0.06 : 0)
+    const sentStarScale = isSentStar ? 1.2 + interactionGlow * 0.12 : 1
+    this.sprite.scale.setScalar(this.size * pulse * sentStarScale)
+    this.material.opacity = Math.min(opacity, isSentStar ? 0.9 : 1)
     this.material.color.copy(this.sentStarColor ?? this.regularColor).multiplyScalar(brightness)
   }
 
@@ -76,8 +82,7 @@ export class GalaxyStar {
     this.color = color
     this.sentStarColor = new THREE.Color(color)
     this.material.color.copy(this.sentStarColor)
-    this.material.opacity = 1
-    this.sprite.scale.setScalar(this.size * 2.2)
+    this.updateFieldColor()
   }
 
   setConnectionCount(count: number) {
@@ -89,9 +94,13 @@ export class GalaxyStar {
     this.isVisible = visible
     this.sprite.visible = visible
 
+    this.updateFieldColor()
+  }
+
+  private updateFieldColor() {
     const fieldColors = this.field.geometry.getAttribute('color')
     if (!fieldColors) return
-    const color = visible ? this.fieldColor : new THREE.Color(0, 0, 0)
+    const color = this.isVisible && !this.sentStarColor ? this.fieldColor : new THREE.Color(0, 0, 0)
     fieldColors.setXYZ(this.index, color.r, color.g, color.b)
     fieldColors.needsUpdate = true
   }
