@@ -19,8 +19,7 @@ async function createBlackHoleStars() {
   createdCount.value = undefined
   starIds.value = []
   try {
-    const packet = await post('/wpi/user/galaxy-star', loading, {
-      action: 'seedBlackHole',
+    const packet = await post('/wpi/user/galaxy-star/seed-black-hole', loading, {
       count: count.value,
     })
     const data = packet.data as { createdCount?: number; starIds?: string[] } | undefined

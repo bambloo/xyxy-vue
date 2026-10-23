@@ -9,7 +9,9 @@ import type {
   SentGalaxyStar,
 } from '../../../common/entity/galaxy-star'
 import { post } from '@/scripts/request'
+import { useAuthStore } from '@/stores/auth'
 import { GALAXY_STAR_SENT_EVENT } from '@/events/galaxy-star'
+import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 import { createGalaxyStarTextureCanvas } from '../scripts/core/galaxy/starTexture'
@@ -18,6 +20,7 @@ const props = withDefaults(defineProps<{ blackHoleView?: boolean }>(), {
   blackHoleView: false,
 })
 const router = useRouter()
+const auth = useAuthStore()
 const canvasHost = ref<HTMLElement | null>(null)
 const sceneError = ref('')
 const sentStars = ref<GalaxyStarView[]>([])
@@ -38,6 +41,7 @@ const viewportSize = ref({ width: window.innerWidth, height: window.innerHeight 
 const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
 const hasSentToday = computed(() => Boolean(todayStarId.value))
+const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValidated)
 const downvotedStars = computed(() => sentStars.value.filter(isBlackHoleStar))
 const blackHolePlanetRadius = computed(
   () => Math.min(viewportSize.value.width, viewportSize.value.height) * 0.45,
@@ -179,33 +183,41 @@ function applyGalaxyData(data: Partial<GalaxyStarListResponse>) {
 
 async function loadGalaxyStars() {
   try {
-    const [listPacket, statusPacket] = await Promise.all([
-      post('/wpi/user/galaxy-star', listLoading, {
-        action: 'list',
-        ...currentListViewParams(),
-      }),
-      post('/wpi/user/galaxy-star', statusLoading, { action: 'status' }),
-    ])
+    const listRequest = post('/wpi/user/galaxy-star/list', listLoading, {
+      ...currentListViewParams(),
+    })
+    const statusRequest = canViewStarDetails.value
+      ? post('/wpi/user/galaxy-star/status', statusLoading)
+      : Promise.resolve(undefined)
+    const [listPacket, statusPacket] = await Promise.all([listRequest, statusRequest])
     const listData = listPacket.data as Partial<GalaxyStarListResponse> | undefined
-    const statusData = statusPacket.data as
+    const statusData = statusPacket?.data as
       { hasSentToday?: boolean; todayStarId?: string; resetsAt?: string } | undefined
-    if (
-      !listData ||
-      !statusData ||
-      typeof statusData.hasSentToday !== 'boolean' ||
-      typeof statusData.resetsAt !== 'string'
-    ) {
+    if (!listData) {
       throw new Error('星星数据格式无效')
     }
     applyGalaxyData(listData)
-    todayStarId.value = statusData.todayStarId ?? ''
-    if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
-    const resetDelay = Date.parse(statusData.resetsAt) - Date.now()
-    if (Number.isFinite(resetDelay)) {
-      dailyResetTimer = window.setTimeout(
-        () => void loadGalaxyStars(),
-        Math.max(0, resetDelay) + 250,
-      )
+    if (
+      canViewStarDetails.value &&
+      statusData &&
+      typeof statusData.hasSentToday === 'boolean' &&
+      typeof statusData.resetsAt === 'string'
+    ) {
+      todayStarId.value = statusData.todayStarId ?? ''
+      if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
+      const resetDelay = Date.parse(statusData.resetsAt) - Date.now()
+      if (Number.isFinite(resetDelay)) {
+        dailyResetTimer = window.setTimeout(
+          () => void loadGalaxyStars(),
+          Math.max(0, resetDelay) + 250,
+        )
+      }
+    } else {
+      todayStarId.value = ''
+      if (dailyResetTimer !== undefined) {
+        window.clearTimeout(dailyResetTimer)
+        dailyResetTimer = undefined
+      }
     }
   } catch (error) {
     console.error('读取银河星星失败', error)
@@ -215,8 +227,7 @@ async function loadGalaxyStars() {
 
 async function loadBlackHoleWave() {
   try {
-    const packet = await post('/wpi/user/galaxy-star', listLoading, {
-      action: 'list',
+    const packet = await post('/wpi/user/galaxy-star/list', listLoading, {
       view: 'blackhole',
       limit: blackHoleWaveSize,
       excludeIds: sentStars.value.map((star) => star.id),
@@ -248,8 +259,7 @@ function handleStarSent(event: Event) {
 
 async function refreshGalaxyAfterStarSent() {
   try {
-    const packet = await post('/wpi/user/galaxy-star', listLoading, {
-      action: 'list',
+    const packet = await post('/wpi/user/galaxy-star/list', listLoading, {
       ...currentListViewParams(true),
     })
     applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
@@ -260,7 +270,7 @@ async function refreshGalaxyAfterStarSent() {
 }
 
 function selectSentStar(star: SentGalaxyStar) {
-  if (blackHoleSwipeHandled.value) return
+  if (blackHoleSwipeHandled.value || !canViewStarDetails.value) return
   selectedStar.value = sentStars.value.find((candidate) => candidate.id === star.id)
   voteError.value = ''
 }
@@ -270,8 +280,7 @@ async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
   voteError.value = ''
   voteLoading.value = true
   try {
-    const packet = await post('/wpi/user/galaxy-star', voteLoading, {
-      action: 'vote',
+    const packet = await post('/wpi/user/galaxy-star/vote', voteLoading, {
       starId: star.id,
       vote,
       ...currentListViewParams(true),
@@ -294,8 +303,7 @@ async function commentOnStar(star: GalaxyStarView, parentCommentId?: string) {
   commentError.value = ''
   commentLoading.value = true
   try {
-    const packet = await post('/wpi/user/galaxy-star', commentLoading, {
-      action: 'comment',
+    const packet = await post('/wpi/user/galaxy-star/comment', commentLoading, {
       starId: star.id,
       content,
       ...(parentCommentId ? { parentCommentId } : {}),
@@ -353,6 +361,24 @@ watch(
   },
 )
 
+watch(canViewStarDetails, (canView, previousCanView) => {
+  if (canView === previousCanView) return
+  selectedStar.value = undefined
+  todayStarId.value = ''
+  if (!canView) {
+    sentStars.value = sentStars.value.map((star) => ({
+      ...star,
+      title: '',
+      content: '',
+      comments: [],
+      isOwn: false,
+      myVote: undefined,
+    }))
+    galaxyScene?.setSentStars(sentStars.value)
+  }
+  void loadGalaxyStars()
+})
+
 function handlePointerDown(event: PointerEvent) {
   galaxyScene?.pointerDown(event)
 }
@@ -367,6 +393,14 @@ function handlePointerUp(event: PointerEvent) {
 
 function handleWheel(event: WheelEvent) {
   galaxyScene?.wheel(event)
+}
+
+function handleCameraZoomOut() {
+  galaxyScene?.zoomOut()
+}
+
+function handleCameraCenter() {
+  galaxyScene?.resetView()
 }
 
 onMounted(() => {
@@ -384,6 +418,8 @@ onMounted(() => {
       props.blackHoleView,
     )
     window.addEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+    window.addEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
+    window.addEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
     void loadGalaxyStars()
   }
 })
@@ -392,6 +428,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateBlackHoleGridSize)
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+  window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
+  window.removeEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
   galaxyScene?.destroy()
   galaxyScene = undefined
 })

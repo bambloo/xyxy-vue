@@ -1,5 +1,4 @@
 import GalaxyView from '@/views/GalaxyView.vue'
-import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import TagUserView from '@/views/TagUserView.vue'
 import UserManagementView from '@/views/user/UserManagementView.vue'
@@ -46,8 +45,7 @@ const router = createRouter({
     },
     {
       path: '/home',
-      name: 'home',
-      component: HomeView,
+      redirect: { name: 'galaxy' },
     },
     {
       path: '/galaxy',
@@ -62,7 +60,7 @@ const router = createRouter({
     },
     {
       path: '/',
-      redirect: { name: 'home' },
+      redirect: { name: 'galaxy' },
     },
     {
       path: '/:tag(.*)*',
@@ -79,8 +77,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   await auth.hydrate()
-  if (!auth.isLoggedIn && to.name !== 'home' && to.name !== 'login' && to.name !== 'tag') {
-    return { name: 'home' }
+  if (!auth.isLoggedIn && to.name !== 'galaxy' && to.name !== 'login' && to.name !== 'tag') {
+    return { name: 'galaxy' }
   }
 
   if (to.path === '/login' && auth.isLoggedIn) {

@@ -119,6 +119,10 @@ export class GalaxyScene {
     this.manager?.resetView()
   }
 
+  zoomOut() {
+    this.manager?.zoomOut()
+  }
+
   destroy() {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()

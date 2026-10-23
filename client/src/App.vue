@@ -7,6 +7,7 @@ import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
 import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
+import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
@@ -15,13 +16,12 @@ type AppState = 'loading' | 'ready' | 'empty'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const isHomeRoute = computed(() => route.name === 'home')
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
-const isPortalRoute = computed(() => isHomeRoute.value || isGalaxyRoute.value)
+const isPortalRoute = computed(() => isGalaxyRoute.value)
 const canShowPortalButton = computed(
   () => isPortalRoute.value && auth.isSessionValidated && Boolean(auth.currentUser?.tag),
 )
-const portalLabel = computed(() => (isHomeRoute.value ? '上划进入星空' : '下滑返回主页'))
+const portalLabel = '上划回到星系中心，下划拉远镜头；点击查看星言星语'
 const tag = computed(() => {
   const routeTag = route.params.tag
   if (Array.isArray(routeTag)) return routeTag.join('/')
@@ -41,7 +41,7 @@ async function loadTagState() {
 
   if (!isTagRoute.value || !tag.value) {
     tagState.value = 'loading'
-    if (isHomeRoute.value || isGalaxyRoute.value) {
+    if (isGalaxyRoute.value) {
       appState.value = 'ready'
       return
     }
@@ -61,24 +61,24 @@ async function loadTagState() {
     const isActive = (packet.data as { isActive?: boolean } | undefined)?.isActive === true
     tagState.value = isActive ? 'active' : 'inactive'
   } catch {
-    await router.replace({ name: 'home' })
+    await router.replace({ name: 'galaxy' })
   }
 }
 
-watch([isLoginRoute, isHomeRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, {
+watch([isLoginRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, {
   immediate: true,
 })
 
-function handlePortalSwipeUp() {
-  if (isHomeRoute.value) void router.push({ name: 'galaxy' })
-}
-
-function handlePortalSwipeDown() {
-  if (isGalaxyRoute.value) void router.push({ name: 'home' })
-}
-
 function handleFortuneSwipe() {
   if (isGalaxyRoute.value) window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
+}
+
+function handleCameraZoomOut() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_CAMERA_ZOOM_OUT_EVENT))
+}
+
+function handleCameraCenter() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_CAMERA_CENTER_EVENT))
 }
 
 function handleFortuneActivate() {
@@ -111,8 +111,8 @@ function handleFortuneActivate() {
         class="sun-portal-control"
         :label="portalLabel"
         :title="portalLabel"
-        @swipe-up="handlePortalSwipeUp"
-        @swipe-down="handlePortalSwipeDown"
+        @swipe-up="handleCameraCenter"
+        @swipe-down="handleCameraZoomOut"
         @swipe-left="handleFortuneSwipe"
         @swipe-right="handleFortuneSwipe"
         @activate="handleFortuneActivate"

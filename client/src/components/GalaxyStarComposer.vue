@@ -33,7 +33,7 @@ async function openComposer(event?: Event) {
   error.value = ''
   canSend.value = undefined
   try {
-    const packet = await post('/wpi/user/galaxy-star', statusLoading, { action: 'status' })
+    const packet = await post('/wpi/user/galaxy-star/status', statusLoading)
     const result = packet.data as { canSend?: boolean } | undefined
     if (typeof result?.canSend !== 'boolean') {
       throw new Error('星星发送状态暂不可用，请稍后重试。')
@@ -77,8 +77,7 @@ async function sendStar() {
   error.value = ''
   sending.value = true
   try {
-    const packet = await post('/wpi/user/galaxy-star', sending, {
-      action: 'send',
+    const packet = await post('/wpi/user/galaxy-star/send', sending, {
       title: title.value,
       content: content.value,
       color: color.value,

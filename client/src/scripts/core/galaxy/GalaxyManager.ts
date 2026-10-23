@@ -84,6 +84,7 @@ export class GalaxyManager {
   private readonly wanderVelocity = new THREE.Vector3()
   private rollVelocity = 0
   private targetRollVelocity = 0
+  private cameraTargetPosition?: THREE.Vector3
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
@@ -193,11 +194,24 @@ export class GalaxyManager {
   }
 
   resetView() {
-    const camera = this.options.camera
-    camera.position.set(0, 0, 0)
+    this.cameraTargetPosition = new THREE.Vector3(0, 0, 0)
     this.targetYaw = 0
     this.targetPitch = 0
-    camera.rotation.set(0, 0, 0)
+    this.targetRollVelocity = 0
+    this.recordInteraction()
+  }
+
+  zoomOut() {
+    const camera = this.options.camera
+    const outward =
+      camera.position.lengthSq() > 0
+        ? camera.position.clone().normalize()
+        : camera.getWorldDirection(new THREE.Vector3()).negate()
+    const nextPosition = camera.position
+      .clone()
+      .addScaledVector(outward, 300)
+      .clampLength(GALAXY_CAMERA_CENTER_LIMIT, GALAXY_CAMERA_BOUNDARY)
+    this.cameraTargetPosition = nextPosition
     this.recordInteraction()
   }
 
@@ -211,7 +225,14 @@ export class GalaxyManager {
       this.targetRollVelocity = isIdleWandering ? IDLE_WANDER_ROLL_SPEED : 0
     }
     this.updateCameraLook(deltaSeconds, isIdleWandering)
-    if (isIdleWandering) {
+    if (this.cameraTargetPosition) {
+      const camera = this.options.camera
+      camera.position.lerp(this.cameraTargetPosition, 1 - Math.exp(-2.4 * deltaSeconds))
+      if (camera.position.distanceToSquared(this.cameraTargetPosition) < 1) {
+        camera.position.copy(this.cameraTargetPosition)
+        this.cameraTargetPosition = undefined
+      }
+    } else if (isIdleWandering) {
       this.updateIdleWander(deltaSeconds)
     }
     this.updateSentStarLabels()
@@ -374,6 +395,13 @@ export class GalaxyManager {
     stars.forEach((data) => {
       const existing = this.sentStars.get(data.id)
       if (existing) {
+        if (existing.data.title !== data.title) {
+          const previousTexture = existing.labelTexture
+          existing.labelTexture = this.makeLabelTexture(data.title, data.color)
+          existing.labelMaterial.map = existing.labelTexture
+          existing.labelMaterial.needsUpdate = true
+          previousTexture.dispose()
+        }
         existing.data = data
         existing.star.setConnectionCount(data.connectionCount)
         existing.star.setVisible(this.isStarVisible(data.id))
@@ -491,7 +519,8 @@ export class GalaxyManager {
       { sourceStarId: string; targetStarId: string; count: number }
     >()
     visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
-      const [firstStarId, secondStarId] = [sourceStarId, targetStarId].sort()
+      const [firstStarId, secondStarId] =
+        sourceStarId <= targetStarId ? [sourceStarId, targetStarId] : [targetStarId, sourceStarId]
       const key = `${firstStarId}:${secondStarId}`
       const existing = uniqueConnections.get(key)
       if (existing) {
