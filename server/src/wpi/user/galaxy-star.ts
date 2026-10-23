@@ -280,9 +280,6 @@ export default async function handler(
     if (!target) {
       throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
     }
-    if (target.userTag === user.tag) {
-      throw new BamblooError(BamblooStatusCode.BadRequest, '不能评论自己的星星')
-    }
     if (parentCommentId) {
       const targetWithComments = await collection.findOne(
         { _id: target._id },

@@ -288,7 +288,7 @@ async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
 
 async function commentOnStar(star: GalaxyStarView, parentCommentId?: string) {
   const content = commentText.value.trim()
-  if (!hasSentToday.value || star.isOwn || !content || commentLoading.value) return
+  if (!hasSentToday.value || !content || commentLoading.value) return
   commentError.value = ''
   commentLoading.value = true
   try {
@@ -543,7 +543,7 @@ onBeforeUnmount(() => {
                 </p>
                 <p class="sent-star-comment-content">{{ comment.content }}</p>
                 <button
-                  v-if="hasSentToday && !selectedStar.isOwn"
+                  v-if="hasSentToday"
                   class="sent-star-reply-toggle"
                   type="button"
                   @click="toggleCommentReply(comment)"
@@ -586,7 +586,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
         <form
-          v-if="hasSentToday && !selectedStar.isOwn && !replyingToCommentId"
+          v-if="hasSentToday && !replyingToCommentId"
           class="sent-star-comment-form sent-star-main-comment-form"
           @submit.prevent="commentOnStar(selectedStar)"
         >
