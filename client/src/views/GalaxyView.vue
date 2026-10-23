@@ -17,7 +17,6 @@ import {
   GALAXY_STAR_SENT_EVENT,
 } from '@/events/galaxy-star'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
-import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 
 const props = withDefaults(defineProps<{ blackHoleView?: boolean }>(), {
@@ -625,7 +624,6 @@ onMounted(() => {
   if (canvasHost.value) {
     galaxyScene = new GalaxyScene(
       canvasHost.value,
-      () => window.dispatchEvent(new Event(TIME_FORTUNE_OPEN_EVENT)),
       selectSentStar,
       () => void router.push({ name: 'blackhole' }),
       props.blackHoleView,

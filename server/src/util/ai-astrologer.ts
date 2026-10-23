@@ -33,7 +33,7 @@ export class AiAstrologer {
     this.apiKey =
       options.apiKey ?? process.env.BIG_MODEL_API_KEY ?? process.env.BIGMODEL_API_KEY ?? ''
     this.endpoint = options.endpoint ?? 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
-    this.model = options.model ?? 'GLM-4.7-Flash'
+    this.model = options.model ?? 'GLM-5.3-Flash'
   }
 
   ask(question: string): Promise<string> {
@@ -57,7 +57,7 @@ export class AiAstrologer {
           { role: 'system', content: ASTROLOGER_SYSTEM_PROMPT },
           { role: 'user', content: prompt },
         ],
-        thinking: { type: 'disabled' },
+        thinking: { type: 'enabled' },
         reasoning_effort: 'max',
         max_tokens: 2 * 1024,
         temperature: 1,

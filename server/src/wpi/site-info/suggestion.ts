@@ -9,7 +9,7 @@ export const config = { access: 'protected' as const }
 
 const MAX_SUGGESTION_LENGTH = 5000
 
-export default async function handler(
+export default function handler(
   params: Record<string, unknown>,
   req: WpiRequest,
   res: Response,
@@ -19,18 +19,18 @@ export default async function handler(
     return response(res, BamblooStatusCode.FormatError, '建议内容不能为空且不能超过 5000 个字符')
   }
 
-  try {
-    const createdAt = format_timestamp(new Date())
-    await mongo_helper.ddo((db) =>
+  const createdAt = format_timestamp(new Date())
+  return mongo_helper
+    .ddo((db) =>
       db.collection('site_suggestion').insertOne({
         userTag: req.user!.tag,
         content,
         createdAt,
       }),
     )
-    return response(res, BamblooStatusCode.Success, '建议已提交')
-  } catch (error) {
-    console.error(`保存用户 ${req.user.tag} 的建议失败`, error)
-    return response(res, BamblooStatusCode.Uncategoried, '建议提交失败')
-  }
+    .then(() => response(res, BamblooStatusCode.Success, '建议已提交'))
+    .catch((error: unknown) => {
+      console.error(`保存用户 ${req.user!.tag} 的建议失败`, error)
+      return response(res, BamblooStatusCode.Uncategoried, '建议提交失败')
+    })
 }

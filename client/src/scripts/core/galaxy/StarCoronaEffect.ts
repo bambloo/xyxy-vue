@@ -106,6 +106,88 @@ const sunButtonFragmentShader = `
   varying vec2 vUv;
   uniform vec2 u_resolution;
   uniform float u_time;
+  uniform float u_moon_phase;
+
+  float noise3D(vec3 p) {
+    return fract(sin(dot(p, vec3(12.9898, 78.233, 128.852))) * 43758.5453) * 2.0 - 1.0;
+  }
+
+  float simplex3D(vec3 p) {
+    float f3 = 1.0 / 3.0;
+    float s = (p.x + p.y + p.z) * f3;
+    ivec3 cell = ivec3(floor(p + vec3(s)));
+    float g3 = 1.0 / 6.0;
+    float t = float(cell.x + cell.y + cell.z) * g3;
+    vec3 x0 = p - (vec3(cell) - t);
+    ivec3 i1;
+    ivec3 i2;
+
+    if (x0.x >= x0.y) {
+      if (x0.y >= x0.z) {
+        i1 = ivec3(1, 0, 0);
+        i2 = ivec3(1, 1, 0);
+      } else if (x0.x >= x0.z) {
+        i1 = ivec3(1, 0, 0);
+        i2 = ivec3(1, 0, 1);
+      } else {
+        i1 = ivec3(0, 0, 1);
+        i2 = ivec3(1, 0, 1);
+      }
+    } else {
+      if (x0.y < x0.z) {
+        i1 = ivec3(0, 0, 1);
+        i2 = ivec3(0, 1, 1);
+      } else if (x0.x < x0.z) {
+        i1 = ivec3(0, 1, 0);
+        i2 = ivec3(0, 1, 1);
+      } else {
+        i1 = ivec3(0, 1, 0);
+        i2 = ivec3(1, 1, 0);
+      }
+    }
+
+    vec3 x1 = x0 - vec3(i1) + g3;
+    vec3 x2 = x0 - vec3(i2) + 2.0 * g3;
+    vec3 x3 = x0 - 1.0 + 3.0 * g3;
+    vec3 cell0 = vec3(cell);
+    vec3 cell1 = vec3(cell + i1);
+    vec3 cell2 = vec3(cell + i2);
+    vec3 cell3 = vec3(cell + ivec3(1));
+    vec3 gr0 = normalize(vec3(noise3D(cell0), noise3D(cell0 * 2.01), noise3D(cell0 * 2.02)) + 0.00001);
+    vec3 gr1 = normalize(vec3(noise3D(cell1), noise3D(cell1 * 2.01), noise3D(cell1 * 2.02)) + 0.00001);
+    vec3 gr2 = normalize(vec3(noise3D(cell2), noise3D(cell2 * 2.01), noise3D(cell2 * 2.02)) + 0.00001);
+    vec3 gr3 = normalize(vec3(noise3D(cell3), noise3D(cell3 * 2.01), noise3D(cell3 * 2.02)) + 0.00001);
+    float t0 = max(0.5 - dot(x0, x0), 0.0);
+    float t1 = max(0.5 - dot(x1, x1), 0.0);
+    float t2 = max(0.5 - dot(x2, x2), 0.0);
+    float t3 = max(0.5 - dot(x3, x3), 0.0);
+    t0 *= t0;
+    t1 *= t1;
+    t2 *= t2;
+    t3 *= t3;
+
+    return 96.0 * (
+      t0 * t0 * dot(gr0, x0) +
+      t1 * t1 * dot(gr1, x1) +
+      t2 * t2 * dot(gr2, x2) +
+      t3 * t3 * dot(gr3, x3)
+    );
+  }
+
+  float fbm(vec3 p) {
+    float value = 0.5 * simplex3D(p);
+    p *= 2.01;
+    value += 0.25 * simplex3D(p);
+    p *= 2.02;
+    value += 0.125 * simplex3D(p);
+    p *= 2.03;
+    value += 0.0625 * simplex3D(p);
+    p *= 2.04;
+    value += 0.03125 * simplex3D(p);
+    p *= 2.05;
+    value += 0.015625 * simplex3D(p);
+    return value;
+  }
 
   vec4 hash4(vec4 value) {
     return fract(sin(value) * 1399763.5453123);
@@ -218,37 +300,45 @@ const sunButtonFragmentShader = `
   void main() {
     vec2 point = (vUv * 2.0 - 1.0) * vec2(u_resolution.x / u_resolution.y, 1.0);
     float time = u_time;
-    float rotationX = time * 0.025;
-    float rotationY = -0.6;
-    vec2 sine = sin(vec2(rotationX, rotationY));
-    vec2 cosine = cos(vec2(rotationX, rotationY));
-    mat3 rotation = mat3(
-      vec3(cosine.x, 0.0, sine.x), vec3(0.0, 1.0, 0.0), vec3(-sine.x, 0.0, cosine.x)
+    vec2 pos = (vUv - 0.5) * u_resolution;
+    float radius = u_resolution.y / 3.0;
+    float radiusSquared = dot(pos, pos);
+    float zIn = sqrt(max(radius * radius - radiusSquared, 0.0));
+    float zOut = sqrt(max(-radius * radius + radiusSquared, 0.0));
+
+    vec3 normal = normalize(vec3(pos, zIn));
+    vec3 normalOut = normalize(vec3(pos, zOut) + vec3(0.0, 0.0, 0.0001));
+    float roughness = 0.05;
+    float nx = fbm(normal + vec3(roughness, 0.0, 0.0)) * 0.5 + 0.5;
+    float ny = fbm(normal + vec3(0.0, roughness, 0.0)) * 0.5 + 0.5;
+    float nz = fbm(normal + vec3(0.0, 0.0, roughness)) * 0.5 + 0.5;
+    normal = normalize(normal * vec3(nx, ny, nz));
+
+    float textureRotation = time * 0.025;
+    vec3 terrainNormal = vec3(
+      normal.x * cos(textureRotation) - normal.y * sin(textureRotation),
+      normal.x * sin(textureRotation) + normal.y * cos(textureRotation),
+      normal.z
     );
-    rotation = mat3(
-      vec3(1.0, 0.0, 0.0), vec3(0.0, cosine.y, sine.y), vec3(0.0, -sine.y, cosine.y)
-    ) * rotation;
-    vec3 ray = normalize(vec3(point, 2.0));
-    vec3 position = vec3(0.0, 0.0, 3.0);
-    float body = pow(min(1.0, noiseSphere(ray, position, 1.0, rotation, 0.5, vec3(0.0), time) * 2.4), 2.0);
-    float detail = min(1.0, noiseSphere(ray, position, 1.0, rotation, 4.0, vec3(83.23, 34.34, 67.453), time) * 2.2);
-    vec3 color = mix(vec3(1.0, 1.0, 0.0), vec3(1.0), pow(body, 60.0)) * body;
-    color += mix(mix(vec3(1.0, 0.0, 0.0), vec3(1.0, 0.0, 1.0), pow(detail, 2.0)), vec3(1.0), pow(detail, 10.0)) * detail;
-    color -= vec3(ring(ray, position, 1.03, 11.0)) * 2.0;
-    color = max(color, vec3(0.0));
-    float rays = ringRayNoise(ray, position, 0.96, 1.0, rotation, time);
-    color += mix(vec3(1.0, 0.6, 0.1), vec3(1.0, 0.95, 1.0), pow(rays, 3.0)) * rays;
-    float outside = sphereZero(ray, position, 0.9);
-    if (outside > 0.0) {
-      vec4 space = noiseSpace(ray, position, 100.0, rotation, 0.05, vec3(1.0, 2.0, 4.0));
-      space.x = pow(space.x, 3.0);
-      color += mix(mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), space.y * 1.9), vec3(0.9, 1.0, 0.1), space.w * 0.75)
-        * space.x * pow(space.z * 2.5, 3.0) * 0.2 * outside;
-    }
-    color = clamp(color, 0.0, 1.0);
-    float alpha = clamp(max(max(color.r, color.g), color.b), 0.0, 1.0);
-    float radialFade = 1.0 - smoothstep(0.48, 1.06, length(point));
-    alpha *= radialFade;
+    float terrain = 1.0 - (fbm(terrainNormal) * 0.5 + 0.5);
+    float insideSphere = 1.0 - smoothstep(radius - 1.0, radius + 1.0, length(pos));
+    float outsideSphere = 1.0 - insideSphere;
+    float innerAtmosphere = max(0.0, (radius * 0.2) / max(zIn, 0.001) - 0.2) * insideSphere;
+    float outerAtmosphere = max(0.0, (radius * 0.2) / max(zOut, 0.001) - 0.4) * outsideSphere;
+    float phaseAngle = u_moon_phase * 6.28318530718;
+    vec3 lightDirection = normalize(vec3(sin(phaseAngle), 0.0, -cos(phaseAngle)));
+    float diffuse = max(0.0, dot(normal, lightDirection));
+    float diffuseOut = max(0.0, dot(normalOut, lightDirection) + 0.3);
+
+    float luminance =
+      terrain * diffuse * 1.75 + innerAtmosphere * diffuse + outerAtmosphere * diffuseOut;
+    vec3 color = vec3(clamp(luminance, 0.0, 1.0));
+    float atmosphereAlpha = clamp(
+      innerAtmosphere * diffuse + outerAtmosphere * diffuseOut,
+      0.0,
+      1.0
+    );
+    float alpha = max(insideSphere, atmosphereAlpha * outsideSphere);
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `
@@ -286,6 +376,7 @@ export class StarCoronaCanvasEffect {
   private readonly program: WebGLProgram
   private readonly resolutionLocation: WebGLUniformLocation
   private readonly timeLocation: WebGLUniformLocation
+  private readonly moonPhaseLocation: WebGLUniformLocation
   private frame = 0
   private readonly startTime = performance.now()
 
@@ -316,11 +407,13 @@ export class StarCoronaCanvasEffect {
 
     const resolutionLocation = gl.getUniformLocation(program, 'u_resolution')
     const timeLocation = gl.getUniformLocation(program, 'u_time')
-    if (resolutionLocation === null || timeLocation === null) {
-      throw new Error('Unable to locate shader uniforms')
-    }
+    const moonPhaseLocation = gl.getUniformLocation(program, 'u_moon_phase')
+    if (resolutionLocation === null) throw new Error('Unable to locate shader uniform u_resolution')
+    if (timeLocation === null) throw new Error('Unable to locate shader uniform u_time')
+    if (moonPhaseLocation === null) throw new Error('Unable to locate shader uniform u_moon_phase')
     this.resolutionLocation = resolutionLocation
     this.timeLocation = timeLocation
+    this.moonPhaseLocation = moonPhaseLocation
     canvas.width = 220 * Math.min(window.devicePixelRatio || 1, 2)
     canvas.height = canvas.width
     gl.viewport(0, 0, canvas.width, canvas.height)
@@ -368,6 +461,35 @@ export class StarCoronaCanvasEffect {
     this.gl.useProgram(this.program)
     this.gl.uniform2f(this.resolutionLocation, this.canvas.width, this.canvas.height)
     this.gl.uniform1f(this.timeLocation, (performance.now() - this.startTime) * 0.001)
+    this.gl.uniform1f(this.moonPhaseLocation, this.getMoonPhase())
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3)
+  }
+
+  private getMoonPhase() {
+    const lunarDateFormatter = new Intl.DateTimeFormat('en-u-ca-chinese', { day: 'numeric' })
+    const today = new Date()
+    const lunarDay = Number(
+      lunarDateFormatter.formatToParts(today).find(({ type }) => type === 'day')?.value,
+    )
+    if (!Number.isInteger(lunarDay) || lunarDay < 1 || lunarDay > 30) {
+      throw new Error('Unable to determine the current Chinese lunar day')
+    }
+
+    const dateAtNoon = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12)
+    let lunarMonthLength = lunarDay
+    for (let offset = 1; offset <= 30; offset++) {
+      const nextDay = new Date(dateAtNoon)
+      nextDay.setDate(dateAtNoon.getDate() + offset)
+      const nextLunarDay = Number(
+        lunarDateFormatter.formatToParts(nextDay).find(({ type }) => type === 'day')?.value,
+      )
+      if (nextLunarDay === 1) {
+        lunarMonthLength = lunarDay + offset - 1
+        break
+      }
+    }
+
+    if (lunarDay <= 15) return ((lunarDay - 1) / 14) * 0.5
+    return 0.5 + ((lunarDay - 15) / (lunarMonthLength - 15)) * 0.5
   }
 }

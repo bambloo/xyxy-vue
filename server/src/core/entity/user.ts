@@ -195,16 +195,18 @@ export class User implements UserProfile {
   }
 
   updatePassword(passwordHash: string) {
-    return mongo_helper.ddo(async (db) => {
+    return mongo_helper.ddo((db) => {
       const updatedAt = format_timestamp(new Date())
-      const result = await db
+      return db
         .collection('user')
         .updateOne({ tag: this.tag }, { $set: { passwordHash, updatedAt } })
-      if (!result.matchedCount) {
-        throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
-      }
-      this.passwordHash = passwordHash
-      this.updatedAt = updatedAt
+        .then((result) => {
+          if (!result.matchedCount) {
+            throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
+          }
+          this.passwordHash = passwordHash
+          this.updatedAt = updatedAt
+        })
     })
   }
 
@@ -213,18 +215,20 @@ export class User implements UserProfile {
       Pick<UserProfile, 'name' | 'phone' | 'email' | 'birthday' | 'hobbies' | 'city' | 'location'>
     >,
   ) {
-    return mongo_helper.ddo(async (db) => {
+    return mongo_helper.ddo((db) => {
       const updatedAt = format_timestamp(new Date())
       const updatedProfile = profile.location
         ? { ...profile, city: format_user_location(profile.location) }
         : profile
-      const result = await db
+      return db
         .collection('user')
         .updateOne({ tag: this.tag }, { $set: { ...updatedProfile, updatedAt } })
-      if (!result.matchedCount) {
-        throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
-      }
-      Object.assign(this, updatedProfile, { updatedAt })
+        .then((result) => {
+          if (!result.matchedCount) {
+            throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
+          }
+          Object.assign(this, updatedProfile, { updatedAt })
+        })
     })
   }
 

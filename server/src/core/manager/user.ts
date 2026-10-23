@@ -32,29 +32,25 @@ export class user_manager {
     })
   }
 
-  public async ensureAdmin(): Promise<UserProfile> {
-    try {
-      const existing = await this.get({ account: DEFAULT_ADMIN_ACCOUNT })
-      return existing
-    } catch {
-      const passwordHash = await hash_password(DEFAULT_ADMIN_PASSWORD)
-      const now = format_timestamp(new Date())
-      const adminUser: UserProfile = {
-        tag: randomUUID(),
-        account: DEFAULT_ADMIN_ACCOUNT,
-        passwordHash,
-        name: '管理员',
-        isAdmin: true,
-        createdAt: now,
-        updatedAt: now,
-      }
+  public ensureAdmin(): Promise<UserProfile> {
+    return this.get({ account: DEFAULT_ADMIN_ACCOUNT }).catch(() =>
+      hash_password(DEFAULT_ADMIN_PASSWORD).then((passwordHash) => {
+        const now = format_timestamp(new Date())
+        const adminUser: UserProfile = {
+          tag: randomUUID(),
+          account: DEFAULT_ADMIN_ACCOUNT,
+          passwordHash,
+          name: '管理员',
+          isAdmin: true,
+          createdAt: now,
+          updatedAt: now,
+        }
 
-      await mongo_helper.ddo((db) => {
-        return db.collection('user').insertOne(adminUser)
-      })
-
-      return adminUser
-    }
+        return mongo_helper
+          .ddo((db) => db.collection('user').insertOne(adminUser))
+          .then(() => adminUser)
+      }),
+    )
   }
 
   public get(key: UserQuery): Promise<User> {
@@ -83,31 +79,39 @@ export class user_manager {
     return this.get({ tag }).then((user) => user.updatePassword(passwordHash))
   }
 
-  public async importInactiveTags(tags: string[]) {
+  public importInactiveTags(tags: string[]): Promise<UserProfile[]> {
     const imported: UserProfile[] = []
     const uniqueTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))]
 
-    for (const tag of uniqueTags) {
-      try {
-        imported.push(await this.get({ tag }))
-        continue
-      } catch {
-        const now = format_timestamp(new Date())
-        const user: UserProfile = {
-          tag,
-          account: '',
-          passwordHash: '',
-          name: '',
-          isActive: false,
-          createdAt: now,
-          updatedAt: now,
-        }
-        await mongo_helper.ddo((db) => db.collection('user').insertOne(user))
-        imported.push(user)
-      }
-    }
-
-    return imported
+    return uniqueTags
+      .reduce<Promise<void>>(
+        (chain, tag) =>
+          chain.then(() =>
+            this.get({ tag })
+              .then((user) => {
+                imported.push(user)
+              })
+              .catch(() => {
+                const now = format_timestamp(new Date())
+                const user: UserProfile = {
+                  tag,
+                  account: '',
+                  passwordHash: '',
+                  name: '',
+                  isActive: false,
+                  createdAt: now,
+                  updatedAt: now,
+                }
+                return mongo_helper
+                  .ddo((db) => db.collection('user').insertOne(user))
+                  .then(() => {
+                    imported.push(user)
+                  })
+              }),
+          ),
+        Promise.resolve(),
+      )
+      .then(() => imported)
   }
 
   public get_without_daily_fortune(): Promise<User> {

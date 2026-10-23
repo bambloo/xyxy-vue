@@ -14,7 +14,7 @@ function same_hash(actual: string, expected: string) {
 
 export const config = { access: 'protected' as const }
 
-export default async function handler(
+export default function handler(
   params: { [key: string]: unknown },
   req: WpiRequest,
   res: Response,
@@ -32,14 +32,11 @@ export default async function handler(
     return response(res, BamblooStatusCode.BadRequest, '密码格式错误')
   }
 
-  try {
-    if (!same_hash(currentPasswordHash, user.passwordHash)) {
-      return response(res, BamblooStatusCode.AuthenticationFail, '当前密码错误')
-    }
-
-    await user.updatePassword(newPasswordHash)
-    return response(res, BamblooStatusCode.Success, '密码已更新')
-  } catch {
-    return response(res, BamblooStatusCode.Uncategoried, '密码更新失败')
+  if (!same_hash(currentPasswordHash, user.passwordHash)) {
+    return response(res, BamblooStatusCode.AuthenticationFail, '当前密码错误')
   }
+  return user
+    .updatePassword(newPasswordHash)
+    .then(() => response(res, BamblooStatusCode.Success, '密码已更新'))
+    .catch(() => response(res, BamblooStatusCode.Uncategoried, '密码更新失败'))
 }

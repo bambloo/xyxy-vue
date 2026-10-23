@@ -37,18 +37,20 @@ export function proxy_router(application: Express, base: string) {
   })
 }
 
-async function register_module(application: Express, base: string, filePath: string) {
+function register_module(application: Express, base: string, filePath: string) {
   const modulePath = get_module_path(base, filePath)
-  const loaded = (await import(to_module_url(filePath))) as WpiModule
-  const config = loaded.config || {}
+  return import(to_module_url(filePath)).then((module) => {
+    const loaded = module as WpiModule
+    const config = loaded.config || {}
 
-  logout(modulePath)
-  application.all(modulePath, (req, res, next) => {
-    void handle_request(loaded.default, config, modulePath, req, res, next)
+    logout(modulePath)
+    application.all(modulePath, (req, res, next) => {
+      void handle_request(loaded.default, config, modulePath, req, res, next)
+    })
   })
 }
 
-async function handle_request(
+function handle_request(
   handler: WpiHandler,
   config: WpiConfig,
   modulePath: string,
@@ -60,14 +62,15 @@ async function handle_request(
   const cookie = cookie_info(req.headers.cookie, [SESSION_COOKIE])
   logout(modulePath, params, ...(cookie ? [{ cookie }] : []))
 
-  try {
-    const authorized = await authorize_wpi(config, req as WpiRequest, res)
-    if (!authorized) return
-    await handler(params, req as WpiRequest, res, next)
-  } catch (error) {
-    const err = error as BamblooError
-    response(res, err.code, err.message || '接口处理失败')
-  }
+  return authorize_wpi(config, req as WpiRequest, res)
+    .then((authorized) => {
+      if (!authorized) return
+      return handler(params, req as WpiRequest, res, next)
+    })
+    .catch((error: unknown) => {
+      const err = error as BamblooError
+      response(res, err.code, err.message || '接口处理失败')
+    })
 }
 
 function collect_params(req: Request): Record<string, unknown> {

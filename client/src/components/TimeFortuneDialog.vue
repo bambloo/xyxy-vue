@@ -15,16 +15,16 @@ import UserProfileEditDialog from '@/components/UserProfileEditDialog.vue'
 import SiteInfoView from '@/views/user/SiteInfoView.vue'
 import { timeFortuneRange } from '@/utils/time-fortune'
 import {
-  dismissTimeFortuneLocator,
-  hasOpenedTimeFortune,
+  hasCompletedDailyFirstVisit,
+  markDailyFirstVisitCompleted,
   markTimeFortuneOpened,
   TIME_FORTUNE_DIALOG_STATE_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_READY_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT,
   TIME_FORTUNE_HISTORY_EVENT,
-  TIME_FORTUNE_OPEN_EVENT,
-  setTimeFortuneReady,
   TIME_FORTUNE_TOGGLE_EVENT,
 } from '@/events/time-fortune'
 
@@ -66,6 +66,7 @@ let dragStart: { pointerId: number; y: number; scrollTop: number } | undefined
 let firstVisitSequenceId = 0
 let firstVisitSequenceActive = false
 let cancelFirstVisitMeteor: (() => void) | undefined
+let activeFirstVisitMeteorSequenceId: number | undefined
 
 function responseData(packet: { data?: unknown }): FortuneDetails | undefined {
   return packet.data as FortuneDetails | undefined
@@ -81,7 +82,6 @@ watch(
     const currentRun = ++runId.value
     if (!auth.isLoggedIn) {
       status.value = 'hidden'
-      setTimeFortuneReady(false)
       setDialogOpen(false)
       details.value = undefined
       return
@@ -93,7 +93,6 @@ watch(
       return
     }
 
-    setTimeFortuneReady(false)
     status.value = 'generating'
     let shouldTrigger = true
     while (currentRun === runId.value) {
@@ -104,7 +103,6 @@ watch(
         shouldTrigger = false
         if (currentRun !== runId.value) return
         if (responseData(packet)?.ready) {
-          setTimeFortuneReady(true)
           status.value = 'arriving'
           await wait(1500)
           if (currentRun !== runId.value) return
@@ -122,14 +120,21 @@ watch(
 )
 
 watch(
-  () => [route.name, auth.currentUser?.tag, auth.isSessionValidated, status.value] as const,
-  ([routeName, userTag, isSessionValidated, fortuneStatus]) => {
+  () =>
+    [
+      route.name,
+      auth.currentUser?.tag,
+      auth.isSessionValidated,
+      auth.isLoggedIn,
+      status.value,
+    ] as const,
+  ([routeName, userTag, isSessionValidated, isLoggedIn]) => {
     const shouldRun =
       !['home', 'galaxy'].includes(String(routeName)) ||
       !userTag ||
       !isSessionValidated ||
-      fortuneStatus === 'hidden' ||
-      hasOpenedTimeFortune(userTag)
+      !isLoggedIn ||
+      hasCompletedDailyFirstVisit(userTag)
     if (shouldRun) {
       stopFirstVisitSequence()
       return
@@ -187,10 +192,13 @@ function setDialogOpen(open: boolean) {
   window.dispatchEvent(new CustomEvent(TIME_FORTUNE_DIALOG_STATE_EVENT, { detail: open }))
 }
 
-function openDailyFortune() {
+function openDailyFortune(automatic = false) {
   stopFirstVisitSequence()
   const userTag = auth.currentUser?.tag
-  if (userTag) markTimeFortuneOpened(userTag)
+  if (userTag) {
+    markTimeFortuneOpened(userTag)
+    if (automatic) markDailyFirstVisitCompleted(userTag)
+  }
   void openFortuneDialog(false)
   window.dispatchEvent(
     new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
@@ -208,16 +216,26 @@ async function runFirstVisitSequence() {
     return
   }
 
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    while (sequenceId === firstVisitSequenceId && status.value !== 'ready') {
-      await wait(250)
-    }
-    if (sequenceId === firstVisitSequenceId && !hasOpenedTimeFortune(userTag)) {
-      firstVisitSequenceActive = false
-      openDailyFortune()
-    }
-    return
+  activeFirstVisitMeteorSequenceId = sequenceId
+  let meteorStarted = false
+  const handleMeteorStarted = (event: Event) => {
+    if ((event as CustomEvent<number>).detail === sequenceId) meteorStarted = true
   }
+  window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT, handleMeteorStarted)
+  window.dispatchEvent(
+    new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+  )
+
+  while (sequenceId === firstVisitSequenceId && !meteorStarted) {
+    await wait(250)
+    if (!meteorStarted && sequenceId === firstVisitSequenceId) {
+      window.dispatchEvent(
+        new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+      )
+    }
+  }
+  window.removeEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT, handleMeteorStarted)
+  if (sequenceId !== firstVisitSequenceId) return
 
   while (sequenceId === firstVisitSequenceId && status.value !== 'ready') {
     await wait(250)
@@ -225,11 +243,16 @@ async function runFirstVisitSequence() {
   if (sequenceId !== firstVisitSequenceId || status.value !== 'ready') return
 
   const arrived = await flyFirstVisitMeteor(sequenceId)
-  if (!arrived || sequenceId !== firstVisitSequenceId) return
+  if (sequenceId !== firstVisitSequenceId) return
+  if (!arrived) {
+    activeFirstVisitMeteorSequenceId = undefined
+    firstVisitSequenceActive = false
+    return
+  }
 
+  activeFirstVisitMeteorSequenceId = undefined
   firstVisitSequenceActive = false
-  dismissTimeFortuneLocator(userTag)
-  openDailyFortune()
+  openDailyFortune(true)
 }
 
 function flyFirstVisitMeteor(sequenceId: number) {
@@ -253,23 +276,29 @@ function flyFirstVisitMeteor(sequenceId: number) {
     window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT, handleArrival)
     window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, handleCancel)
     cancelFirstVisitMeteor = () => {
-      window.dispatchEvent(
-        new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, { detail: sequenceId }),
-      )
       cleanup()
       resolve(false)
     }
     window.dispatchEvent(
-      new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+      new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_READY_EVENT, { detail: sequenceId }),
     )
   })
 }
 
 function stopFirstVisitSequence() {
+  const meteorSequenceId = activeFirstVisitMeteorSequenceId
   firstVisitSequenceId += 1
   firstVisitSequenceActive = false
   cancelFirstVisitMeteor?.()
   cancelFirstVisitMeteor = undefined
+  activeFirstVisitMeteorSequenceId = undefined
+  if (meteorSequenceId !== undefined) {
+    window.dispatchEvent(
+      new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, {
+        detail: meteorSequenceId,
+      }),
+    )
+  }
 }
 
 function localDate() {
@@ -278,12 +307,6 @@ function localDate() {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
-}
-
-function handleLocatorOpen() {
-  const userTag = auth.currentUser?.tag
-  if (userTag) dismissTimeFortuneLocator(userTag)
-  openDailyFortune()
 }
 
 function handleHistoryOpen() {
@@ -334,7 +357,6 @@ function clearDialogDrag(event: PointerEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
   window.addEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.addEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
   window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
@@ -342,7 +364,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopFirstVisitSequence()
-  window.removeEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
   window.removeEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.removeEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
   window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)

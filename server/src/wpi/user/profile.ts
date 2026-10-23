@@ -11,7 +11,7 @@ import type { WpiRequest } from '../../util/wpi-access'
 
 export const config = { access: 'protected' as const }
 
-export default async function handler(
+export default function handler(
   params: Record<string, unknown>,
   req: WpiRequest,
   res: Response,
@@ -39,8 +39,8 @@ export default async function handler(
     return response(res, BamblooStatusCode.FormatError, '个人资料格式错误')
   }
 
-  try {
-    await user.updateProfile({
+  return user
+    .updateProfile({
       name,
       phone,
       email,
@@ -49,12 +49,14 @@ export default async function handler(
       city,
       ...(location ? { location } : {}),
     })
-    return response(res, BamblooStatusCode.Success, '个人资料已更新', to_public_user(user))
-  } catch (error) {
-    if (error instanceof BamblooError) {
-      return response(res, error.code, error.msg)
-    }
-    console.error('更新个人资料失败', error)
-    return response(res, BamblooStatusCode.Uncategoried, '个人资料更新失败')
-  }
+    .then(() =>
+      response(res, BamblooStatusCode.Success, '个人资料已更新', to_public_user(user)),
+    )
+    .catch((error: unknown) => {
+      if (error instanceof BamblooError) {
+        return response(res, error.code, error.msg)
+      }
+      console.error('更新个人资料失败', error)
+      return response(res, BamblooStatusCode.Uncategoried, '个人资料更新失败')
+    })
 }

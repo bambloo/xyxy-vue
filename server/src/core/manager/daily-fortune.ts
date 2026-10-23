@@ -30,43 +30,47 @@ const generating_map: Map<string, { daily_fortune: boolean; time_fortune: boolea
 
 function generate_daily_fortune(user: User, day: string) {
   const id = `${user.tag}:${day}`
-  return mongo_helper.ddo(async (db) => {
+  return mongo_helper.ddo((db) => {
     const fortunes = db.collection<DailyFortune>('daily_fortune')
-    const markFortuneGenerated = async () => {
+    const markFortuneGenerated = () => {
       const lastFortuneGeneratedAt = format_timestamp(new Date())
-      await db.collection('user').updateOne({ tag: user.tag }, { $set: { lastFortuneGeneratedAt } })
-      user.lastFortuneGeneratedAt = lastFortuneGeneratedAt
+      return db
+        .collection('user')
+        .updateOne({ tag: user.tag }, { $set: { lastFortuneGeneratedAt } })
+        .then(() => {
+          user.lastFortuneGeneratedAt = lastFortuneGeneratedAt
+        })
     }
 
-    const existing = await fortunes.findOne({ _id: id })
-    if (existing) {
-      await markFortuneGenerated()
-      return existing
-    }
-
-    const fortune = await AiAstrologer.instance.daily_fortune(user, day)
-    await fortunes.updateOne(
-      { _id: id },
-      {
-        $setOnInsert: {
-          _id: id,
-          userTag: user.tag,
-          day,
-          fortune,
-          time_fortune: {},
-          createdAt: format_timestamp(now()),
-        },
-      },
-      { upsert: true },
-    )
-
-    const record = await fortunes.findOne({ _id: id })
-    if (!record) {
-      throw new Error(`未能保存用户 ${user.tag} 的 ${day} 今日运势`)
-    }
-
-    await markFortuneGenerated()
-    return record
+    return fortunes.findOne({ _id: id }).then((existing) => {
+      if (existing) {
+        return markFortuneGenerated().then(() => existing)
+      }
+      return AiAstrologer.instance.daily_fortune(user, day).then((fortune) =>
+        fortunes
+          .updateOne(
+            { _id: id },
+            {
+              $setOnInsert: {
+                _id: id,
+                userTag: user.tag,
+                day,
+                fortune,
+                time_fortune: {},
+                createdAt: format_timestamp(now()),
+              },
+            },
+            { upsert: true },
+          )
+          .then(() => fortunes.findOne({ _id: id }))
+          .then((record) => {
+            if (!record) {
+              throw new Error(`未能保存用户 ${user.tag} 的 ${day} 今日运势`)
+            }
+            return markFortuneGenerated().then(() => record)
+          }),
+      )
+    })
   })
 }
 
@@ -74,22 +78,27 @@ function timeFortuneAt(record: DailyFortune, timeName: TimeName): FortuneGenerat
   return record.time_fortune?.[timeName]
 }
 
-async function generate_time_fortune(user: User, day: string, timeIndex: number): Promise<void> {
+function generate_time_fortune(user: User, day: string, timeIndex: number): Promise<void> {
   const id = `${user.tag}:${day}`
   const timeName = time_name_for_index(timeIndex)
-  const record = await generate_daily_fortune(user, day)
-  const existing = timeFortuneAt(record, timeName)
-  if (existing?.prompt && existing.message) return
+  return generate_daily_fortune(user, day).then((record) => {
+    const existing = timeFortuneAt(record, timeName)
+    if (existing?.prompt && existing.message) return
 
-  const fortune = await AiAstrologer.instance.time_fortune(user, day, timeIndex)
-  const result = await mongo_helper.ddo((db) =>
-    db
-      .collection<DailyFortune>('daily_fortune')
-      .updateOne({ _id: id }, { $set: { [`time_fortune.${timeName}`]: fortune } }),
-  )
-  if (!result.matchedCount) {
-    throw new Error(`未能保存用户 ${user.tag} 的 ${day} ${timeName} 锦言`)
-  }
+    return AiAstrologer.instance.time_fortune(user, day, timeIndex).then((fortune) =>
+      mongo_helper
+        .ddo((db) =>
+          db
+            .collection<DailyFortune>('daily_fortune')
+            .updateOne({ _id: id }, { $set: { [`time_fortune.${timeName}`]: fortune } }),
+        )
+        .then((result) => {
+          if (!result.matchedCount) {
+            throw new Error(`未能保存用户 ${user.tag} 的 ${day} ${timeName} 锦言`)
+          }
+        }),
+    )
+  })
 }
 
 function generate_one_daily_fortune() {
@@ -165,6 +174,9 @@ function daily_fortune_ticker() {
           setTimeout(daily_fortune_ticker, 30_000)
         }
         errout(BamblooStatusCode[err.code], err.msg)
+      } else {
+        setTimeout(daily_fortune_ticker, 30_000)
+        errout('UnknownError', (err as Error).message || '未知错误')
       }
     })
 }

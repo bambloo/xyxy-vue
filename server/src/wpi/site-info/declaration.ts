@@ -20,7 +20,7 @@ interface DeclarationRecord {
   updatedBy: string
 }
 
-export default async function handler(
+export default function handler(
   params: Record<string, unknown>,
   req: WpiRequest,
   res: Response,
@@ -36,19 +36,21 @@ export default async function handler(
     return response(res, BamblooStatusCode.FormatError, '声明项目或正文格式错误')
   }
 
-  try {
-    const updatedAt = format_timestamp(new Date())
-    await mongo_helper.ddo((db) =>
+  const updatedAt = format_timestamp(new Date())
+  return mongo_helper
+    .ddo((db) =>
       db.collection<DeclarationRecord>('site_declaration').updateOne(
         { _id: id },
         { $set: { content, updatedAt, updatedBy: req.user!.tag } },
         { upsert: true },
       ),
     )
-    const declaration: SiteDeclaration = { id, content, updatedAt }
-    return response(res, BamblooStatusCode.Success, '声明已更新', declaration)
-  } catch (error) {
-    console.error(`管理员 ${req.user.tag} 更新网站声明 ${id} 失败`, error)
-    return response(res, BamblooStatusCode.Uncategoried, '声明更新失败')
-  }
+    .then(() => {
+      const declaration: SiteDeclaration = { id, content, updatedAt }
+      return response(res, BamblooStatusCode.Success, '声明已更新', declaration)
+    })
+    .catch((error: unknown) => {
+      console.error(`管理员 ${req.user!.tag} 更新网站声明 ${id} 失败`, error)
+      return response(res, BamblooStatusCode.Uncategoried, '声明更新失败')
+    })
 }

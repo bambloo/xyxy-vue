@@ -38,14 +38,13 @@ export class GalaxyScene {
 
   constructor(
     host: HTMLElement,
-    onDestinationClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
     onBlackHoleClick: () => void,
     blackHoleView = false,
   ) {
     this.host = host
     this.onBlackHoleClick = onBlackHoleClick
-    this.createGalaxy(onDestinationClick, onSentStarClick, blackHoleView)
+    this.createGalaxy(onSentStarClick, blackHoleView)
   }
 
   setSentStars(stars: GalaxyStarView[]) {
@@ -309,7 +308,6 @@ export class GalaxyScene {
   }
 
   private createGalaxy(
-    onDestinationClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
     blackHoleView: boolean,
   ) {
@@ -347,7 +345,6 @@ export class GalaxyScene {
       this.scene,
       this.camera,
       this.reducedMotion,
-      onDestinationClick,
     )
     this.meteorEffect.setEnabled(!blackHoleView)
     this.manager = new GalaxyManager({

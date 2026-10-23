@@ -25,17 +25,19 @@ application.set('trust proxy', 'loopback')
 application.use(body_parser.json({ limit: '10mb' }))
 application.use(body_parser.urlencoded({ extended: true }))
 
-await proxy_router(application, join(__dirname, 'wpi'))
-
-application.post('/', (req) => {
-  console.log(req.url)
-})
-application
-  .listen(Number(process.env.PORT) || 3000)
-  .on('listening', () => {
-    logout('Server Listening')
-    start_daily_fortune_schedule()
+proxy_router(application, join(__dirname, 'wpi'))
+  .then(() => {
+    application.post('/', (req) => {
+      console.log(req.url)
+    })
+    application
+      .listen(Number(process.env.PORT) || 3000)
+      .on('listening', () => {
+        logout('Server Listening')
+        start_daily_fortune_schedule()
+      })
+      .on('error', (err) => {
+        logout(err)
+      })
   })
-  .on('error', (err) => {
-    logout(err)
-  })
+  .catch(errout)

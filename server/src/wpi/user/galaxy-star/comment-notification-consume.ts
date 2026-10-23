@@ -8,12 +8,13 @@ import type { WpiRequest } from '../../../util/wpi-access'
 
 export const config = { access: 'protected' as const }
 
-export default async function handler(
+export default function handler(
   _params: Record<string, unknown>,
   req: WpiRequest,
   res: Response,
 ) {
   const user = requireGalaxyStarUser(req)
-  const collection = await getGalaxyStarCollection()
-  return consumeGalaxyStarCommentNotification(collection, user, res)
+  return getGalaxyStarCollection().then((collection) =>
+    consumeGalaxyStarCommentNotification(collection, user, res),
+  )
 }
