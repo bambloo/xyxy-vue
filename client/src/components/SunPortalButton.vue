@@ -7,11 +7,13 @@ withDefaults(
     label?: string
     title?: string
     disabled?: boolean
+    notification?: boolean
   }>(),
   {
     label: '上划进入星空',
     title: '上划进入星空',
     disabled: false,
+    notification: false,
   },
 )
 
@@ -105,7 +107,7 @@ onBeforeUnmount(() => effect?.destroy())
     :aria-label="label"
     :title="title"
     :disabled="disabled"
-    :class="{ 'is-swiping': isSwiping }"
+    :class="{ 'is-swiping': isSwiping, 'has-notification': notification }"
     :style="{
       '--swipe-glow-x': `${swipeGlow.x}px`,
       '--swipe-glow-y': `${swipeGlow.y}px`,
@@ -140,9 +142,7 @@ onBeforeUnmount(() => effect?.destroy())
   border-radius: 50%;
   background: transparent;
   color: #fff9dc;
-  filter: drop-shadow(
-    var(--swipe-glow-x) var(--swipe-glow-y) 10.5px rgba(255, 207, 31, 0.7)
-  );
+  filter: drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 10.5px rgba(255, 207, 31, 0.7));
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -164,8 +164,8 @@ onBeforeUnmount(() => effect?.destroy())
   filter: blur(10px);
   opacity: var(--swipe-glow-opacity);
   pointer-events: none;
-  transform: translate(var(--swipe-glow-x), var(--swipe-glow-y))
-    rotate(var(--swipe-glow-angle)) scaleX(var(--swipe-glow-stretch));
+  transform: translate(var(--swipe-glow-x), var(--swipe-glow-y)) rotate(var(--swipe-glow-angle))
+    scaleX(var(--swipe-glow-stretch));
   transition: opacity 140ms ease;
 }
 
@@ -173,10 +173,25 @@ onBeforeUnmount(() => effect?.destroy())
   transition: none;
 }
 
+.sun-portal-button.has-notification {
+  animation: sun-portal-notification-glow 1.25s ease-in-out infinite;
+}
+
+@keyframes sun-portal-notification-glow {
+  0%,
+  100% {
+    filter: drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 8px rgba(255, 191, 32, 0.45))
+      drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 15px rgba(255, 214, 70, 0.62));
+  }
+
+  50% {
+    filter: drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 13px rgba(255, 224, 92, 0.96))
+      drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 26px rgba(255, 174, 22, 0.88));
+  }
+}
+
 .sun-portal-button:hover:not(:disabled) {
-  filter: drop-shadow(
-    var(--swipe-glow-x) var(--swipe-glow-y) 16.1px rgba(255, 226, 69, 0.95)
-  );
+  filter: drop-shadow(var(--swipe-glow-x) var(--swipe-glow-y) 16.1px rgba(255, 226, 69, 0.95));
 }
 
 .sun-portal-button:focus-visible {
@@ -207,6 +222,7 @@ onBeforeUnmount(() => effect?.destroy())
 @media (prefers-reduced-motion: reduce) {
   .sun-portal-button {
     transition: none;
+    animation: none;
   }
 }
 </style>

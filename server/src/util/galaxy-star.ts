@@ -23,7 +23,12 @@ import type { WpiRequest } from './wpi-access'
 type GalaxyStarCommentRecord = GalaxyStarComment & {
   userTag: string
   anonymousDay?: string
-  votes?: { userTag: string; vote: GalaxyStarVote }[]
+  votes?: {
+    userTag: string
+    vote: GalaxyStarVote
+    sourceStarId?: string
+    createdAt?: string
+  }[]
 }
 
 export interface GalaxyStarRecord extends SentGalaxyStar {
@@ -40,6 +45,8 @@ export interface GalaxyStarRecord extends SentGalaxyStar {
   dislikeCount?: number
   comments?: GalaxyStarCommentRecord[]
   links?: { sourceStarId: string; createdAt: string }[]
+  unreadCommentIds?: string[]
+  unreadCommentAt?: string
 }
 
 export interface GalaxyBlackHoleRecord extends GalaxyBlackHoleEntry {
@@ -59,9 +66,7 @@ export async function getGalaxyStarCollection() {
 }
 
 async function getGalaxyBlackHoleCollection() {
-  return mongo_helper.ddo((db) =>
-    db.collection<GalaxyBlackHoleRecord>('galaxy_black_hole_content'),
-  )
+  return mongo_helper.ddo((db) => db.collection<GalaxyBlackHoleRecord>('galaxy_black_hole_content'))
 }
 
 async function getGalaxyBlackHoleMetadataCollection() {
@@ -213,17 +218,13 @@ export async function voteForGalaxyStar(
   res: Response,
   now = new Date(),
 ) {
-  const day = getGalaxyStarDay(now)
   const starId = typeof params.starId === 'string' ? params.starId.trim() : ''
   const vote = params.vote
   if (!starId || (vote !== 'like' && vote !== 'dislike')) {
     throw new BamblooError(BamblooStatusCode.BadRequest, '星星评价无效')
   }
 
-  const sourceStar = await collection.findOne({ _id: `${user.tag}:${day}` })
-  if (!sourceStar) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '今天寄出星星后才能评价')
-  }
+  const sourceStar = await collection.findOne({ _id: `${user.tag}:${getGalaxyStarDay(now)}` })
   const target = await collection.findOne(
     { id: starId },
     { projection: { _id: 1, userTag: 1, votes: 1 } },
@@ -231,33 +232,67 @@ export async function voteForGalaxyStar(
   if (!target) {
     throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
   }
-  if (target.userTag === user.tag) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '不能评价自己的星星')
-  }
-  if (target.votes?.some((entry) => entry.userTag === user.tag)) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这颗星星')
-  }
-
-  const updated = await collection.updateOne(
-    {
-      _id: target._id,
-      votes: { $not: { $elemMatch: { userTag: user.tag } } },
-    },
-    {
-      $push: {
-        votes: {
-          userTag: user.tag,
-          vote,
-          sourceStarId: sourceStar.id,
-          createdAt: format_timestamp(now),
+  const existingVote = target.votes?.find((entry) => entry.userTag === user.tag)
+  const voteCountField = vote === 'like' ? 'likeCount' : 'dislikeCount'
+  const sourceStarId = sourceStar && target.userTag !== user.tag ? sourceStar.id : undefined
+  const updated = existingVote
+    ? existingVote.vote === vote
+      ? await collection.updateOne(
+          {
+            _id: target._id,
+            votes: { $elemMatch: { userTag: user.tag, vote } },
+          },
+          {
+            $pull: {
+              votes: { userTag: user.tag },
+              ...(existingVote.sourceStarId && existingVote.createdAt
+                ? {
+                    links: {
+                      sourceStarId: existingVote.sourceStarId,
+                      createdAt: existingVote.createdAt,
+                    },
+                  }
+                : {}),
+            },
+            $inc: { [voteCountField]: -1 },
+          },
+        )
+      : await collection.updateOne(
+          {
+            _id: target._id,
+            votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
+          },
+          {
+            $set: { 'votes.$[voter].vote': vote },
+            $inc: {
+              [existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount']: -1,
+              [voteCountField]: 1,
+            },
+          },
+          { arrayFilters: [{ 'voter.userTag': user.tag, 'voter.vote': existingVote.vote }] },
+        )
+    : await collection.updateOne(
+        {
+          _id: target._id,
+          votes: { $not: { $elemMatch: { userTag: user.tag } } },
         },
-        links: { sourceStarId: sourceStar.id, createdAt: format_timestamp(now) },
-      },
-      $inc: vote === 'like' ? { likeCount: 1 } : { dislikeCount: 1 },
-    },
-  )
+        {
+          $push: {
+            votes: {
+              userTag: user.tag,
+              vote,
+              ...(sourceStarId ? { sourceStarId } : {}),
+              createdAt: format_timestamp(now),
+            },
+            ...(sourceStarId
+              ? { links: { sourceStarId: sourceStarId, createdAt: format_timestamp(now) } }
+              : {}),
+          },
+          $inc: { [voteCountField]: 1 },
+        },
+      )
   if (updated.modifiedCount !== 1) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这颗星星')
+    throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
   }
 
   const updatedStar = await collection.findOne({ _id: target._id })
@@ -274,7 +309,6 @@ export async function voteForGalaxyStarComment(
   res: Response,
   now = new Date(),
 ) {
-  const day = getGalaxyStarDay(now)
   const starId = typeof params.starId === 'string' ? params.starId.trim() : ''
   const commentId = typeof params.commentId === 'string' ? params.commentId.trim() : ''
   const vote = params.vote
@@ -282,14 +316,8 @@ export async function voteForGalaxyStarComment(
     throw new BamblooError(BamblooStatusCode.BadRequest, '评论评价无效')
   }
 
-  const sourceStar = await collection.findOne({ _id: `${user.tag}:${day}` })
-  if (!sourceStar) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '今天寄出星星后才能评价评论')
-  }
-  const target = await collection.findOne(
-    { id: starId },
-    { projection: { _id: 1, comments: 1 } },
-  )
+  const sourceStar = await collection.findOne({ _id: `${user.tag}:${getGalaxyStarDay(now)}` })
+  const target = await collection.findOne({ id: starId }, { projection: { _id: 1, comments: 1 } })
   if (!target) {
     throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
   }
@@ -297,46 +325,98 @@ export async function voteForGalaxyStarComment(
   if (!comment) {
     throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
   }
-  if (comment.userTag === user.tag) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '不能评价自己的评论')
-  }
-  if (comment.votes?.some(({ userTag }) => userTag === user.tag)) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这条评论')
-  }
-
   const createdAt = format_timestamp(now)
-  const updated = await collection.updateOne(
-    {
-      _id: target._id,
-      comments: {
-        $elemMatch: {
-          id: commentId,
-          userTag: { $ne: user.tag },
-          'votes.userTag': { $ne: user.tag },
-        },
-      },
-    },
-    {
-      $push: {
-        'comments.$[targetComment].votes': { userTag: user.tag, vote },
-        links: { sourceStarId: sourceStar.id, createdAt },
-      },
-      $inc: {
-        [`comments.$[targetComment].${vote === 'like' ? 'likeCount' : 'dislikeCount'}`]: 1,
-      },
-    },
-    {
-      arrayFilters: [
+  const existingVote = comment.votes?.find(({ userTag }) => userTag === user.tag)
+  const voteCountField = vote === 'like' ? 'likeCount' : 'dislikeCount'
+  const updated = existingVote
+    ? existingVote.vote === vote
+      ? await collection.updateOne(
+          {
+            _id: target._id,
+            comments: {
+              $elemMatch: {
+                id: commentId,
+                votes: { $elemMatch: { userTag: user.tag, vote } },
+              },
+            },
+          },
+          {
+            $pull: {
+              'comments.$[targetComment].votes': { userTag: user.tag },
+              ...(existingVote.sourceStarId && existingVote.createdAt
+                ? {
+                    links: {
+                      sourceStarId: existingVote.sourceStarId,
+                      createdAt: existingVote.createdAt,
+                    },
+                  }
+                : {}),
+            },
+            $inc: {
+              [`comments.$[targetComment].${voteCountField}`]: -1,
+            },
+          },
+          { arrayFilters: [{ 'targetComment.id': commentId }] },
+        )
+      : await collection.updateOne(
+          {
+            _id: target._id,
+            comments: {
+              $elemMatch: {
+                id: commentId,
+                votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
+              },
+            },
+          },
+          {
+            $set: { 'comments.$[targetComment].votes.$[voter].vote': vote },
+            $inc: {
+              [`comments.$[targetComment].${existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount'}`]:
+                -1,
+              [`comments.$[targetComment].${voteCountField}`]: 1,
+            },
+          },
+          {
+            arrayFilters: [
+              { 'targetComment.id': commentId },
+              { 'voter.userTag': user.tag, 'voter.vote': existingVote.vote },
+            ],
+          },
+        )
+    : await collection.updateOne(
         {
-          'targetComment.id': commentId,
-          'targetComment.userTag': { $ne: user.tag },
-          'targetComment.votes.userTag': { $ne: user.tag },
+          _id: target._id,
+          comments: {
+            $elemMatch: {
+              id: commentId,
+              'votes.userTag': { $ne: user.tag },
+            },
+          },
         },
-      ],
-    },
-  )
+        {
+          $push: {
+            'comments.$[targetComment].votes': {
+              userTag: user.tag,
+              vote,
+              ...(sourceStar ? { sourceStarId: sourceStar.id, createdAt } : {}),
+            },
+            ...(sourceStar ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
+          },
+          $inc: {
+            [`comments.$[targetComment].${voteCountField}`]: 1,
+          },
+        },
+        {
+          arrayFilters: [
+            {
+              'targetComment.id': commentId,
+              'targetComment.votes.userTag': { $ne: user.tag },
+            },
+          ],
+        },
+      )
   if (updated.modifiedCount !== 1) {
-    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这条评论')
+    throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
   }
 
   const updatedStar = await collection.findOne({ _id: target._id })
@@ -400,21 +480,84 @@ export async function commentOnGalaxyStar(
       : { anonymousDay: day }),
     ...(parentCommentId ? { parentCommentId } : {}),
   }
+  const pushOperations = {
+    comments: comment,
+    ...(sourceStar ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
+    ...(target.userTag !== user.tag ? { unreadCommentIds: { $each: [comment.id] } } : {}),
+  }
   const updated = await collection.updateOne(
     { _id: target._id },
-    sourceStar
-      ? {
-          $push: {
-            comments: comment,
-            links: { sourceStarId: sourceStar.id, createdAt },
-          },
-        }
-      : { $push: { comments: comment } },
+    {
+      $push: pushOperations,
+      ...(target.userTag !== user.tag ? { $min: { unreadCommentAt: createdAt } } : {}),
+    },
   )
   if (updated.modifiedCount !== 1) {
     throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
   }
   return listGalaxyStars(params, collection, user.tag, res)
+}
+
+export async function getGalaxyStarCommentNotifications(
+  collection: Collection<GalaxyStarRecord>,
+  user: User,
+  res: Response,
+) {
+  const records = await collection
+    .find(
+      { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+      { projection: { id: 1, createdAt: 1 } },
+    )
+    .sort({ unreadCommentAt: 1, createdAt: 1 })
+    .toArray()
+  return response(res, BamblooStatusCode.Success, undefined, {
+    starIds: records.map(({ id }) => id),
+  })
+}
+
+export async function consumeGalaxyStarCommentNotification(
+  collection: Collection<GalaxyStarRecord>,
+  user: User,
+  res: Response,
+) {
+  let consumedStar: GalaxyStarView | undefined
+  for (let attempt = 0; attempt < 3 && !consumedStar; attempt += 1) {
+    const record = await collection
+      .find({ userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } })
+      .sort({ unreadCommentAt: 1, createdAt: 1 })
+      .limit(1)
+      .next()
+    if (!record) break
+
+    const unreadCommentIds = record.unreadCommentIds ?? []
+    const updated = await collection.updateOne(
+      {
+        _id: record._id,
+        userTag: user.tag,
+        unreadCommentIds: { $in: unreadCommentIds },
+      },
+      { $pullAll: { unreadCommentIds } },
+    )
+    if (updated.modifiedCount !== 1) continue
+
+    await collection.updateOne(
+      { _id: record._id, userTag: user.tag, unreadCommentIds: { $size: 0 } },
+      { $unset: { unreadCommentAt: '' } },
+    )
+    consumedStar = mapGalaxyStarRecord(record, user.tag)
+  }
+
+  const remainingRecords = await collection
+    .find(
+      { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+      { projection: { id: 1, createdAt: 1 } },
+    )
+    .sort({ unreadCommentAt: 1, createdAt: 1 })
+    .toArray()
+  return response(res, BamblooStatusCode.Success, undefined, {
+    star: consumedStar,
+    starIds: remainingRecords.map(({ id }) => id),
+  })
 }
 
 export async function seedGalaxyBlackHoleStars(
@@ -534,10 +677,24 @@ export async function listGalaxyStars(
       candidates.length > 0 || excludedStarIds.size === 0
         ? candidates
         : await blackHoleCollection.find({}).sort({ updatedAt: -1 }).limit(limit).toArray()
+    const starRecords = await collection
+      .find({ id: { $in: selectedRecords.map(({ starId }) => starId) } })
+      .toArray()
+    const starRecordsById = new Map(starRecords.map((record) => [record.id, record]))
     const selectedEntries = selectedRecords.map(
-      ({ _id: id, contentId: _contentId, createdAt: _createdAt, updatedAt: _updatedAt, ...entry }) => ({
+      ({ _id: id, contentId, createdAt: _createdAt, updatedAt: _updatedAt, ...entry }) => ({
         ...entry,
         id,
+        contentId,
+        myVote:
+          entry.kind === 'star'
+            ? starRecordsById
+                .get(entry.starId)
+                ?.votes?.find(({ userTag: voterTag }) => voterTag === userTag)?.vote
+            : starRecordsById
+                .get(entry.starId)
+                ?.comments?.find(({ id: commentId }) => commentId === contentId)
+                ?.votes?.find(({ userTag: voterTag }) => voterTag === userTag)?.vote,
       }),
     )
     const totalCount = await blackHoleCollection.countDocuments()
@@ -635,6 +792,8 @@ async function listStars(
       _id: _recordId,
       userTag: ownerTag,
       day: _day,
+      unreadCommentAt: _unreadCommentAt,
+      unreadCommentIds: _unreadCommentIds,
       votes = [],
       links: _links,
       likeCount = 0,
@@ -709,6 +868,8 @@ function mapGalaxyStarRecord(record: GalaxyStarRecord, userTag: string): GalaxyS
     _id: _recordId,
     userTag: ownerTag,
     day: _day,
+    unreadCommentAt: _unreadCommentAt,
+    unreadCommentIds: _unreadCommentIds,
     votes = [],
     links: _links,
     likeCount = 0,
@@ -748,9 +909,7 @@ function isBlackHoleStar(star: Pick<GalaxyStarRecord, 'likeCount' | 'dislikeCoun
   return dislikeCount > 8 && dislikeCount > likeCount * 1.5
 }
 
-function isBlackHoleComment(
-  comment: Pick<GalaxyStarComment, 'likeCount' | 'dislikeCount'>,
-) {
+function isBlackHoleComment(comment: Pick<GalaxyStarComment, 'likeCount' | 'dislikeCount'>) {
   const likeCount = comment.likeCount ?? 0
   const dislikeCount = comment.dislikeCount ?? 0
   return dislikeCount > 8 && dislikeCount > likeCount * 1.5

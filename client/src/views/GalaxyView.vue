@@ -11,7 +11,11 @@ import type {
 } from '../../../common/entity/galaxy-star'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
-import { GALAXY_STAR_SENT_EVENT } from '@/events/galaxy-star'
+import {
+  announceGalaxyStarCommentQueue,
+  GALAXY_STAR_COMMENT_OPEN_EVENT,
+  GALAXY_STAR_SENT_EVENT,
+} from '@/events/galaxy-star'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
@@ -29,6 +33,7 @@ const listLoading = ref(false)
 const blackHoleListLoaded = ref(false)
 const statusLoading = ref(false)
 const voteLoading = ref(false)
+const voteRequestLoading = ref(false)
 const voteError = ref('')
 const commentLoading = ref(false)
 const commentError = ref('')
@@ -43,6 +48,8 @@ const selectedCommentId = ref('')
 const selectedBlackHoleEntryKind = ref<GalaxyBlackHoleEntry['kind']>()
 const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
+const commentQueueStarIds = ref<string[]>([])
+const commentNotificationLoading = ref(false)
 const hasSentToday = computed(() => Boolean(todayStarId.value))
 const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValidated)
 const blackHoleWaveSize = 20
@@ -89,6 +96,7 @@ watch(blackHoleWaveKey, () => {
 })
 let galaxyScene: GalaxyScene | undefined
 let dailyResetTimer: number | undefined
+let commentNotificationTimer: number | undefined
 
 function currentListViewParams(preserveBlackHoleWave = false) {
   return {
@@ -121,6 +129,57 @@ function createBlackHoleEntryRandom(id: string, index: number, layoutSeed: strin
 
 function meetsBlackHoleThreshold(likeCount = 0, dislikeCount = 0) {
   return dislikeCount > 8 && dislikeCount > likeCount * 1.5
+}
+
+function updateCommentNotificationQueue(starIds: string[]) {
+  commentQueueStarIds.value = [...new Set(starIds)]
+  announceGalaxyStarCommentQueue(commentQueueStarIds.value.length)
+}
+
+async function refreshCommentNotificationQueue() {
+  if (props.blackHoleView || !canViewStarDetails.value || commentNotificationLoading.value) return
+  try {
+    const packet = await post(
+      '/wpi/user/galaxy-star/comment-notifications',
+      commentNotificationLoading,
+    )
+    const data = packet.data as { starIds?: unknown } | undefined
+    if (!Array.isArray(data?.starIds) || !data.starIds.every((id) => typeof id === 'string')) {
+      throw new Error('评论通知队列格式无效')
+    }
+    updateCommentNotificationQueue(data.starIds)
+  } catch (error) {
+    console.error('读取星星评论通知失败', error)
+  }
+}
+
+async function openNextCommentedStar() {
+  if (!canViewStarDetails.value || commentNotificationLoading.value) return
+  try {
+    const packet = await post(
+      '/wpi/user/galaxy-star/comment-notification-consume',
+      commentNotificationLoading,
+    )
+    const data = packet.data as { star?: GalaxyStarView; starIds?: unknown } | undefined
+    if (!Array.isArray(data?.starIds) || !data.starIds.every((id) => typeof id === 'string')) {
+      throw new Error('评论通知队列格式无效')
+    }
+    updateCommentNotificationQueue(data.starIds)
+    if (!data.star) return
+    sentStars.value = sentStars.value.map((star) => (star.id === data.star?.id ? data.star : star))
+    if (!sentStars.value.some((star) => star.id === data.star?.id)) {
+      sentStars.value = [...sentStars.value, data.star]
+    }
+    galaxyScene?.setSentStars(sentStars.value)
+    galaxyScene?.navigateToSentStar(data.star.id)
+    selectedStar.value = data.star
+    selectedCommentId.value = ''
+    selectedBlackHoleEntryKind.value = undefined
+    voteError.value = ''
+  } catch (error) {
+    console.error('打开新评论星星失败', error)
+    sceneError.value = '打开新评论星星失败，请稍后重试。'
+  }
 }
 
 function blackHoleEntryStyle(
@@ -171,8 +230,8 @@ function handleBlackHolePointerDown(event: PointerEvent) {
   const target = event.target
   const captureTarget =
     target instanceof Element
-      ? (target.closest('.black-hole-content-text') as HTMLElement | null) ??
-        (event.currentTarget as HTMLElement)
+      ? ((target.closest('.black-hole-content-text') as HTMLElement | null) ??
+        (event.currentTarget as HTMLElement))
       : (event.currentTarget as HTMLElement)
   captureTarget.setPointerCapture(event.pointerId)
 }
@@ -318,9 +377,7 @@ async function openBlackHoleEntry(entry: GalaxyBlackHoleEntry) {
     const packet = await post('/wpi/user/galaxy-star/blackhole-content', blackHoleContentLoading, {
       entryId: entry.id,
     })
-    const data = packet.data as
-      | { star?: GalaxyStarView; selectedCommentId?: string }
-      | undefined
+    const data = packet.data as { star?: GalaxyStarView; selectedCommentId?: string } | undefined
     if (!data?.star) throw new Error('黑洞内容详情格式无效')
     selectedStar.value = data.star
     selectedCommentId.value = data.selectedCommentId ?? ''
@@ -346,16 +403,32 @@ async function openBlackHoleEntry(entry: GalaxyBlackHoleEntry) {
 }
 
 async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
-  if (!hasSentToday.value || star.isOwn || star.myVote || voteLoading.value) return
+  if (voteLoading.value) return
   voteError.value = ''
   voteLoading.value = true
   try {
-    const packet = await post('/wpi/user/galaxy-star/vote', voteLoading, {
+    const packet = await post('/wpi/user/galaxy-star/vote', voteRequestLoading, {
       starId: star.id,
       vote,
-      ...currentListViewParams(true),
+      ...(props.blackHoleView ? { view: 'normal' } : currentListViewParams(true)),
     })
-    applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
+    const data = packet.data as Partial<GalaxyStarListResponse>
+    if (props.blackHoleView) {
+      const updatedStar = data.stars?.find((candidate) => candidate.id === star.id)
+      if (!updatedStar) throw new Error('星星评价数据格式无效')
+      selectedStar.value = updatedStar
+      sentStars.value = sentStars.value.map((candidate) =>
+        candidate.id === updatedStar.id ? updatedStar : candidate,
+      )
+      const listPacket = await post(
+        '/wpi/user/galaxy-star/list',
+        listLoading,
+        currentListViewParams(true),
+      )
+      applyGalaxyData(listPacket.data as Partial<GalaxyStarListResponse>)
+    } else {
+      applyGalaxyData(data)
+    }
   } catch (error) {
     console.error('提交星星评价失败', error)
     voteError.value =
@@ -367,12 +440,16 @@ async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
   }
 }
 
-async function voteForComment(star: GalaxyStarView, comment: GalaxyStarComment, vote: GalaxyStarVote) {
-  if (!hasSentToday.value || comment.isOwn || comment.myVote || voteLoading.value) return
+async function voteForComment(
+  star: GalaxyStarView,
+  comment: GalaxyStarComment,
+  vote: GalaxyStarVote,
+) {
+  if (voteLoading.value) return
   voteError.value = ''
   voteLoading.value = true
   try {
-    const packet = await post('/wpi/user/galaxy-star/comment-vote', voteLoading, {
+    const packet = await post('/wpi/user/galaxy-star/comment-vote', voteRequestLoading, {
       starId: star.id,
       commentId: comment.id,
       vote,
@@ -383,7 +460,16 @@ async function voteForComment(star: GalaxyStarView, comment: GalaxyStarComment, 
     sentStars.value = sentStars.value.map((candidate) =>
       candidate.id === data.star?.id ? data.star : candidate,
     )
-    void loadGalaxyStars()
+    if (props.blackHoleView) {
+      const listPacket = await post(
+        '/wpi/user/galaxy-star/list',
+        listLoading,
+        currentListViewParams(true),
+      )
+      applyGalaxyData(listPacket.data as Partial<GalaxyStarListResponse>)
+    } else {
+      void loadGalaxyStars()
+    }
   } catch (error) {
     console.error('提交评论评价失败', error)
     voteError.value =
@@ -407,7 +493,20 @@ async function commentOnStar(star: GalaxyStarView, parentCommentId?: string) {
       ...(parentCommentId ? { parentCommentId } : {}),
       ...currentListViewParams(true),
     })
-    applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
+    if (props.blackHoleView) {
+      const listPacket = await post('/wpi/user/galaxy-star/list', listLoading, {
+        view: 'normal',
+      })
+      const data = listPacket.data as Partial<GalaxyStarListResponse>
+      const updatedStar = data.stars?.find((candidate) => candidate.id === star.id)
+      if (!updatedStar) throw new Error('评论更新后未能读取星星详情')
+      selectedStar.value = updatedStar
+      sentStars.value = sentStars.value.map((candidate) =>
+        candidate.id === updatedStar.id ? updatedStar : candidate,
+      )
+    } else {
+      applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
+    }
     commentText.value = ''
     replyingToCommentId.value = ''
   } catch (error) {
@@ -443,6 +542,15 @@ function commentThreads(comments: GalaxyStarComment[]) {
 const selectedCommentThreads = computed(() =>
   selectedStar.value ? commentThreads(selectedStar.value.comments) : [],
 )
+const visibleCommentThreads = computed(() =>
+  props.blackHoleView
+    ? selectedCommentThreads.value.filter(
+        (comment) =>
+          !meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount) ||
+          comment.id === selectedCommentId.value,
+      )
+    : selectedCommentThreads.value,
+)
 
 function toggleCommentReply(comment: GalaxyStarComment) {
   replyingToCommentId.value = replyingToCommentId.value === comment.id ? '' : comment.id
@@ -456,11 +564,22 @@ watch(
     if (enabled === previousEnabled) return
     galaxyScene?.setBlackHoleView(enabled)
     void loadGalaxyStars()
+    if (!enabled) void refreshCommentNotificationQueue()
   },
+)
+
+watch(
+  selectedStar,
+  (star) => {
+    document.body.classList.toggle('star-dialog-open', Boolean(star))
+  },
+  { immediate: true },
 )
 
 watch(canViewStarDetails, (canView, previousCanView) => {
   if (canView === previousCanView) return
+  commentQueueStarIds.value = []
+  announceGalaxyStarCommentQueue(0)
   selectedStar.value = undefined
   todayStarId.value = ''
   if (!canView) {
@@ -475,6 +594,7 @@ watch(canViewStarDetails, (canView, previousCanView) => {
     galaxyScene?.setSentStars(sentStars.value)
   }
   void loadGalaxyStars()
+  if (canView) void refreshCommentNotificationQueue()
 })
 
 function handlePointerDown(event: PointerEvent) {
@@ -511,15 +631,23 @@ onMounted(() => {
       props.blackHoleView,
     )
     window.addEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+    window.addEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
     window.addEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
     window.addEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
     void loadGalaxyStars()
+    void refreshCommentNotificationQueue()
+    commentNotificationTimer = window.setInterval(() => {
+      void refreshCommentNotificationQueue()
+    }, 30_000)
   }
 })
 
 onBeforeUnmount(() => {
+  document.body.classList.remove('star-dialog-open')
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
+  if (commentNotificationTimer !== undefined) window.clearInterval(commentNotificationTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+  window.removeEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
   window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
   window.removeEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
   galaxyScene?.destroy()
@@ -615,6 +743,7 @@ onBeforeUnmount(() => {
         </header>
         <div class="sent-star-dialog-scroll">
           <p
+            v-if="!props.blackHoleView || selectedBlackHoleEntryKind === 'star'"
             id="sent-star-black-hole-content"
             class="sent-star-content"
             :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }"
@@ -629,13 +758,19 @@ onBeforeUnmount(() => {
             </template>
             <template v-else>{{ selectedStar.content }}</template>
           </p>
-          <div class="sent-star-votes">
+          <div
+            v-if="
+              props.blackHoleView
+                ? selectedBlackHoleEntryKind === 'star'
+                : !meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
+            "
+            class="sent-star-votes"
+          >
             <button
               type="button"
               :class="{ selected: selectedStar.myVote === 'like' }"
-              :disabled="
-                selectedStar.isOwn || !hasSentToday || voteLoading || Boolean(selectedStar.myVote)
-              "
+              :aria-pressed="selectedStar.myVote === 'like'"
+              :disabled="voteLoading"
               @click="voteForStar(selectedStar, 'like')"
             >
               赞 <strong>{{ selectedStar.likeCount }}</strong>
@@ -643,14 +778,15 @@ onBeforeUnmount(() => {
             <button
               type="button"
               :class="{ selected: selectedStar.myVote === 'dislike' }"
-              :disabled="
-                selectedStar.isOwn || !hasSentToday || voteLoading || Boolean(selectedStar.myVote)
-              "
+              :aria-pressed="selectedStar.myVote === 'dislike'"
+              :disabled="voteLoading"
               @click="voteForStar(selectedStar, 'dislike')"
             >
               踩 <strong>{{ selectedStar.dislikeCount }}</strong>
             </button>
-            <span class="sent-star-comment-count">{{ selectedStar.comments.length }} 条评论</span>
+            <span v-if="!props.blackHoleView" class="sent-star-comment-count">
+              {{ selectedStar.comments.length }} 条评论
+            </span>
           </div>
           <p v-if="selectedStar.isOwn" class="sent-star-permission-hint">这是你寄出的星星</p>
           <p v-else-if="!hasSentToday" class="sent-star-permission-hint">
@@ -660,12 +796,12 @@ onBeforeUnmount(() => {
 
           <section class="sent-star-comment-section" aria-labelledby="sent-star-comments-title">
             <h3 id="sent-star-comments-title">星际讨论</h3>
-            <p v-if="!selectedStar.comments.length" class="sent-star-empty-comments">
-              还没有评论，来留下第一条回响吧。
+            <p v-if="!visibleCommentThreads.length" class="sent-star-empty-comments">
+              {{ props.blackHoleView ? '没有其他正常评论。' : '还没有评论，来留下第一条回响吧。' }}
             </p>
             <ul v-else class="sent-star-comments">
               <li
-                v-for="comment in selectedCommentThreads"
+                v-for="comment in visibleCommentThreads"
                 :key="comment.id"
                 class="sent-star-comment"
                 :class="{ 'selected-comment': comment.id === selectedCommentId }"
@@ -695,12 +831,8 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       :class="{ selected: comment.myVote === 'like' }"
-                      :disabled="
-                        comment.isOwn ||
-                        !hasSentToday ||
-                        voteLoading ||
-                        Boolean(comment.myVote)
-                      "
+                      :aria-pressed="comment.myVote === 'like'"
+                      :disabled="voteLoading"
                       @click="voteForComment(selectedStar, comment, 'like')"
                     >
                       赞 {{ comment.likeCount ?? 0 }}
@@ -708,12 +840,8 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       :class="{ selected: comment.myVote === 'dislike' }"
-                      :disabled="
-                        comment.isOwn ||
-                        !hasSentToday ||
-                        voteLoading ||
-                        Boolean(comment.myVote)
-                      "
+                      :aria-pressed="comment.myVote === 'dislike'"
+                      :disabled="voteLoading"
                       @click="voteForComment(selectedStar, comment, 'dislike')"
                     >
                       踩 {{ comment.dislikeCount ?? 0 }}
@@ -786,11 +914,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .galaxy-demo {
-  position: relative;
+  position: fixed;
+  inset: 0;
   isolation: isolate;
-  width: 100vw;
-  height: 100dvh;
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: radial-gradient(circle at 50% 52%, #152441 0, #090e1d 33%, #02040b 72%);
   color: #eef4ff;
@@ -879,7 +1008,8 @@ onBeforeUnmount(() => {
   width: 14%;
   padding: 4px;
   transform: translate(-50%, -50%) rotate(var(--entry-angle));
-  animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite alternate;
+  animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite
+    alternate;
   border: 0;
   background: transparent;
   color: rgba(229, 234, 250, var(--entry-opacity));
@@ -887,8 +1017,12 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 0 10px rgba(165, 190, 255, 0.36));
   pointer-events: auto;
   text-align: left;
-  text-shadow: 0 0 12px rgba(147, 173, 255, 0.68), 0 1px 8px #02040b;
-  transition: color 180ms ease, filter 180ms ease;
+  text-shadow:
+    0 0 12px rgba(147, 173, 255, 0.68),
+    0 1px 8px #02040b;
+  transition:
+    color 180ms ease,
+    filter 180ms ease;
 }
 
 .black-hole-content-entry:hover {
@@ -1097,8 +1231,9 @@ onBeforeUnmount(() => {
 .sent-star-content.selected-black-hole-content {
   border-radius: 8px;
   background: color-mix(in srgb, var(--star-color) 16%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--star-color) 65%, transparent), 0 0 24px
-    color-mix(in srgb, var(--star-color) 42%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--star-color) 65%, transparent),
+    0 0 24px color-mix(in srgb, var(--star-color) 42%, transparent);
   animation: black-hole-target-highlight 1.2s ease-out 2;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1123,7 +1258,6 @@ onBeforeUnmount(() => {
 
 .sent-star-votes button:disabled {
   cursor: default;
-  opacity: 0.68;
 }
 
 .sent-star-votes button.selected {
@@ -1187,8 +1321,9 @@ onBeforeUnmount(() => {
 
 @keyframes black-hole-target-highlight {
   50% {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--star-color) 82%, transparent), 0 0 30px
-      color-mix(in srgb, var(--star-color) 56%, transparent);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--star-color) 82%, transparent),
+      0 0 30px color-mix(in srgb, var(--star-color) 56%, transparent);
   }
 }
 
@@ -1250,7 +1385,6 @@ onBeforeUnmount(() => {
 
 .sent-star-comment-votes button:disabled {
   cursor: default;
-  opacity: 0.6;
 }
 
 .sent-star-comment-votes button.selected {

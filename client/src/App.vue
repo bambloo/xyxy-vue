@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
@@ -8,6 +8,10 @@ import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
 import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
+import {
+  GALAXY_STAR_COMMENT_OPEN_EVENT,
+  GALAXY_STAR_COMMENT_QUEUE_EVENT,
+} from '@/events/galaxy-star'
 import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
@@ -21,7 +25,12 @@ const isPortalRoute = computed(() => isGalaxyRoute.value)
 const canShowPortalButton = computed(
   () => isPortalRoute.value && auth.isSessionValidated && Boolean(auth.currentUser?.tag),
 )
-const portalLabel = '上划回到星系中心，下划拉远镜头；点击查看星言星语'
+const queuedCommentStarCount = ref(0)
+const portalLabel = computed(() =>
+  queuedCommentStarCount.value > 0
+    ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论，点击查看；上划回到星系中心，下划拉远镜头`
+    : '上划回到星系中心，下划拉远镜头；点击查看星言星语',
+)
 const tag = computed(() => {
   const routeTag = route.params.tag
   if (Array.isArray(routeTag)) return routeTag.join('/')
@@ -32,6 +41,15 @@ const isTagRoute = computed(() => route.name === 'tag' && Boolean(tag.value))
 const tagState = ref<TagState>('loading')
 const tagLoading = ref(false)
 const appState = ref<AppState>('loading')
+
+watch(
+  isGalaxyRoute,
+  (isGalaxy) => {
+    document.documentElement.classList.toggle('galaxy-no-scroll', isGalaxy)
+    document.body.classList.toggle('galaxy-no-scroll', isGalaxy)
+  },
+  { immediate: true },
+)
 
 async function loadTagState() {
   if (isLoginRoute.value) {
@@ -82,8 +100,28 @@ function handleCameraCenter() {
 }
 
 function handleFortuneActivate() {
-  if (isGalaxyRoute.value) window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
+  if (!isGalaxyRoute.value) return
+  if (queuedCommentStarCount.value > 0) {
+    window.dispatchEvent(new Event(GALAXY_STAR_COMMENT_OPEN_EVENT))
+    return
+  }
+  window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
 }
+
+function handleCommentQueueChange(event: Event) {
+  const count = (event as CustomEvent<number>).detail
+  queuedCommentStarCount.value = Number.isInteger(count) && count > 0 ? count : 0
+}
+
+onMounted(() => {
+  window.addEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
+  document.documentElement.classList.remove('galaxy-no-scroll')
+  document.body.classList.remove('galaxy-no-scroll')
+})
 </script>
 
 <template>
@@ -111,6 +149,7 @@ function handleFortuneActivate() {
         class="sun-portal-control"
         :label="portalLabel"
         :title="portalLabel"
+        :notification="queuedCommentStarCount > 0"
         @swipe-up="handleCameraCenter"
         @swipe-down="handleCameraZoomOut"
         @swipe-left="handleFortuneSwipe"
@@ -136,8 +175,15 @@ function handleFortuneActivate() {
 html,
 body,
 #app {
+  height: 100%;
   min-height: 100%;
   margin: 0;
+}
+
+html.galaxy-no-scroll,
+body.galaxy-no-scroll,
+body.galaxy-no-scroll #app {
+  overflow: hidden;
 }
 
 body {
@@ -155,6 +201,15 @@ body {
   color: var(--space-text);
 }
 
+.app-shell:has(.galaxy-demo) {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .empty-page {
   min-height: 100vh;
 }
@@ -162,9 +217,13 @@ body {
 .sun-portal-control {
   position: fixed;
   z-index: 1000;
-  left: 50vw;
+  left: 50%;
   bottom: clamp(112px, 13vh, 168px);
   transform: translateX(-50%);
+}
+
+body.star-dialog-open .sun-portal-control {
+  pointer-events: none;
 }
 
 .portal-route-enter-active,

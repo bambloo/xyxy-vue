@@ -33,10 +33,12 @@ export interface GalaxyStarListResponse {
 export interface GalaxyBlackHoleEntry {
   id: string
   starId: string
+  contentId: string
   kind: 'star' | 'comment'
   content: string
   likeCount: number
   dislikeCount: number
+  myVote?: GalaxyStarVote
 }
 
 export interface GalaxyStarComment {

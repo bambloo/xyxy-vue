@@ -123,6 +123,10 @@ export class GalaxyScene {
     this.manager?.zoomOut()
   }
 
+  navigateToSentStar(starId: string) {
+    return this.manager?.navigateToSentStar(starId) ?? false
+  }
+
   destroy() {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()

@@ -235,6 +235,34 @@ export class GalaxyManager {
     this.recordInteraction()
   }
 
+  navigateToSentStar(starId: string) {
+    const visual = this.sentStars.get(starId)
+    if (!visual) return false
+
+    const { camera, galaxy } = this.options
+    galaxy.updateMatrixWorld(true)
+    const starPosition = galaxy.localToWorld(visual.star.position.clone())
+    const currentOffset = camera.position.clone().sub(starPosition)
+    if (currentOffset.lengthSq() === 0) {
+      currentOffset.copy(camera.getWorldDirection(new THREE.Vector3())).negate()
+    }
+    currentOffset.setLength(56)
+
+    const targetPosition = starPosition.clone().add(currentOffset)
+    this.constrainCameraPosition(targetPosition)
+    const targetDirection = starPosition.clone().sub(targetPosition).normalize()
+    this.cameraTargetPosition = targetPosition
+    this.targetYaw = Math.atan2(-targetDirection.x, -targetDirection.z)
+    this.targetPitch = THREE.MathUtils.clamp(
+      Math.asin(targetDirection.y),
+      -CAMERA_PITCH_LIMIT,
+      CAMERA_PITCH_LIMIT,
+    )
+    this.targetRollVelocity = 0
+    this.recordInteraction()
+    return true
+  }
+
   update(time: number) {
     const { galaxy } = this.options
     galaxy.rotation.y += 0.00006

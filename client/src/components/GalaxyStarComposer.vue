@@ -159,17 +159,6 @@ onBeforeUnmount(() => {
             </label>
             <fieldset class="star-compose-colors">
               <legend>选择星星颜色</legend>
-              <label
-                class="star-compose-color star-compose-custom-color"
-                :class="{ selected: isCustomColor }"
-              >
-                <input
-                  v-model="color"
-                  type="color"
-                  aria-label="自定义星星颜色"
-                  title="自定义星星颜色"
-                />
-              </label>
               <button
                 v-for="preset in GALAXY_STAR_COLORS"
                 :key="preset"
@@ -181,6 +170,18 @@ onBeforeUnmount(() => {
                 :aria-pressed="preset === color"
                 @click="color = preset"
               ></button>
+              <label
+                class="star-compose-color star-compose-custom-color"
+                :class="{ selected: isCustomColor }"
+                :style="{ '--selected-color': color }"
+              >
+                <input
+                  v-model="color"
+                  type="color"
+                  aria-label="自定义星星颜色"
+                  title="自定义星星颜色"
+                />
+              </label>
             </fieldset>
             <p v-if="error" class="star-compose-status star-compose-error" role="alert">
               {{ error }}
@@ -367,6 +368,7 @@ onBeforeUnmount(() => {
 }
 
 .star-compose-custom-color {
+  isolation: isolate;
   background: conic-gradient(
     #ff5252,
     #ffb142,
@@ -377,6 +379,20 @@ onBeforeUnmount(() => {
     #cd84f1,
     #ff5252
   );
+}
+
+.star-compose-custom-color::after {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
+  background: var(--selected-color);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  content: '';
+  pointer-events: none;
 }
 
 .star-compose-color.selected {
