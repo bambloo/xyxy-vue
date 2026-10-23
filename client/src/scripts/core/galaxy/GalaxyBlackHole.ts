@@ -12,6 +12,8 @@ const BLACK_HOLE_HORIZON_DIAMETER_RATIO =
   BLACK_HOLE_SHADER_COORDINATE_SCALE * BLACK_HOLE_PAGE_CORE_RADIUS
 const BLACK_HOLE_CORE_RADIUS = 0.12
 const GALAXY_BLACK_HOLE_VIEW_SCALE = 1.55
+const GALAXY_BLACK_HOLE_HIT_RADIUS = 1.45
+const BLACK_HOLE_PAGE_HIT_RADIUS = 1.42
 
 function smoothRandom(time: number, seed: number) {
   const segment = Math.floor(time)
@@ -365,10 +367,15 @@ export class GalaxyBlackHole {
       this.blackHoleMaterial.uniforms['iResolution']!.value.y
     return raycaster.intersectObject(this.singularity, false).some(({ uv }) => {
       if (!uv) return false
-      const shaderX = ((uv.x * 2 - 1) * aspect) / BLACK_HOLE_SHADER_COORDINATE_SCALE
-      const shaderY = (uv.y * 2 - 1) / BLACK_HOLE_SHADER_COORDINATE_SCALE
-      const coreRadius = this.blackHoleView ? BLACK_HOLE_PAGE_CORE_RADIUS : BLACK_HOLE_CORE_RADIUS
-      return Math.hypot(shaderX, shaderY) <= coreRadius
+      const shaderScale = this.blackHoleView
+        ? 1 / BLACK_HOLE_SHADER_COORDINATE_SCALE
+        : GALAXY_BLACK_HOLE_VIEW_SCALE
+      const shaderX = (uv.x * 2 - 1) * aspect * shaderScale
+      const shaderY = (uv.y * 2 - 1) * shaderScale
+      const hitRadius = this.blackHoleView
+        ? BLACK_HOLE_PAGE_HIT_RADIUS
+        : GALAXY_BLACK_HOLE_HIT_RADIUS
+      return Math.hypot(shaderX, shaderY) <= hitRadius
     })
   }
 
