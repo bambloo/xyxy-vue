@@ -115,11 +115,15 @@ export class GalaxyLink {
     if (visibleLineCount !== previousLineCount) this.updateLineGeometry(visibleLineCount)
 
     const pulse = 0.5 + Math.sin(time * 0.0028 + this.phase) * 0.5
-    const interactionGlow = Math.min(1, Math.log2(this.displayedConnectionCount + 1) / 5)
+    const interactionGlow = THREE.MathUtils.clamp(
+      Math.log2(this.displayedConnectionCount + 1) / Math.log2(101),
+      0,
+      1,
+    )
     const visibility = Math.min(1, this.displayedConnectionCount)
-    const brightness = 1 + interactionGlow * 1.8
+    const brightness = 0.55 + interactionGlow * 1.2
     this.glowMaterial.opacity = (0.08 + pulse * 0.12) * visibility * brightness
-    this.coreMaterial.opacity = (0.3 + pulse * 0.28) * visibility * brightness
+    this.coreMaterial.opacity = Math.min(0.95, (0.3 + pulse * 0.28) * visibility * brightness)
   }
 
   destroy(galaxy: THREE.Group) {

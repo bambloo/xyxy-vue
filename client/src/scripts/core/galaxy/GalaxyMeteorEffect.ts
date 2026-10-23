@@ -4,6 +4,9 @@ import {
   isTimeFortuneLocatorDismissed,
   isTimeFortuneReady,
   TIME_FORTUNE_DISMISSED_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT,
   TIME_FORTUNE_STATE_EVENT,
 } from '@/events/time-fortune'
 
@@ -16,6 +19,7 @@ type ActiveMeteor = {
   landsAtDestination: boolean
   startTime: number
   duration: number
+  firstVisitSequenceId?: number
 }
 
 type DestinationStar = {
@@ -27,7 +31,6 @@ type DestinationStar = {
   selected: boolean
   revealsPortal: boolean
   fortuneLocator: boolean
-  starSendLocator: boolean
 }
 
 const DESTINATION_STAR_PIXELS = 500
@@ -133,7 +136,6 @@ export class GalaxyMeteorEffect {
 
   private pointerStart?: THREE.Vector2
   private fortuneReady = isTimeFortuneReady()
-  private starSendAvailable = false
   private enabled = true
   private fortuneLocatorDismissed: boolean
   private readonly handleFortuneLocatorDismissed = () => {
@@ -168,16 +170,55 @@ export class GalaxyMeteorEffect {
       this.spawnFortuneMeteor(locator, performance.now(), true)
     }
   }
+  private readonly handleFirstVisitMeteor = (event: Event) => {
+    const sequenceId = (event as CustomEvent<number>).detail
+    const destination = this.destinations.find((item) => item.revealsPortal)
+    if (!destination || !this.enabled || this.reducedMotion) {
+      this.notifyFirstVisitMeteor(sequenceId, false)
+      return
+    }
+
+    this.removeDestinationMeteors(destination)
+    this.spawnMeteor(
+      destination,
+      this.destinationFromScreen(destination.screenX, destination.screenY),
+      0.42,
+      performance.now(),
+      4200,
+      true,
+      sequenceId,
+    )
+  }
+  private readonly handleFirstVisitMeteorCancel = (event: Event) => {
+    const sequenceId = (event as CustomEvent<number>).detail
+    const meteor = this.activeMeteors.find((item) => item.firstVisitSequenceId === sequenceId)
+    if (!meteor) return
+    this.removeMeteor(meteor)
+  }
 
   private removeDestinationMeteors(locator: DestinationStar) {
     for (let index = this.activeMeteors.length - 1; index >= 0; index--) {
       const meteor = this.activeMeteors[index]!
       if (meteor.destination !== locator) continue
-      this.scene.remove(meteor.mesh)
-      meteor.mesh.geometry.dispose()
-      meteor.mesh.material.dispose()
-      this.activeMeteors.splice(index, 1)
+      this.removeMeteor(meteor)
     }
+  }
+
+  private removeMeteor(meteor: ActiveMeteor) {
+    const index = this.activeMeteors.indexOf(meteor)
+    if (index < 0) return
+    this.scene.remove(meteor.mesh)
+    meteor.mesh.geometry.dispose()
+    meteor.mesh.material.dispose()
+    this.activeMeteors.splice(index, 1)
+  }
+
+  private notifyFirstVisitMeteor(sequenceId: number, arrived: boolean) {
+    window.dispatchEvent(
+      new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT, {
+        detail: { sequenceId, arrived },
+      }),
+    )
   }
 
   constructor(
@@ -186,12 +227,16 @@ export class GalaxyMeteorEffect {
     private readonly camera: THREE.PerspectiveCamera,
     private readonly reducedMotion: boolean,
     private readonly onDestinationClick: () => void,
-    private readonly onStarSendLocatorClick: () => void,
   ) {
     const userTag = useAuthStore().currentUser?.tag
     this.fortuneLocatorDismissed = Boolean(userTag && isTimeFortuneLocatorDismissed(userTag))
     window.addEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
     window.addEventListener(TIME_FORTUNE_DISMISSED_EVENT, this.handleFortuneLocatorDismissed)
+    window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, this.handleFirstVisitMeteor)
+    window.addEventListener(
+      TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
+      this.handleFirstVisitMeteorCancel,
+    )
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: destinationVertexShader,
       fragmentShader: destinationFragmentShader,
@@ -225,7 +270,6 @@ export class GalaxyMeteorEffect {
       duration: number
       revealsPortal: boolean
       fortuneLocator: boolean
-      starSendLocator: boolean
     }[] = [
       {
         x: -0.86,
@@ -235,17 +279,6 @@ export class GalaxyMeteorEffect {
         duration: 9000,
         revealsPortal: false,
         fortuneLocator: true,
-        starSendLocator: false,
-      },
-      {
-        x: 0.86,
-        y: 0.0,
-        rotations: -0.38,
-        delay: 520,
-        duration: 4200,
-        revealsPortal: false,
-        fortuneLocator: false,
-        starSendLocator: true,
       },
       {
         ...mainStarPosition,
@@ -254,7 +287,6 @@ export class GalaxyMeteorEffect {
         duration: 4500,
         revealsPortal: true,
         fortuneLocator: false,
-        starSendLocator: false,
       },
     ]
     const now = performance.now()
@@ -268,19 +300,15 @@ export class GalaxyMeteorEffect {
           target.y,
           target.revealsPortal,
           target.fortuneLocator,
-          target.starSendLocator,
         )
         this.destinations.push(destination)
         destination.group.visible =
           this.reducedMotion &&
           !target.revealsPortal &&
-          (!target.fortuneLocator || this.fortuneReady) &&
-          (!target.starSendLocator || this.starSendAvailable)
+          (!target.fortuneLocator || this.fortuneReady)
         if (!this.reducedMotion) {
           if (target.fortuneLocator) {
             this.spawnFortuneMeteor(destination, now + target.delay, this.fortuneReady)
-          } else if (target.starSendLocator && !this.starSendAvailable) {
-            return
           } else {
             this.spawnMeteor(
               destination,
@@ -304,28 +332,16 @@ export class GalaxyMeteorEffect {
     this.pointerStart = undefined
   }
 
-  setStarSendAvailable(available: boolean) {
-    if (this.starSendAvailable === available) return
-    this.starSendAvailable = available
-    const locator = this.destinations.find((destination) => destination.starSendLocator)
-    if (!locator) return
-    locator.group.visible = false
-    locator.ring.visible = false
-    locator.selected = false
-    this.removeDestinationMeteors(locator)
-    if (!available || !this.enabled) return
-    if (this.reducedMotion) {
-      locator.group.visible = true
-    } else {
-      this.spawnFortuneMeteor(locator, performance.now(), true)
-    }
-  }
-
   setEnabled(enabled: boolean) {
     if (this.enabled === enabled) return
     this.enabled = enabled
     this.pointerStart = undefined
     if (!enabled) {
+      this.activeMeteors.forEach((meteor) => {
+        if (meteor.firstVisitSequenceId !== undefined) {
+          this.notifyFirstVisitMeteor(meteor.firstVisitSequenceId, false)
+        }
+      })
       this.activeMeteors.forEach((meteor) => {
         this.scene.remove(meteor.mesh)
         meteor.mesh.geometry.dispose()
@@ -348,15 +364,6 @@ export class GalaxyMeteorEffect {
           destination.group.visible = this.fortuneReady
         } else {
           this.spawnFortuneMeteor(destination, now, this.fortuneReady)
-        }
-        return
-      }
-      if (destination.starSendLocator) {
-        if (!this.starSendAvailable) return
-        if (this.reducedMotion) {
-          destination.group.visible = true
-        } else {
-          this.spawnFortuneMeteor(destination, now, true)
         }
         return
       }
@@ -395,9 +402,6 @@ export class GalaxyMeteorEffect {
       destination.selected = !destination.selected
       destination.ring.visible = destination.selected
       if (destination.fortuneLocator) this.onDestinationClick()
-      if (destination.starSendLocator) {
-        this.onStarSendLocatorClick()
-      }
       return true
     }
     return false
@@ -414,9 +418,6 @@ export class GalaxyMeteorEffect {
       }
       if (destination.fortuneLocator && this.reducedMotion) {
         destination.group.visible = this.fortuneReady && !this.fortuneLocatorDismissed
-      }
-      if (destination.starSendLocator && this.reducedMotion) {
-        destination.group.visible = this.starSendAvailable
       }
       destination.group.position.copy(
         this.destinationFromScreen(destination.screenX, destination.screenY),
@@ -458,6 +459,9 @@ export class GalaxyMeteorEffect {
         meteor.destination.group.visible = !meteor.destination.revealsPortal
         meteor.destination.group.quaternion.copy(this.camera.quaternion)
         this.activeMeteors.splice(index, 1)
+        if (meteor.firstVisitSequenceId !== undefined) {
+          this.notifyFirstVisitMeteor(meteor.firstVisitSequenceId, true)
+        }
         continue
       }
 
@@ -470,6 +474,11 @@ export class GalaxyMeteorEffect {
   destroy() {
     window.removeEventListener(TIME_FORTUNE_STATE_EVENT, this.handleFortuneState)
     window.removeEventListener(TIME_FORTUNE_DISMISSED_EVENT, this.handleFortuneLocatorDismissed)
+    window.removeEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, this.handleFirstVisitMeteor)
+    window.removeEventListener(
+      TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
+      this.handleFirstVisitMeteorCancel,
+    )
     this.activeMeteors.forEach((meteor) => {
       this.scene.remove(meteor.mesh)
       meteor.mesh.geometry.dispose()
@@ -490,7 +499,6 @@ export class GalaxyMeteorEffect {
     screenY: number,
     revealsPortal: boolean,
     fortuneLocator: boolean,
-    starSendLocator: boolean,
   ): DestinationStar {
     const group = new THREE.Group()
     group.position.copy(position)
@@ -511,7 +519,6 @@ export class GalaxyMeteorEffect {
       selected: false,
       revealsPortal,
       fortuneLocator,
-      starSendLocator,
     }
   }
 
@@ -522,6 +529,7 @@ export class GalaxyMeteorEffect {
     startTime: number,
     duration: number,
     landsAtDestination = false,
+    firstVisitSequenceId?: number,
   ) {
     const segments = 40
     const positions = new Float32Array((segments + 1) * 2 * 3)
@@ -566,6 +574,7 @@ export class GalaxyMeteorEffect {
       landsAtDestination,
       startTime,
       duration,
+      firstVisitSequenceId,
     })
   }
 

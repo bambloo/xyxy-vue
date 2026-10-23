@@ -486,17 +486,32 @@ export class GalaxyManager {
           ({ sourceStarId, targetStarId }) =>
             !this.downvotedStarIds.has(sourceStarId) && !this.downvotedStarIds.has(targetStarId),
         )
-    const incomingKeys = new Set(
-      visibleConnections.map(({ sourceStarId, targetStarId }) => `${sourceStarId}:${targetStarId}`),
-    )
+    const uniqueConnections = new Map<
+      string,
+      { sourceStarId: string; targetStarId: string; count: number }
+    >()
+    visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
+      const [firstStarId, secondStarId] = [sourceStarId, targetStarId].sort()
+      const key = `${firstStarId}:${secondStarId}`
+      const existing = uniqueConnections.get(key)
+      if (existing) {
+        existing.count += count
+        return
+      }
+      uniqueConnections.set(key, {
+        sourceStarId: firstStarId,
+        targetStarId: secondStarId,
+        count,
+      })
+    })
+    const incomingKeys = new Set(uniqueConnections.keys())
     this.socialLinks.forEach((link, key) => {
       if (incomingKeys.has(key)) return
       link.destroy(this.options.galaxy)
       this.socialLinks.delete(key)
     })
 
-    visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
-      const key = `${sourceStarId}:${targetStarId}`
+    uniqueConnections.forEach(({ sourceStarId, targetStarId, count }, key) => {
       const existing = this.socialLinks.get(key)
       if (existing) {
         existing.setConnectionCount(count)

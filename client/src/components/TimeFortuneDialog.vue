@@ -2,14 +2,26 @@
 import '@/styles/daily-fortune.css'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
+import {
+  GALAXY_STAR_COMPOSE_EVENT,
+  GALAXY_STAR_COMPOSER_STATE_EVENT,
+  type GalaxyStarComposeOptions,
+} from '@/events/galaxy-star'
 import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
 import UserProfileEditDialog from '@/components/UserProfileEditDialog.vue'
 import SiteInfoView from '@/views/user/SiteInfoView.vue'
 import { timeFortuneRange } from '@/utils/time-fortune'
 import {
   dismissTimeFortuneLocator,
+  hasOpenedTimeFortune,
+  markTimeFortuneOpened,
+  TIME_FORTUNE_DIALOG_STATE_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
+  TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT,
   TIME_FORTUNE_HISTORY_EVENT,
   TIME_FORTUNE_OPEN_EVENT,
   setTimeFortuneReady,
@@ -37,18 +49,23 @@ interface FortuneDetails {
 }
 
 const auth = useAuthStore()
+const route = useRoute()
 const { t } = useI18n()
 const requestLoading = ref(false)
 const detailsLoading = ref(false)
 const runId = ref(0)
 const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
+const composerOpen = ref(false)
 const profileDialogOpen = ref(false)
 const siteInfoOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
 const fortuneDialog = ref<HTMLElement | null>(null)
 let dragStart: { pointerId: number; y: number; scrollTop: number } | undefined
+let firstVisitSequenceId = 0
+let firstVisitSequenceActive = false
+let cancelFirstVisitMeteor: (() => void) | undefined
 
 function responseData(packet: { data?: unknown }): FortuneDetails | undefined {
   return packet.data as FortuneDetails | undefined
@@ -65,7 +82,7 @@ watch(
     if (!auth.isLoggedIn) {
       status.value = 'hidden'
       setTimeFortuneReady(false)
-      dialogOpen.value = false
+      setDialogOpen(false)
       details.value = undefined
       return
     }
@@ -104,8 +121,26 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [route.name, auth.currentUser?.tag, auth.isSessionValidated, status.value] as const,
+  ([routeName, userTag, isSessionValidated, fortuneStatus]) => {
+    const shouldRun =
+      !['home', 'galaxy'].includes(String(routeName)) ||
+      !userTag ||
+      !isSessionValidated ||
+      fortuneStatus === 'hidden' ||
+      hasOpenedTimeFortune(userTag)
+    if (shouldRun) {
+      stopFirstVisitSequence()
+      return
+    }
+    if (!firstVisitSequenceActive) void runFirstVisitSequence()
+  },
+  { immediate: true },
+)
+
 async function openFortuneDialog(history: boolean) {
-  dialogOpen.value = true
+  setDialogOpen(true)
   detailsError.value = ''
   details.value = undefined
   if (status.value === 'hidden') {
@@ -147,6 +182,96 @@ async function openFortuneDialog(history: boolean) {
   }
 }
 
+function setDialogOpen(open: boolean) {
+  dialogOpen.value = open
+  window.dispatchEvent(new CustomEvent(TIME_FORTUNE_DIALOG_STATE_EVENT, { detail: open }))
+}
+
+function openDailyFortune() {
+  stopFirstVisitSequence()
+  const userTag = auth.currentUser?.tag
+  if (userTag) markTimeFortuneOpened(userTag)
+  void openFortuneDialog(false)
+  window.dispatchEvent(
+    new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
+      detail: { onlyIfAvailable: true, pairedWithFortune: true },
+    }),
+  )
+}
+
+async function runFirstVisitSequence() {
+  firstVisitSequenceActive = true
+  const sequenceId = ++firstVisitSequenceId
+  const userTag = auth.currentUser?.tag
+  if (!userTag) {
+    firstVisitSequenceActive = false
+    return
+  }
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    while (sequenceId === firstVisitSequenceId && status.value !== 'ready') {
+      await wait(250)
+    }
+    if (sequenceId === firstVisitSequenceId && !hasOpenedTimeFortune(userTag)) {
+      firstVisitSequenceActive = false
+      openDailyFortune()
+    }
+    return
+  }
+
+  while (sequenceId === firstVisitSequenceId && status.value !== 'ready') {
+    await wait(250)
+  }
+  if (sequenceId !== firstVisitSequenceId || status.value !== 'ready') return
+
+  const arrived = await flyFirstVisitMeteor(sequenceId)
+  if (!arrived || sequenceId !== firstVisitSequenceId) return
+
+  firstVisitSequenceActive = false
+  dismissTimeFortuneLocator(userTag)
+  openDailyFortune()
+}
+
+function flyFirstVisitMeteor(sequenceId: number) {
+  return new Promise<boolean>((resolve) => {
+    const cleanup = () => {
+      window.removeEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT, handleArrival)
+      window.removeEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, handleCancel)
+      cancelFirstVisitMeteor = undefined
+    }
+    const handleArrival = (event: Event) => {
+      const detail = (event as CustomEvent<{ sequenceId: number; arrived: boolean }>).detail
+      if (detail.sequenceId !== sequenceId) return
+      cleanup()
+      resolve(detail.arrived)
+    }
+    const handleCancel = (event: Event) => {
+      if ((event as CustomEvent<number>).detail !== sequenceId) return
+      cleanup()
+      resolve(false)
+    }
+    window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT, handleArrival)
+    window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, handleCancel)
+    cancelFirstVisitMeteor = () => {
+      window.dispatchEvent(
+        new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT, { detail: sequenceId }),
+      )
+      cleanup()
+      resolve(false)
+    }
+    window.dispatchEvent(
+      new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+    )
+  })
+}
+
+function stopFirstVisitSequence() {
+  firstVisitSequenceId += 1
+  firstVisitSequenceActive = false
+  cancelFirstVisitMeteor?.()
+  cancelFirstVisitMeteor = undefined
+}
+
 function localDate() {
   const now = new Date()
   const year = String(now.getFullYear()).padStart(4, '0')
@@ -158,7 +283,7 @@ function localDate() {
 function handleLocatorOpen() {
   const userTag = auth.currentUser?.tag
   if (userTag) dismissTimeFortuneLocator(userTag)
-  void openFortuneDialog(false)
+  openDailyFortune()
 }
 
 function handleHistoryOpen() {
@@ -167,14 +292,18 @@ function handleHistoryOpen() {
 
 function handleButtonToggle() {
   if (dialogOpen.value) {
-    dialogOpen.value = false
+    setDialogOpen(false)
     return
   }
-  void openFortuneDialog(false)
+  openDailyFortune()
 }
 
 function openSiteInfo() {
   siteInfoOpen.value = true
+}
+
+function handleComposerState(event: Event) {
+  composerOpen.value = (event as CustomEvent<boolean>).detail
 }
 
 function handleDialogPointerDown(event: PointerEvent) {
@@ -208,12 +337,15 @@ onMounted(() => {
   window.addEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
   window.addEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.addEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
+  window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
 })
 
 onBeforeUnmount(() => {
+  stopFirstVisitSequence()
   window.removeEventListener(TIME_FORTUNE_OPEN_EVENT, handleLocatorOpen)
   window.removeEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.removeEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
+  window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
   runId.value += 1
   dragStart = undefined
 })
@@ -222,10 +354,16 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="fortune-dialog">
-      <div v-if="dialogOpen" class="fortune-overlay" @click.self="dialogOpen = false">
+      <div
+        v-if="dialogOpen"
+        class="fortune-overlay"
+        :class="{ 'fortune-overlay-paired': composerOpen }"
+        @click.self="setDialogOpen(false)"
+      >
         <section
           ref="fortuneDialog"
           class="fortune-dialog"
+          :class="{ 'fortune-dialog-paired': composerOpen }"
           role="dialog"
           aria-modal="true"
           aria-labelledby="fortune-title"
@@ -259,7 +397,7 @@ onBeforeUnmount(() => {
               class="dialog-icon-button dialog-close"
               type="button"
               aria-label="关闭"
-              @click="dialogOpen = false"
+              @click="setDialogOpen(false)"
             >
               ×
             </button>
@@ -303,10 +441,7 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </Transition>
-    <UserProfileEditDialog
-      :open="profileDialogOpen"
-      @close="profileDialogOpen = false"
-    />
+    <UserProfileEditDialog :open="profileDialogOpen" @close="profileDialogOpen = false" />
     <SiteInfoView v-if="siteInfoOpen" dialog @close="siteInfoOpen = false" />
   </Teleport>
 </template>
@@ -321,6 +456,12 @@ onBeforeUnmount(() => {
   padding: 24px;
   background: rgba(1, 7, 19, 0.76);
   backdrop-filter: blur(12px);
+}
+
+.fortune-overlay-paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 24px;
 }
 
 .fortune-dialog {
@@ -343,6 +484,27 @@ onBeforeUnmount(() => {
     0 28px 90px rgba(0, 0, 0, 0.55),
     inset 0 0 36px rgba(121, 175, 241, 0.08);
   color: #e8f1fb;
+}
+
+.fortune-dialog-paired {
+  grid-column: 1;
+  width: 100%;
+  max-height: min(88vh, 860px);
+}
+
+@media (max-width: 760px) {
+  .fortune-overlay-paired {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .fortune-dialog-paired {
+    grid-row: 1;
+    max-height: 45vh;
+    padding: 28px 20px 18px;
+  }
 }
 
 .fortune-dialog::-webkit-scrollbar {
@@ -376,7 +538,7 @@ onBeforeUnmount(() => {
 }
 
 .dialog-icon-button:hover {
-  background: rgba(137, 177, 226, .14);
+  background: rgba(137, 177, 226, 0.14);
 }
 
 .dialog-action {

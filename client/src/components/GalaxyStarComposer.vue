@@ -3,12 +3,18 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { GALAXY_STAR_COLORS, type SentGalaxyStar } from '../../../common/entity/galaxy-star'
 import {
   GALAXY_STAR_COMPOSE_EVENT,
+  announceGalaxyStarComposerState,
   announceGalaxyStarSendStatus,
   announceGalaxyStarSent,
+  type GalaxyStarComposeOptions,
 } from '@/events/galaxy-star'
 import { post } from '@/scripts/request'
+import { TIME_FORTUNE_DIALOG_STATE_EVENT } from '@/events/time-fortune'
 
 const isOpen = ref(false)
+const composerDialog = ref<HTMLElement | null>(null)
+const pairedWithFortune = ref(false)
+const fortuneDialogOpen = ref(false)
 const statusLoading = ref(false)
 const sending = ref(false)
 const canSend = ref<boolean>()
@@ -17,8 +23,12 @@ const title = ref('')
 const content = ref('')
 const color = ref<(typeof GALAXY_STAR_COLORS)[number]>(GALAXY_STAR_COLORS[0])
 
-async function openComposer() {
-  isOpen.value = true
+async function openComposer(event?: Event) {
+  const options =
+    event instanceof CustomEvent
+      ? (event.detail as GalaxyStarComposeOptions | undefined)
+      : undefined
+  pairedWithFortune.value = options?.pairedWithFortune === true
   statusLoading.value = true
   error.value = ''
   canSend.value = undefined
@@ -29,14 +39,38 @@ async function openComposer() {
       throw new Error('星星发送状态暂不可用，请稍后重试。')
     }
     canSend.value = result.canSend
+    if (options?.onlyIfAvailable && !result.canSend) {
+      closeComposer()
+      return
+    }
+    isOpen.value = true
+    announceGalaxyStarComposerState(true)
     announceGalaxyStarSendStatus(result.canSend)
   } catch (cause) {
     console.error('读取每日星星发送状态失败', cause)
+    isOpen.value = true
+    announceGalaxyStarComposerState(true)
     error.value =
       (cause as { msg?: string; message?: string }).msg ||
       (cause as { message?: string }).message ||
       '星星发送状态加载失败，请稍后重试。'
   }
+}
+
+function closeComposer() {
+  isOpen.value = false
+  pairedWithFortune.value = false
+  announceGalaxyStarComposerState(false)
+}
+
+function handleFortuneDialogState(event: Event) {
+  fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
+}
+
+function handleOutsidePointerDown(event: PointerEvent) {
+  if (!isOpen.value || !(event.target instanceof Node)) return
+  if (composerDialog.value?.contains(event.target)) return
+  closeComposer()
 }
 
 async function sendStar() {
@@ -67,26 +101,35 @@ async function sendStar() {
   }
 }
 
-onMounted(() => window.addEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer))
-onBeforeUnmount(() => window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer))
+onMounted(() => {
+  window.addEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
+  window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  document.addEventListener('pointerdown', handleOutsidePointerDown)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
+  window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  document.removeEventListener('pointerdown', handleOutsidePointerDown)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="fortune-dialog">
-      <div v-if="isOpen" class="star-compose-overlay" @click.self="isOpen = false">
+      <div
+        v-if="isOpen"
+        class="star-compose-overlay"
+        :class="{ 'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen }"
+        @click.self="closeComposer"
+      >
         <section
           class="star-compose-dialog"
+          ref="composerDialog"
           role="dialog"
           aria-modal="true"
           aria-labelledby="star-compose-title"
         >
-          <button
-            class="star-compose-close"
-            type="button"
-            aria-label="关闭"
-            @click="isOpen = false"
-          >
+          <button class="star-compose-close" type="button" aria-label="关闭" @click="closeComposer">
             ×
           </button>
           <p class="star-compose-eyebrow">A MESSAGE TO THE GALAXY</p>
@@ -153,6 +196,15 @@ onBeforeUnmount(() => window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, open
   backdrop-filter: blur(12px);
 }
 
+.star-compose-overlay-paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 24px;
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
 .star-compose-dialog {
   position: relative;
   width: min(100%, 480px);
@@ -168,6 +220,29 @@ onBeforeUnmount(() => window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, open
     0 28px 90px rgba(0, 0, 0, 0.55),
     inset 0 0 36px rgba(121, 175, 241, 0.08);
   color: #e8f1fb;
+}
+
+.star-compose-overlay-paired .star-compose-dialog {
+  grid-column: 2;
+  width: 100%;
+  max-height: min(88vh, 860px);
+  pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  .star-compose-overlay-paired {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .star-compose-overlay-paired .star-compose-dialog {
+    grid-column: 1;
+    grid-row: 2;
+    max-height: 45vh;
+    padding: 28px 20px 18px;
+  }
 }
 
 .star-compose-close {

@@ -39,14 +39,13 @@ export class GalaxyScene {
   constructor(
     host: HTMLElement,
     onDestinationClick: () => void,
-    onStarSendLocatorClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
     onBlackHoleClick: () => void,
     blackHoleView = false,
   ) {
     this.host = host
     this.onBlackHoleClick = onBlackHoleClick
-    this.createGalaxy(onDestinationClick, onStarSendLocatorClick, onSentStarClick, blackHoleView)
+    this.createGalaxy(onDestinationClick, onSentStarClick, blackHoleView)
   }
 
   setSentStars(stars: GalaxyStarView[]) {
@@ -69,10 +68,6 @@ export class GalaxyScene {
 
   setConnections(connections: GalaxyStarConnection[]) {
     this.manager?.setConnections(connections)
-  }
-
-  setStarSendAvailable(available: boolean) {
-    this.meteorEffect?.setStarSendAvailable(available)
   }
 
   pointerDown(event: PointerEvent) {
@@ -307,7 +302,6 @@ export class GalaxyScene {
 
   private createGalaxy(
     onDestinationClick: () => void,
-    onStarSendLocatorClick: () => void,
     onSentStarClick: (star: SentGalaxyStar) => void,
     blackHoleView: boolean,
   ) {
@@ -346,7 +340,6 @@ export class GalaxyScene {
       this.camera,
       this.reducedMotion,
       onDestinationClick,
-      onStarSendLocatorClick,
     )
     this.meteorEffect.setEnabled(!blackHoleView)
     this.manager = new GalaxyManager({

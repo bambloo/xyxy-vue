@@ -8,13 +8,8 @@ import type {
   GalaxyStarVote,
   SentGalaxyStar,
 } from '../../../common/entity/galaxy-star'
-import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
 import { post } from '@/scripts/request'
-import {
-  GALAXY_STAR_COMPOSE_EVENT,
-  GALAXY_STAR_SEND_STATUS_EVENT,
-  GALAXY_STAR_SENT_EVENT,
-} from '@/events/galaxy-star'
+import { GALAXY_STAR_SENT_EVENT } from '@/events/galaxy-star'
 import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 import { createGalaxyStarTextureCanvas } from '../scripts/core/galaxy/starTexture'
@@ -37,7 +32,6 @@ const commentError = ref('')
 const commentText = ref('')
 const replyingToCommentId = ref('')
 const todayStarId = ref('')
-const canSendStar = ref(false)
 const hiddenStarIds = ref<string[]>([])
 const blackHoleTotalCount = ref(0)
 const viewportSize = ref({ width: window.innerWidth, height: window.innerHeight })
@@ -194,12 +188,10 @@ async function loadGalaxyStars() {
     ])
     const listData = listPacket.data as Partial<GalaxyStarListResponse> | undefined
     const statusData = statusPacket.data as
-      | { canSend?: boolean; hasSentToday?: boolean; todayStarId?: string; resetsAt?: string }
-      | undefined
+      { hasSentToday?: boolean; todayStarId?: string; resetsAt?: string } | undefined
     if (
       !listData ||
       !statusData ||
-      typeof statusData.canSend !== 'boolean' ||
       typeof statusData.hasSentToday !== 'boolean' ||
       typeof statusData.resetsAt !== 'string'
     ) {
@@ -207,8 +199,6 @@ async function loadGalaxyStars() {
     }
     applyGalaxyData(listData)
     todayStarId.value = statusData.todayStarId ?? ''
-    canSendStar.value = statusData.canSend
-    galaxyScene?.setStarSendAvailable(canSendStar.value && !props.blackHoleView)
     if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
     const resetDelay = Date.parse(statusData.resetsAt) - Date.now()
     if (Number.isFinite(resetDelay)) {
@@ -251,10 +241,8 @@ function handleStarSent(event: Event) {
   }
   sentStars.value = [...sentStars.value, ownedStar]
   todayStarId.value = star.id
-  canSendStar.value = false
   galaxyScene?.setSentStars(sentStars.value)
   galaxyScene?.setDownvotedStarIds(hiddenStarIds.value)
-  galaxyScene?.setStarSendAvailable(false)
   void refreshGalaxyAfterStarSent()
 }
 
@@ -356,17 +344,11 @@ function toggleCommentReply(comment: GalaxyStarComment) {
   commentError.value = ''
 }
 
-function handleStarSendStatus(event: Event) {
-  canSendStar.value = (event as CustomEvent<boolean>).detail
-  galaxyScene?.setStarSendAvailable(canSendStar.value && !props.blackHoleView)
-}
-
 watch(
   () => props.blackHoleView,
   (enabled, previousEnabled) => {
     if (enabled === previousEnabled) return
     galaxyScene?.setBlackHoleView(enabled)
-    galaxyScene?.setStarSendAvailable(canSendStar.value && !enabled)
     void loadGalaxyStars()
   },
 )
@@ -397,13 +379,11 @@ onMounted(() => {
     galaxyScene = new GalaxyScene(
       canvasHost.value,
       () => window.dispatchEvent(new Event(TIME_FORTUNE_OPEN_EVENT)),
-      () => window.dispatchEvent(new Event(GALAXY_STAR_COMPOSE_EVENT)),
       selectSentStar,
       () => void router.push({ name: 'blackhole' }),
       props.blackHoleView,
     )
     window.addEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
-    window.addEventListener(GALAXY_STAR_SEND_STATUS_EVENT, handleStarSendStatus)
     void loadGalaxyStars()
   }
 })
@@ -412,7 +392,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateBlackHoleGridSize)
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
-  window.removeEventListener(GALAXY_STAR_SEND_STATUS_EVENT, handleStarSendStatus)
   galaxyScene?.destroy()
   galaxyScene = undefined
 })
@@ -474,7 +453,6 @@ onBeforeUnmount(() => {
       @pointercancel="handlePointerUp"
       @wheel.prevent="handleWheel"
     ></section>
-    <GalaxyStarComposer v-if="!props.blackHoleView" />
     <p v-if="sceneError" class="galaxy-scene-error" role="alert">{{ sceneError }}</p>
     <div
       v-if="selectedStar"

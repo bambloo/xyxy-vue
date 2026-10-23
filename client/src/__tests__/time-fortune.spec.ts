@@ -1,9 +1,35 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { timeFortuneOrder, timeFortuneRange } from '@/utils/time-fortune'
+import { hasOpenedTimeFortune, markTimeFortuneOpened } from '@/events/time-fortune'
 import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
 
 describe('time fortune periods', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    localStorage.clear()
+  })
+
+  it('remembers whether each user has opened daily fortune', () => {
+    localStorage.clear()
+
+    expect(hasOpenedTimeFortune('user-a')).toBe(false)
+    markTimeFortuneOpened('user-a')
+    expect(hasOpenedTimeFortune('user-a')).toBe(true)
+    expect(hasOpenedTimeFortune('user-b')).toBe(false)
+  })
+
+  it('resets the opened state on the next local day', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 9, 23, 23, 59))
+
+    markTimeFortuneOpened('user-a')
+    expect(hasOpenedTimeFortune('user-a')).toBe(true)
+
+    vi.setSystemTime(new Date(2026, 9, 24, 0, 0))
+    expect(hasOpenedTimeFortune('user-a')).toBe(false)
+  })
+
   it('splits zi hour into early and late periods', () => {
     expect(timeFortuneRange('早子时')).toBe('00:00-01:00')
     expect(timeFortuneRange('晚子时')).toBe('23:00-24:00')

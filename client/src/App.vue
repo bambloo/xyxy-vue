@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
+import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
 import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
@@ -103,6 +104,7 @@ function handleFortuneActivate() {
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
     <TimeFortuneDialog />
+    <GalaxyStarComposer />
     <Teleport to="body">
       <SunPortalButton
         v-if="canShowPortalButton"
