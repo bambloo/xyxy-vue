@@ -24,6 +24,8 @@ const emit = defineEmits<{
 }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
+const swipeGlow = ref({ x: 0, y: 0, angle: 0, stretch: 1, strength: 0 })
+const isSwiping = ref(false)
 let effect: StarCoronaCanvasEffect | undefined
 let pointerStart: { id: number; x: number; y: number } | undefined
 let suppressNextClick = false
@@ -35,14 +37,37 @@ onMounted(() => {
 function handlePointerDown(event: PointerEvent) {
   if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
   pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  isSwiping.value = true
+  swipeGlow.value = { x: 0, y: 0, angle: 0, stretch: 1, strength: 0 }
   if (event.isTrusted) (event.currentTarget as HTMLButtonElement).setPointerCapture(event.pointerId)
+}
+
+function handlePointerMove(event: PointerEvent) {
+  if (!pointerStart || pointerStart.id !== event.pointerId) return
+  const deltaX = event.clientX - pointerStart.x
+  const deltaY = event.clientY - pointerStart.y
+  const distance = Math.hypot(deltaX, deltaY)
+  const strength = distance < 8 ? 0 : Math.min(1, (distance - 8) / 48)
+  const glowOffset = 16 * strength
+  const directionX = distance === 0 ? 0 : deltaX / distance
+  const directionY = distance === 0 ? 0 : deltaY / distance
+  swipeGlow.value = {
+    x: directionX * glowOffset,
+    y: directionY * glowOffset,
+    angle: (Math.atan2(deltaY, deltaX) * 180) / Math.PI,
+    stretch: 1 + strength * 0.9,
+    strength,
+  }
 }
 
 function handlePointerUp(event: PointerEvent) {
   if (!pointerStart || pointerStart.id !== event.pointerId) return
+  handlePointerMove(event)
   const deltaY = pointerStart.y - event.clientY
   const deltaX = pointerStart.x - event.clientX
   pointerStart = undefined
+  isSwiping.value = false
+  swipeGlow.value = { x: 0, y: 0, angle: 0, stretch: 1, strength: 0 }
   if (Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY)) {
     suppressNextClick = true
     if (deltaX > 0) emit('swipe-left')
@@ -66,6 +91,8 @@ function handleClick() {
 
 function clearPointer() {
   pointerStart = undefined
+  isSwiping.value = false
+  swipeGlow.value = { x: 0, y: 0, angle: 0, stretch: 1, strength: 0 }
 }
 
 onBeforeUnmount(() => effect?.destroy())
@@ -78,8 +105,16 @@ onBeforeUnmount(() => effect?.destroy())
     :aria-label="label"
     :title="title"
     :disabled="disabled"
+    :class="{ 'is-swiping': isSwiping }"
+    :style="{
+      '--swipe-glow-x': `${swipeGlow.x}px`,
+      '--swipe-glow-y': `${swipeGlow.y}px`,
+      '--swipe-glow-angle': `${swipeGlow.angle}deg`,
+      '--swipe-glow-stretch': swipeGlow.stretch,
+      '--swipe-glow-opacity': swipeGlow.strength,
+    }"
     @pointerdown.stop="handlePointerDown"
-    @pointermove.stop
+    @pointermove.stop="handlePointerMove"
     @pointerup.stop="handlePointerUp"
     @pointercancel.stop="clearPointer"
     @click.stop="handleClick"
@@ -105,15 +140,43 @@ onBeforeUnmount(() => effect?.destroy())
   border-radius: 50%;
   background: transparent;
   color: #fff9dc;
-  filter: drop-shadow(0 0 10.5px rgba(255, 207, 31, 0.7));
+  filter: drop-shadow(
+    var(--swipe-glow-x) var(--swipe-glow-y) 10.5px rgba(255, 207, 31, 0.7)
+  );
   cursor: grab;
   touch-action: none;
   user-select: none;
   transition: filter 180ms ease;
 }
 
+.sun-portal-button::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse 68% 42% at center,
+    rgba(255, 232, 109, 0.9),
+    rgba(255, 175, 25, 0.48) 48%,
+    transparent 78%
+  );
+  content: '';
+  filter: blur(10px);
+  opacity: var(--swipe-glow-opacity);
+  pointer-events: none;
+  transform: translate(var(--swipe-glow-x), var(--swipe-glow-y))
+    rotate(var(--swipe-glow-angle)) scaleX(var(--swipe-glow-stretch));
+  transition: opacity 140ms ease;
+}
+
+.sun-portal-button.is-swiping {
+  transition: none;
+}
+
 .sun-portal-button:hover:not(:disabled) {
-  filter: drop-shadow(0 0 16.1px rgba(255, 226, 69, 0.95));
+  filter: drop-shadow(
+    var(--swipe-glow-x) var(--swipe-glow-y) 16.1px rgba(255, 226, 69, 0.95)
+  );
 }
 
 .sun-portal-button:focus-visible {

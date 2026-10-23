@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { GALAXY_STAR_COLORS, type SentGalaxyStar } from '../../../common/entity/galaxy-star'
 import {
   GALAXY_STAR_COMPOSE_EVENT,
@@ -21,7 +21,8 @@ const canSend = ref<boolean>()
 const error = ref('')
 const title = ref('')
 const content = ref('')
-const color = ref<(typeof GALAXY_STAR_COLORS)[number]>(GALAXY_STAR_COLORS[0])
+const color = ref<string>(GALAXY_STAR_COLORS[0])
+const isCustomColor = computed(() => !GALAXY_STAR_COLORS.some((preset) => preset === color.value))
 
 async function openComposer(event?: Event) {
   const options =
@@ -158,6 +159,17 @@ onBeforeUnmount(() => {
             </label>
             <fieldset class="star-compose-colors">
               <legend>选择星星颜色</legend>
+              <label
+                class="star-compose-color star-compose-custom-color"
+                :class="{ selected: isCustomColor }"
+              >
+                <input
+                  v-model="color"
+                  type="color"
+                  aria-label="自定义星星颜色"
+                  title="自定义星星颜色"
+                />
+              </label>
               <button
                 v-for="preset in GALAXY_STAR_COLORS"
                 :key="preset"
@@ -331,7 +343,20 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.star-compose-custom-color input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .star-compose-color {
+  position: relative;
   width: 28px;
   height: 28px;
   padding: 0;
@@ -339,6 +364,19 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: var(--swatch-color);
   cursor: pointer;
+}
+
+.star-compose-custom-color {
+  background: conic-gradient(
+    #ff5252,
+    #ffb142,
+    #fffa65,
+    #32ff7e,
+    #18dcff,
+    #7d5fff,
+    #cd84f1,
+    #ff5252
+  );
 }
 
 .star-compose-color.selected {

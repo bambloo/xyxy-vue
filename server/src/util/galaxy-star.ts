@@ -132,10 +132,9 @@ export async function sendGalaxyStar(
   const day = getGalaxyStarDay(now)
   const title = typeof params.title === 'string' ? params.title.trim() : ''
   const content = typeof params.content === 'string' ? params.content.trim() : ''
-  const color = params.color
-  const isPresetColor = (value: unknown): value is SentGalaxyStar['color'] =>
-    typeof value === 'string' && GALAXY_STAR_COLORS.some((preset) => preset === value)
-  if (!title || title.length > 40 || !content || content.length > 500 || !isPresetColor(color)) {
+  const color = typeof params.color === 'string' ? params.color.toLowerCase() : ''
+  const isValidColor = /^#[0-9a-f]{6}$/.test(color)
+  if (!title || title.length > 40 || !content || content.length > 500 || !isValidColor) {
     throw new BamblooError(BamblooStatusCode.BadRequest, '星星标题、内容或颜色不符合要求')
   }
 

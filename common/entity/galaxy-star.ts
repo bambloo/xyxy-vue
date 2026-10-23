@@ -15,7 +15,7 @@ export interface SentGalaxyStar {
   id: string
   title: string
   content: string
-  color: (typeof GALAXY_STAR_COLORS)[number]
+  color: string
   createdAt: string
 }
 

@@ -119,6 +119,10 @@ function createBlackHoleEntryRandom(id: string, index: number, layoutSeed: strin
   }
 }
 
+function meetsBlackHoleThreshold(likeCount = 0, dislikeCount = 0) {
+  return dislikeCount > 8 && dislikeCount > likeCount * 1.5
+}
+
 function blackHoleEntryStyle(
   entry: GalaxyBlackHoleEntry,
   index: number,
@@ -615,7 +619,15 @@ onBeforeUnmount(() => {
             class="sent-star-content"
             :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }"
           >
-            {{ selectedStar.content }}
+            <template
+              v-if="
+                !props.blackHoleView &&
+                meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
+              "
+            >
+              该内容因被踩过多已隐藏，可在黑洞星域查看。
+            </template>
+            <template v-else>{{ selectedStar.content }}</template>
           </p>
           <div class="sent-star-votes">
             <button
@@ -667,7 +679,17 @@ onBeforeUnmount(() => {
                 <p v-if="comment.replyToTitle" class="sent-star-reply-context">
                   回复 {{ comment.replyToTitle }}
                 </p>
-                <p class="sent-star-comment-content">{{ comment.content }}</p>
+                <p class="sent-star-comment-content">
+                  <template
+                    v-if="
+                      !props.blackHoleView &&
+                      meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount)
+                    "
+                  >
+                    该评论因被踩过多已隐藏，可在黑洞星域查看。
+                  </template>
+                  <template v-else>{{ comment.content }}</template>
+                </p>
                 <div class="sent-star-comment-actions">
                   <div class="sent-star-comment-votes">
                     <button
