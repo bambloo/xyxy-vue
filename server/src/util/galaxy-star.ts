@@ -3,6 +3,7 @@ import type { Response } from 'express'
 import { MongoServerError, type Collection } from 'mongodb'
 import {
   GALAXY_STAR_COLORS,
+  type GalaxyBlackHoleEntry,
   type GalaxyStarComment,
   type GalaxyStarConnection,
   type GalaxyStarListView,
@@ -19,6 +20,12 @@ import { refresh_session } from './session'
 import { response } from './secretary'
 import type { WpiRequest } from './wpi-access'
 
+type GalaxyStarCommentRecord = GalaxyStarComment & {
+  userTag: string
+  anonymousDay?: string
+  votes?: { userTag: string; vote: GalaxyStarVote }[]
+}
+
 export interface GalaxyStarRecord extends SentGalaxyStar {
   _id: string
   userTag: string
@@ -31,12 +38,36 @@ export interface GalaxyStarRecord extends SentGalaxyStar {
   }[]
   likeCount?: number
   dislikeCount?: number
-  comments?: (GalaxyStarComment & { userTag: string; anonymousDay?: string })[]
+  comments?: GalaxyStarCommentRecord[]
   links?: { sourceStarId: string; createdAt: string }[]
+}
+
+export interface GalaxyBlackHoleRecord extends GalaxyBlackHoleEntry {
+  _id: string
+  contentId: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface GalaxyBlackHoleMetadata {
+  _id: string
+  migratedAt?: string
 }
 
 export async function getGalaxyStarCollection() {
   return mongo_helper.ddo((db) => db.collection<GalaxyStarRecord>('galaxy_star'))
+}
+
+async function getGalaxyBlackHoleCollection() {
+  return mongo_helper.ddo((db) =>
+    db.collection<GalaxyBlackHoleRecord>('galaxy_black_hole_content'),
+  )
+}
+
+async function getGalaxyBlackHoleMetadataCollection() {
+  return mongo_helper.ddo((db) =>
+    db.collection<GalaxyBlackHoleMetadata>('galaxy_black_hole_metadata'),
+  )
 }
 
 export function getGalaxyStarDay(now = new Date()) {
@@ -230,7 +261,93 @@ export async function voteForGalaxyStar(
     throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这颗星星')
   }
 
+  const updatedStar = await collection.findOne({ _id: target._id })
+  if (updatedStar) {
+    await syncBlackHoleEntriesForStar(updatedStar, await getGalaxyBlackHoleCollection())
+  }
   return listGalaxyStars(params, collection, user.tag, res)
+}
+
+export async function voteForGalaxyStarComment(
+  params: Record<string, unknown>,
+  collection: Collection<GalaxyStarRecord>,
+  user: User,
+  res: Response,
+  now = new Date(),
+) {
+  const day = getGalaxyStarDay(now)
+  const starId = typeof params.starId === 'string' ? params.starId.trim() : ''
+  const commentId = typeof params.commentId === 'string' ? params.commentId.trim() : ''
+  const vote = params.vote
+  if (!starId || !commentId || (vote !== 'like' && vote !== 'dislike')) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '评论评价无效')
+  }
+
+  const sourceStar = await collection.findOne({ _id: `${user.tag}:${day}` })
+  if (!sourceStar) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '今天寄出星星后才能评价评论')
+  }
+  const target = await collection.findOne(
+    { id: starId },
+    { projection: { _id: 1, comments: 1 } },
+  )
+  if (!target) {
+    throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
+  }
+  const comment = target.comments?.find(({ id }) => id === commentId)
+  if (!comment) {
+    throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
+  }
+  if (comment.userTag === user.tag) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '不能评价自己的评论')
+  }
+  if (comment.votes?.some(({ userTag }) => userTag === user.tag)) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这条评论')
+  }
+
+  const createdAt = format_timestamp(now)
+  const updated = await collection.updateOne(
+    {
+      _id: target._id,
+      comments: {
+        $elemMatch: {
+          id: commentId,
+          userTag: { $ne: user.tag },
+          'votes.userTag': { $ne: user.tag },
+        },
+      },
+    },
+    {
+      $push: {
+        'comments.$[targetComment].votes': { userTag: user.tag, vote },
+        links: { sourceStarId: sourceStar.id, createdAt },
+      },
+      $inc: {
+        [`comments.$[targetComment].${vote === 'like' ? 'likeCount' : 'dislikeCount'}`]: 1,
+      },
+    },
+    {
+      arrayFilters: [
+        {
+          'targetComment.id': commentId,
+          'targetComment.userTag': { $ne: user.tag },
+          'targetComment.votes.userTag': { $ne: user.tag },
+        },
+      ],
+    },
+  )
+  if (updated.modifiedCount !== 1) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '你已经评价过这条评论')
+  }
+
+  const updatedStar = await collection.findOne({ _id: target._id })
+  if (updatedStar) {
+    await syncBlackHoleEntriesForStar(updatedStar, await getGalaxyBlackHoleCollection())
+    return response(res, BamblooStatusCode.Success, undefined, {
+      star: mapGalaxyStarRecord(updatedStar, user.tag),
+    })
+  }
+  throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
 }
 
 export async function commentOnGalaxyStar(
@@ -271,11 +388,14 @@ export async function commentOnGalaxyStar(
   }
 
   const createdAt = format_timestamp(now)
-  const comment: GalaxyStarComment & { userTag: string } = {
+  const comment: GalaxyStarCommentRecord = {
     id: randomUUID(),
     content,
     createdAt,
     userTag: user.tag,
+    likeCount: 0,
+    dislikeCount: 0,
+    votes: [],
     ...(sourceStar
       ? { sourceStarId: sourceStar.id, sourceStarTitle: sourceStar.title }
       : { anonymousDay: day }),
@@ -350,6 +470,11 @@ export async function seedGalaxyBlackHoleStars(
       },
     })),
   )
+  const blackHoleCollection = await getGalaxyBlackHoleCollection()
+  for (const record of seedRecords) {
+    const savedRecord = await collection.findOne({ _id: record._id })
+    if (savedRecord) await syncBlackHoleEntriesForStar(savedRecord, blackHoleCollection)
+  }
   return response(res, BamblooStatusCode.Success, undefined, {
     createdCount: result.upsertedCount,
     starIds: seedRecords.map(({ id }) => id),
@@ -377,7 +502,86 @@ export async function listGalaxyStars(
   const limit = view === 'blackhole' ? getBlackHoleLimit(params.limit) : 100
   const excludedStarIds = getStarIdSet(params.excludeIds, '排除星星列表')
   const requestedStarIds = getStarIdSet(params.includeIds, '指定星星列表')
+  if (view === 'blackhole') {
+    const blackHoleCollection = await getGalaxyBlackHoleCollection()
+    const metadataCollection = await getGalaxyBlackHoleMetadataCollection()
+    const migration = await metadataCollection.findOne({ _id: 'entries-v1' })
+    if (!migration?.migratedAt) {
+      const records = await collection.find({}).toArray()
+      await reconcileBlackHoleEntries(records, blackHoleCollection)
+      await metadataCollection.updateOne(
+        { _id: 'entries-v1' },
+        { $set: { migratedAt: format_timestamp(new Date()) } },
+        { upsert: true },
+      )
+    }
+    const requestedEntries =
+      requestedStarIds.size > 0
+        ? await blackHoleCollection
+            .find({ _id: { $in: [...requestedStarIds] } })
+            .sort({ updatedAt: -1 })
+            .limit(limit)
+            .toArray()
+        : []
+    const candidates =
+      requestedEntries.length > 0
+        ? requestedEntries
+        : await blackHoleCollection
+            .find({ _id: { $nin: [...excludedStarIds] } })
+            .sort({ updatedAt: -1 })
+            .limit(limit)
+            .toArray()
+    const selectedRecords =
+      candidates.length > 0 || excludedStarIds.size === 0
+        ? candidates
+        : await blackHoleCollection.find({}).sort({ updatedAt: -1 }).limit(limit).toArray()
+    const selectedEntries = selectedRecords.map(
+      ({ _id: id, contentId: _contentId, createdAt: _createdAt, updatedAt: _updatedAt, ...entry }) => ({
+        ...entry,
+        id,
+      }),
+    )
+    const totalCount = await blackHoleCollection.countDocuments()
+    return response(res, BamblooStatusCode.Success, undefined, {
+      stars: [],
+      connections: [],
+      hiddenStarIds: [],
+      blackHoleEntries: selectedEntries,
+      totalCount,
+    })
+  }
   return listStars(collection, userTag, res, view, limit, excludedStarIds, requestedStarIds)
+}
+
+export async function getGalaxyBlackHoleContent(
+  params: Record<string, unknown>,
+  collection: Collection<GalaxyStarRecord>,
+  userTag: string,
+  res: Response,
+) {
+  const entryId = typeof params.entryId === 'string' ? params.entryId.trim() : ''
+  if (!entryId) {
+    throw new BamblooError(BamblooStatusCode.BadRequest, '黑洞内容标识无效')
+  }
+  const blackHoleCollection = await getGalaxyBlackHoleCollection()
+  const entry = await blackHoleCollection.findOne({ _id: entryId })
+  if (!entry) {
+    throw new BamblooError(BamblooStatusCode.EntityNonexist, '黑洞内容已不存在')
+  }
+  const record = await collection.findOne({ id: entry.starId })
+  if (!record) {
+    await blackHoleCollection.deleteOne({ _id: entryId })
+    throw new BamblooError(BamblooStatusCode.EntityNonexist, '相关星星已不存在')
+  }
+  await syncBlackHoleEntriesForStar(record, blackHoleCollection)
+  const currentEntry = await blackHoleCollection.findOne({ _id: entryId })
+  if (!currentEntry) {
+    throw new BamblooError(BamblooStatusCode.EntityNonexist, '该内容已不再符合黑洞条件')
+  }
+  return response(res, BamblooStatusCode.Success, undefined, {
+    star: mapGalaxyStarRecord(record, userTag),
+    selectedCommentId: currentEntry.kind === 'comment' ? currentEntry.contentId : undefined,
+  })
 }
 
 async function listStars(
@@ -404,22 +608,13 @@ async function listStars(
     const [sourceStarId = '', targetStarId = ''] = key.split(':')
     return { sourceStarId, targetStarId, count }
   })
-  const hiddenRecords = records.filter(isBlackHoleStar)
-  const hiddenIds = hiddenRecords.map(({ id }) => id)
-  const visibleConnections =
-    view === 'blackhole'
-      ? []
-      : allConnections.filter(
-          ({ sourceStarId, targetStarId }) =>
-            !hiddenIds.includes(sourceStarId) && !hiddenIds.includes(targetStarId),
-        )
+  const visibleConnections = allConnections
   const connectionCounts = new Map<string, number>()
   visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
     connectionCounts.set(sourceStarId, (connectionCounts.get(sourceStarId) ?? 0) + count)
     connectionCounts.set(targetStarId, (connectionCounts.get(targetStarId) ?? 0) + count)
   })
-  const selectedRecords =
-    view === 'blackhole' ? hiddenRecords : records.filter((record) => !isBlackHoleStar(record))
+  const selectedRecords = records
   const totalCount = selectedRecords.length
   let batchRecords = selectedRecords
   if (view === 'blackhole') {
@@ -455,7 +650,20 @@ async function listStars(
       connectionCount: connectionCounts.get(star.id) ?? 0,
       comments: userTag
         ? comments.map(
-            ({ userTag: _commentUserTag, anonymousDay: _anonymousDay, ...comment }) => comment,
+            ({
+              userTag: commentUserTag,
+              anonymousDay: _anonymousDay,
+              votes: commentVotes = [],
+              likeCount: commentLikes = 0,
+              dislikeCount: commentDislikes = 0,
+              ...comment
+            }) => ({
+              ...comment,
+              likeCount: commentLikes,
+              dislikeCount: commentDislikes,
+              myVote: commentVotes.find(({ userTag: voterTag }) => voterTag === userTag)?.vote,
+              isOwn: commentUserTag === userTag,
+            }),
           )
         : [],
       isOwn: Boolean(userTag && ownerTag === userTag),
@@ -465,7 +673,8 @@ async function listStars(
   return response(res, BamblooStatusCode.Success, undefined, {
     stars,
     connections: visibleConnections,
-    hiddenStarIds: view === 'blackhole' ? batchRecords.map(({ id }) => id) : hiddenIds,
+    hiddenStarIds: [],
+    blackHoleEntries: [],
     totalCount,
   })
 }
@@ -496,8 +705,131 @@ function getBlackHoleSeedCount(value: unknown) {
   return value
 }
 
+function mapGalaxyStarRecord(record: GalaxyStarRecord, userTag: string): GalaxyStarView {
+  const {
+    _id: _recordId,
+    userTag: ownerTag,
+    day: _day,
+    votes = [],
+    links: _links,
+    likeCount = 0,
+    dislikeCount = 0,
+    comments = [],
+    ...star
+  } = record
+  return {
+    ...star,
+    likeCount,
+    dislikeCount,
+    connectionCount: 0,
+    comments: comments.map(
+      ({
+        userTag: commentUserTag,
+        anonymousDay: _anonymousDay,
+        votes: commentVotes = [],
+        likeCount: commentLikes = 0,
+        dislikeCount: commentDislikes = 0,
+        ...comment
+      }) => ({
+        ...comment,
+        likeCount: commentLikes,
+        dislikeCount: commentDislikes,
+        myVote: commentVotes.find(({ userTag: voterTag }) => voterTag === userTag)?.vote,
+        isOwn: commentUserTag === userTag,
+      }),
+    ),
+    isOwn: ownerTag === userTag,
+    myVote: votes.find((entry) => entry.userTag === userTag)?.vote,
+  }
+}
+
 function isBlackHoleStar(star: Pick<GalaxyStarRecord, 'likeCount' | 'dislikeCount'>) {
   const likeCount = star.likeCount ?? 0
   const dislikeCount = star.dislikeCount ?? 0
   return dislikeCount > 8 && dislikeCount > likeCount * 1.5
+}
+
+function isBlackHoleComment(
+  comment: Pick<GalaxyStarComment, 'likeCount' | 'dislikeCount'>,
+) {
+  const likeCount = comment.likeCount ?? 0
+  const dislikeCount = comment.dislikeCount ?? 0
+  return dislikeCount > 8 && dislikeCount > likeCount * 1.5
+}
+
+function createBlackHoleEntries(record: GalaxyStarRecord): GalaxyBlackHoleRecord[] {
+  const now = format_timestamp(new Date())
+  const entries: GalaxyBlackHoleRecord[] = []
+  if (isBlackHoleStar(record)) {
+    entries.push({
+      _id: `star:${record.id}`,
+      id: `star:${record.id}`,
+      starId: record.id,
+      contentId: record.id,
+      kind: 'star',
+      content: record.content,
+      likeCount: record.likeCount ?? 0,
+      dislikeCount: record.dislikeCount ?? 0,
+      createdAt: record.createdAt,
+      updatedAt: now,
+    })
+  }
+  record.comments?.filter(isBlackHoleComment).forEach((comment) => {
+    entries.push({
+      _id: `comment:${record.id}:${comment.id}`,
+      id: `comment:${record.id}:${comment.id}`,
+      starId: record.id,
+      contentId: comment.id,
+      kind: 'comment',
+      content: comment.content,
+      likeCount: comment.likeCount ?? 0,
+      dislikeCount: comment.dislikeCount ?? 0,
+      createdAt: comment.createdAt,
+      updatedAt: now,
+    })
+  })
+  return entries
+}
+
+async function syncBlackHoleEntriesForStar(
+  record: GalaxyStarRecord,
+  blackHoleCollection: Collection<GalaxyBlackHoleRecord>,
+) {
+  const entries = createBlackHoleEntries(record)
+  const entryIds = entries.map(({ _id }) => _id)
+  if (entries.length > 0) {
+    await blackHoleCollection.bulkWrite(
+      entries.map(({ _id, id, ...entry }) => ({
+        updateOne: {
+          filter: { _id },
+          update: { $set: { ...entry, id }, $setOnInsert: { _id } },
+          upsert: true,
+        },
+      })),
+    )
+  }
+  await blackHoleCollection.deleteMany({
+    starId: record.id,
+    ...(entryIds.length > 0 ? { _id: { $nin: entryIds } } : {}),
+  })
+}
+
+async function reconcileBlackHoleEntries(
+  records: GalaxyStarRecord[],
+  blackHoleCollection: Collection<GalaxyBlackHoleRecord>,
+) {
+  const entries = records.flatMap(createBlackHoleEntries)
+  const entryIds = entries.map(({ _id }) => _id)
+  if (entries.length > 0) {
+    await blackHoleCollection.bulkWrite(
+      entries.map(({ _id, id, ...entry }) => ({
+        updateOne: {
+          filter: { _id },
+          update: { $set: { ...entry, id }, $setOnInsert: { _id } },
+          upsert: true,
+        },
+      })),
+    )
+  }
+  await blackHoleCollection.deleteMany(entryIds.length > 0 ? { _id: { $nin: entryIds } } : {})
 }

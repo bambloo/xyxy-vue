@@ -14,7 +14,7 @@ type ActiveMeteor = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
   destination: DestinationStar
   end: THREE.Vector3
-  start?: THREE.Vector3
+  start: THREE.Vector3
   rotations: number
   landsAtDestination: boolean
   startTime: number
@@ -35,6 +35,8 @@ type DestinationStar = {
 
 const DESTINATION_STAR_PIXELS = 500
 const RIPPLE_REFERENCE_PIXELS = 144
+const METEOR_START_DEPTH = 2200
+const METEOR_END_DEPTH = 180
 
 function randomFortuneFlight() {
   const direction = Math.random() < 0.5 ? -1 : 1
@@ -181,7 +183,11 @@ export class GalaxyMeteorEffect {
     this.removeDestinationMeteors(destination)
     this.spawnMeteor(
       destination,
-      this.destinationFromScreen(destination.screenX, destination.screenY),
+      this.destinationFromScreen(
+        destination.screenX,
+        destination.screenY,
+        METEOR_END_DEPTH,
+      ),
       0.42,
       performance.now(),
       4200,
@@ -293,7 +299,7 @@ export class GalaxyMeteorEffect {
     targets
       .filter((target) => !target.fortuneLocator || !this.fortuneLocatorDismissed)
       .forEach((target) => {
-        const endpoint = this.destinationFromScreen(target.x, target.y)
+        const endpoint = this.destinationFromScreen(target.x, target.y, METEOR_END_DEPTH)
         const destination = this.createDestination(
           endpoint,
           target.x,
@@ -372,7 +378,11 @@ export class GalaxyMeteorEffect {
       } else {
         this.spawnMeteor(
           destination,
-          this.destinationFromScreen(destination.screenX, destination.screenY),
+          this.destinationFromScreen(
+            destination.screenX,
+            destination.screenY,
+            METEOR_END_DEPTH,
+          ),
           0.42,
           now,
           1800,
@@ -438,7 +448,11 @@ export class GalaxyMeteorEffect {
       if (nowMs < meteor.startTime) continue
       if (meteor.landsAtDestination) {
         meteor.end.copy(
-          this.destinationFromScreen(meteor.destination.screenX, meteor.destination.screenY),
+          this.destinationFromScreen(
+            meteor.destination.screenX,
+            meteor.destination.screenY,
+            METEOR_END_DEPTH,
+          ),
         )
       }
       const progress = (nowMs - meteor.startTime) / meteor.duration
@@ -569,7 +583,7 @@ export class GalaxyMeteorEffect {
       mesh,
       destination,
       end,
-      start: destination.fortuneLocator ? this.randomFortuneStart(destination) : undefined,
+      start: destination.fortuneLocator ? this.randomFortuneStart(destination) : this.randomMeteorStart(end),
       rotations,
       landsAtDestination,
       startTime,
@@ -585,7 +599,11 @@ export class GalaxyMeteorEffect {
   ) {
     const flight = randomFortuneFlight()
     const end = landsAtDestination
-      ? this.destinationFromScreen(destination.screenX, destination.screenY)
+      ? this.destinationFromScreen(
+          destination.screenX,
+          destination.screenY,
+          METEOR_END_DEPTH,
+        )
       : this.randomFortuneEnd(destination)
     this.spawnMeteor(
       destination,
@@ -626,7 +644,8 @@ export class GalaxyMeteorEffect {
         2 *
         center.distanceTo(this.camera.position) *
         Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
-      const halfWidth = viewHeight * 0.018 * (0.12 + along * 0.88)
+      const perspectiveScale = THREE.MathUtils.lerp(0.9, 2.4, pathProgress)
+      const halfWidth = viewHeight * 0.018 * (0.12 + along * 0.88) * perspectiveScale
       const offset = segment * 6
       positions[offset] = center.x + side.x * halfWidth
       positions[offset + 1] = center.y + side.y * halfWidth
@@ -639,9 +658,8 @@ export class GalaxyMeteorEffect {
     meteor.mesh.geometry.computeBoundingSphere()
   }
 
-  private destinationFromScreen(x: number, y: number) {
+  private destinationFromScreen(x: number, y: number, depth = 900) {
     this.camera.updateMatrixWorld(true)
-    const depth = 900
     const viewHeight = 2 * depth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
     const viewWidth = viewHeight * this.camera.aspect
     const cameraPosition = new THREE.Vector3(x * viewWidth * 0.5, y * viewHeight * 0.5, -depth)
@@ -652,28 +670,22 @@ export class GalaxyMeteorEffect {
     end: THREE.Vector3,
     progress: number,
     rotations: number,
-    start?: THREE.Vector3,
+    start: THREE.Vector3,
   ) {
-    if (start) {
-      const inverseProgress = 1 - progress
-      const direction = end.clone().sub(start)
-      const distance = direction.length()
-      const curveDirection = new THREE.Vector3().crossVectors(direction, this.orbitAxis).normalize()
-      const control = start
-        .clone()
-        .add(end)
-        .multiplyScalar(0.5)
-        .addScaledVector(curveDirection, distance * rotations)
-      return start
-        .clone()
-        .multiplyScalar(inverseProgress * inverseProgress)
-        .addScaledVector(control, 2 * inverseProgress * progress)
-        .addScaledVector(end, progress * progress)
-    }
-    return end
+    const inverseProgress = 1 - progress
+    const direction = end.clone().sub(start)
+    const distance = direction.length()
+    const curveDirection = new THREE.Vector3().crossVectors(direction, this.orbitAxis).normalize()
+    const control = start
       .clone()
-      .applyAxisAngle(this.orbitAxis, (1 - progress) * rotations * Math.PI * 2)
-      .multiplyScalar(progress)
+      .add(end)
+      .multiplyScalar(0.5)
+      .addScaledVector(curveDirection, distance * rotations)
+    return start
+      .clone()
+      .multiplyScalar(inverseProgress * inverseProgress)
+      .addScaledVector(control, 2 * inverseProgress * progress)
+      .addScaledVector(end, progress * progress)
   }
 
   private randomFortuneStart(destination: DestinationStar) {
@@ -681,7 +693,7 @@ export class GalaxyMeteorEffect {
     const distance = 0.7 + Math.random() * 1.4
     const x = destination.screenX + Math.cos(angle) * distance
     const y = destination.screenY + Math.sin(angle) * distance
-    return this.destinationFromScreen(x, y)
+    return this.destinationFromScreen(x, y, METEOR_START_DEPTH)
   }
 
   private randomFortuneEnd(destination: DestinationStar) {
@@ -691,7 +703,24 @@ export class GalaxyMeteorEffect {
       x = Math.random() * 2.7 - 1.35
       y = Math.random() * 2.7 - 1.35
     } while (Math.hypot(x - destination.screenX, y - destination.screenY) < 0.7)
-    return this.destinationFromScreen(x, y)
+    return this.destinationFromScreen(x, y, METEOR_END_DEPTH)
+  }
+
+  private randomMeteorStart(end: THREE.Vector3) {
+    const cameraEnd = this.camera.worldToLocal(end.clone())
+    const endDepth = Math.max(this.camera.near, -cameraEnd.z)
+    const screenX =
+      cameraEnd.x /
+      (endDepth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)) * this.camera.aspect)
+    const screenY =
+      cameraEnd.y / (endDepth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)))
+    const offsetX = (Math.random() * 2 - 1) * 0.28
+    const offsetY = (Math.random() * 2 - 1) * 0.28
+    return this.destinationFromScreen(
+      screenX + offsetX,
+      screenY + offsetY,
+      METEOR_START_DEPTH,
+    )
   }
 
   private cameraBounds() {

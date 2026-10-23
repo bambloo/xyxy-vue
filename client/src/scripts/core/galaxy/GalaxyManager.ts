@@ -21,7 +21,9 @@ type GalaxyManagerOptions = {
 }
 
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
-const SENT_STAR_LABEL_OFFSET = 7
+const SENT_STAR_LABEL_OFFSET_PIXELS = 18
+const SENT_STAR_LABEL_WIDTH_PIXELS = 112
+const SENT_STAR_LABEL_HEIGHT_PIXELS = 28
 const SENT_STAR_LABEL_MAX_DISTANCE = 160
 const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
@@ -47,19 +49,12 @@ type SentStarVisual = {
   labelMaterial: THREE.SpriteMaterial
 }
 
-type HiddenStarAssignment = {
-  field: THREE.Points
-  index: number
-  color: THREE.Color
-}
-
 export class GalaxyManager {
   private readonly options: GalaxyManagerOptions
   private readonly stars = new Map<string, GalaxyStar>()
   private readonly links: GalaxyLink[] = []
   private readonly socialLinks = new Map<string, GalaxyLink>()
   private readonly sentStars = new Map<string, SentStarVisual>()
-  private readonly hiddenStarAssignments = new Map<string, HiddenStarAssignment>()
   private downvotedStarIds = new Set<string>()
   private currentConnections: GalaxyStarConnection[] = []
   private blackHoleView = false
@@ -260,7 +255,6 @@ export class GalaxyManager {
       star.labelMaterial.dispose()
     })
     this.sentStars.clear()
-    this.hiddenStarAssignments.clear()
   }
 
   private recordInteraction() {
@@ -378,12 +372,9 @@ export class GalaxyManager {
   setSentStars(stars: GalaxyStarView[]) {
     const incomingIds = new Set(stars.map((star) => star.id))
     const usedStarKeys = new Set(this.stars.keys())
-    this.hiddenStarAssignments.forEach(({ field, index }) => {
-      usedStarKeys.add(`${field.uuid}:${index}`)
-    })
     this.sentStars.forEach((star, id) => {
       if (incomingIds.has(id)) return
-      star.star.setVisible(this.isStarVisible(id))
+      star.star.setVisible(this.isStarVisible())
       this.options.galaxy.remove(star.label)
       star.labelTexture.dispose()
       star.labelMaterial.dispose()
@@ -404,19 +395,15 @@ export class GalaxyManager {
         }
         existing.data = data
         existing.star.setConnectionCount(data.connectionCount)
-        existing.star.setVisible(this.isStarVisible(data.id))
-        existing.label.visible = this.isStarVisible(data.id)
+        existing.star.setVisible(this.isStarVisible())
+        existing.label.visible = this.isStarVisible()
         return
       }
-      const hiddenAssignment = this.hiddenStarAssignments.get(data.id)
-      if (hiddenAssignment) this.setHiddenStarPointVisible(data.id, hiddenAssignment, true)
-      const { field, index } = hiddenAssignment
-        ? { field: hiddenAssignment.field, index: hiddenAssignment.index }
-        : this.originalStarForId(data.id, usedStarKeys)
+      const { field, index } = this.originalStarForId(data.id, usedStarKeys)
       const star = this.getOrCreateStar(field, index, data.color)
       star.setColor(data.color)
       star.setConnectionCount(data.connectionCount)
-      star.setVisible(this.isStarVisible(data.id))
+      star.setVisible(this.isStarVisible())
       usedStarKeys.add(`${field.uuid}:${index}`)
 
       const labelTexture = this.makeLabelTexture(data.title, data.color)
@@ -428,8 +415,8 @@ export class GalaxyManager {
       })
       const label = new THREE.Sprite(labelMaterial)
       label.position.copy(star.position)
-      label.scale.set(72, 20, 1)
-      label.visible = this.isStarVisible(data.id)
+      label.scale.set(SENT_STAR_LABEL_WIDTH_PIXELS, SENT_STAR_LABEL_HEIGHT_PIXELS, 1)
+      label.visible = this.isStarVisible()
       this.options.galaxy.add(label)
       this.options.materials.push(labelMaterial)
       this.sentStars.set(data.id, {
@@ -445,41 +432,6 @@ export class GalaxyManager {
   setDownvotedStarIds(ids: string[]) {
     if (this.blackHoleView) return
     this.downvotedStarIds = new Set(ids)
-    const usedStarKeys = new Set(this.stars.keys())
-    this.hiddenStarAssignments.forEach(({ field, index }) => {
-      usedStarKeys.add(`${field.uuid}:${index}`)
-    })
-    ids.forEach((id) => {
-      if (this.hiddenStarAssignments.has(id)) return
-      const sentStar = this.sentStars.get(id)?.star
-      if (sentStar) {
-        sentStar.setVisible(true)
-      }
-      const { field, index } = sentStar
-        ? { field: sentStar.field, index: sentStar.index }
-        : this.originalStarForId(id, usedStarKeys)
-      const fieldColors = field.geometry.getAttribute('color')
-      const color = fieldColors
-        ? new THREE.Color().fromBufferAttribute(fieldColors, index)
-        : new THREE.Color(1, 1, 1)
-      this.hiddenStarAssignments.set(id, { field, index, color })
-      usedStarKeys.add(`${field.uuid}:${index}`)
-    })
-    this.hiddenStarAssignments.forEach((assignment, id) => {
-      if (this.downvotedStarIds.has(id)) {
-        const sentStar = this.sentStars.get(id)?.star
-        if (sentStar) sentStar.setVisible(false)
-        else this.setHiddenStarPointVisible(id, assignment, false)
-        return
-      }
-      this.setHiddenStarPointVisible(id, assignment, true)
-      this.hiddenStarAssignments.delete(id)
-    })
-    this.sentStars.forEach((star, id) => {
-      const visible = this.isStarVisible(id)
-      star.star.setVisible(visible)
-      star.label.visible = visible
-    })
     this.setConnections(this.currentConnections)
   }
 
@@ -494,14 +446,9 @@ export class GalaxyManager {
       this.clearSelection(this.options.galaxy)
     }
     this.sentStars.forEach((star, id) => {
-      const visible = this.isStarVisible(id)
+      const visible = this.isStarVisible()
       star.star.setVisible(visible)
       star.label.visible = visible
-    })
-    this.hiddenStarAssignments.forEach((assignment, id) => {
-      const sentStar = this.sentStars.get(id)?.star
-      if (sentStar) sentStar.setVisible(this.isStarVisible(id))
-      else this.setHiddenStarPointVisible(id, assignment, this.isStarVisible(id))
     })
     this.setConnections(this.currentConnections)
   }
@@ -578,25 +525,8 @@ export class GalaxyManager {
     return star
   }
 
-  private setHiddenStarPointVisible(
-    id: string,
-    assignment: HiddenStarAssignment,
-    visible: boolean,
-  ) {
-    const sentStar = this.sentStars.get(id)?.star
-    if (sentStar) {
-      sentStar.setVisible(visible)
-      return
-    }
-    const fieldColors = assignment.field.geometry.getAttribute('color')
-    if (!fieldColors) return
-    const color = visible ? assignment.color : new THREE.Color(0, 0, 0)
-    fieldColors.setXYZ(assignment.index, color.r, color.g, color.b)
-    fieldColors.needsUpdate = true
-  }
-
-  private isStarVisible(id: string) {
-    return !this.blackHoleView && !this.downvotedStarIds.has(id)
+  private isStarVisible() {
+    return !this.blackHoleView
   }
 
   private updateSentStarLabels() {
@@ -605,23 +535,18 @@ export class GalaxyManager {
     galaxy.updateMatrixWorld(true)
     camera.updateMatrixWorld(true)
     const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
-    const cameraUp = new THREE.Vector3(0, 1, 0)
-      .applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()))
-      .normalize()
+    const viewportHeight = Math.max(1, this.options.renderer.domElement.clientHeight)
     this.sentStars.forEach((star) => {
       const worldPosition = galaxy.localToWorld(star.star.position.clone())
       const cameraSpacePosition = camera.worldToLocal(worldPosition.clone())
       const inFrontOfCamera = cameraSpacePosition.z < 0
       const withinLabelRange =
         worldPosition.distanceTo(cameraPosition) <= SENT_STAR_LABEL_MAX_DISTANCE
-      star.label.visible = this.isStarVisible(star.data.id) && inFrontOfCamera && withinLabelRange
+      star.label.visible = this.isStarVisible() && inFrontOfCamera && withinLabelRange
       if (!star.label.visible) return
 
-      const labelWorldPosition = worldPosition
-        .clone()
-        .addScaledVector(cameraUp, SENT_STAR_LABEL_OFFSET)
-      const labelCameraPosition = camera.worldToLocal(labelWorldPosition)
       const minimumLabelDepth = camera.near + 5
+      const labelCameraPosition = cameraSpacePosition.clone()
       const labelDepth = -labelCameraPosition.z
       if (labelDepth < minimumLabelDepth) {
         const depthScale = minimumLabelDepth / Math.max(labelDepth, camera.near)
@@ -629,6 +554,15 @@ export class GalaxyManager {
         labelCameraPosition.y *= depthScale
         labelCameraPosition.z = -minimumLabelDepth
       }
+      const safeDepth = -labelCameraPosition.z
+      const viewHeight = 2 * safeDepth * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5))
+      const worldUnitsPerPixel = viewHeight / viewportHeight
+      labelCameraPosition.y += worldUnitsPerPixel * SENT_STAR_LABEL_OFFSET_PIXELS
+      star.label.scale.set(
+        worldUnitsPerPixel * SENT_STAR_LABEL_WIDTH_PIXELS,
+        worldUnitsPerPixel * SENT_STAR_LABEL_HEIGHT_PIXELS,
+        1,
+      )
       camera.localToWorld(labelCameraPosition)
       star.label.position.copy(galaxy.worldToLocal(labelCameraPosition))
     })

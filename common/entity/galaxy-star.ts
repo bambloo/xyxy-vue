@@ -26,7 +26,17 @@ export interface GalaxyStarListResponse {
   stars: GalaxyStarView[]
   connections: GalaxyStarConnection[]
   hiddenStarIds: string[]
+  blackHoleEntries: GalaxyBlackHoleEntry[]
   totalCount: number
+}
+
+export interface GalaxyBlackHoleEntry {
+  id: string
+  starId: string
+  kind: 'star' | 'comment'
+  content: string
+  likeCount: number
+  dislikeCount: number
 }
 
 export interface GalaxyStarComment {
@@ -36,6 +46,10 @@ export interface GalaxyStarComment {
   content: string
   createdAt: string
   parentCommentId?: string
+  likeCount?: number
+  dislikeCount?: number
+  myVote?: GalaxyStarVote
+  isOwn?: boolean
 }
 
 export interface GalaxyStarConnection {

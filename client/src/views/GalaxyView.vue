@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type {
+  GalaxyBlackHoleEntry,
   GalaxyStarComment,
   GalaxyStarListResponse,
   GalaxyStarView,
@@ -14,7 +15,6 @@ import { GALAXY_STAR_SENT_EVENT } from '@/events/galaxy-star'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import { TIME_FORTUNE_OPEN_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
-import { createGalaxyStarTextureCanvas } from '../scripts/core/galaxy/starTexture'
 
 const props = withDefaults(defineProps<{ blackHoleView?: boolean }>(), {
   blackHoleView: false,
@@ -37,74 +37,16 @@ const replyingToCommentId = ref('')
 const todayStarId = ref('')
 const hiddenStarIds = ref<string[]>([])
 const blackHoleTotalCount = ref(0)
-const viewportSize = ref({ width: window.innerWidth, height: window.innerHeight })
+const blackHoleEntries = ref<GalaxyBlackHoleEntry[]>([])
+const blackHoleContentLoading = ref(false)
+const selectedCommentId = ref('')
 const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
 const hasSentToday = computed(() => Boolean(todayStarId.value))
 const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValidated)
-const downvotedStars = computed(() => sentStars.value.filter(isBlackHoleStar))
-const blackHolePlanetRadius = computed(
-  () => Math.min(viewportSize.value.width, viewportSize.value.height) * 0.45,
-)
-const blackHoleLayoutRadius = computed(() => Math.max(0, blackHolePlanetRadius.value - 72))
 const blackHoleWaveSize = 20
-const blackHoleWave = computed(() => downvotedStars.value)
-const blackHoleWaveKey = computed(() => blackHoleWave.value.map((star) => star.id).join(':'))
-const blackHolePlanetLayouts = computed(() => {
-  const stars = blackHoleWave.value
-  const count = stars.length
-  if (count === 0) return []
-  const radius = blackHoleLayoutRadius.value
-  const planetSize = Math.max(20, Math.min(42, Math.sqrt((Math.PI * radius ** 2) / count) * 0.45))
-  const minDistance = Math.max(34, planetSize + 8)
-  let seed = stars.reduce((value, star) => {
-    for (let index = 0; index < star.id.length; index += 1) {
-      value = Math.imul(value ^ star.id.charCodeAt(index), 16777619)
-    }
-    return value >>> 0
-  }, 2166136261)
-  const random = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
-    return seed / 4294967296
-  }
-  const positions: { x: number; y: number }[] = []
-  for (let index = 0; index < count; index += 1) {
-    let candidate: { x: number; y: number } | undefined
-    for (let attempt = 0; attempt < 500; attempt += 1) {
-      const angle = random() * Math.PI * 2
-      const distance = Math.sqrt(random()) * radius
-      const next = { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance }
-      if (
-        positions.every(
-          (position) => Math.hypot(position.x - next.x, position.y - next.y) >= minDistance,
-        )
-      ) {
-        candidate = next
-        break
-      }
-    }
-    if (!candidate) {
-      const distance = radius * Math.sqrt((index + 0.5) / count)
-      const angle = index * Math.PI * (3 - Math.sqrt(5))
-      candidate = { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance }
-    }
-    positions.push(candidate)
-  }
-  return stars.map((star, index) => {
-    const position = positions[index]!
-    return {
-      star,
-      style: {
-        left: `${50 + (position.x / viewportSize.value.width) * 100}%`,
-        top: `${50 + (position.y / viewportSize.value.height) * 100}%`,
-        '--planet-color': star.color,
-        '--planet-size': `${planetSize}px`,
-        '--star-texture': `url("${createGalaxyStarTextureCanvas(star.color).toDataURL()}")`,
-        '--twinkle-delay': `${random() * -3}s`,
-      },
-    }
-  })
-})
+const blackHoleWave = computed(() => blackHoleEntries.value)
+const blackHoleWaveKey = computed(() => blackHoleWave.value.map((entry) => entry.id).join(':'))
 let galaxyScene: GalaxyScene | undefined
 let dailyResetTimer: number | undefined
 
@@ -114,18 +56,40 @@ function currentListViewParams(preserveBlackHoleWave = false) {
     ...(props.blackHoleView
       ? {
           limit: blackHoleWaveSize,
-          ...(preserveBlackHoleWave ? { includeIds: sentStars.value.map((star) => star.id) } : {}),
+          ...(preserveBlackHoleWave
+            ? {
+                includeIds: props.blackHoleView
+                  ? blackHoleEntries.value.map((entry) => entry.id)
+                  : sentStars.value.map((star) => star.id),
+              }
+            : {}),
         }
       : {}),
   }
 }
 
-function isBlackHoleStar(star: GalaxyStarView) {
-  return star.dislikeCount > 8 && star.dislikeCount > star.likeCount * 1.5
-}
+function blackHoleEntryStyle(entry: GalaxyBlackHoleEntry, index: number) {
+  let seed = 2166136261
+  for (const character of `${entry.id}:${index}`) {
+    seed = Math.imul(seed ^ character.charCodeAt(0), 16777619)
+  }
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return seed / 0x100000000
+  }
 
-function updateBlackHoleGridSize() {
-  viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
+  const drift = () => `${Math.round(random() * 72 - 36)}px`
+  return {
+    '--entry-x': `${Math.round(random() * 48 + 22)}%`,
+    '--entry-y': `${Math.round(random() * 48 + 22)}%`,
+    '--drift-x': drift(),
+    '--drift-y': drift(),
+    '--drift-duration': `${Math.round(random() * 12 + 13)}s`,
+    '--drift-delay': `${Math.round(random() * -20)}s`,
+    '--entry-angle': `${Math.round(random() * 12 - 6)}deg`,
+    '--entry-opacity': `${(random() * 0.22 + 0.68).toFixed(2)}`,
+    '--entry-size': `${Math.round(random() * 5 + 13)}px`,
+  }
 }
 
 function nextBlackHoleWave() {
@@ -140,8 +104,8 @@ function handleBlackHolePointerDown(event: PointerEvent) {
   const target = event.target
   const captureTarget =
     target instanceof Element
-      ? ((target.closest('.black-hole-planet') as HTMLElement | null) ??
-        (event.currentTarget as HTMLElement))
+      ? (target.closest('.black-hole-content-text') as HTMLElement | null) ??
+        (event.currentTarget as HTMLElement)
       : (event.currentTarget as HTMLElement)
   captureTarget.setPointerCapture(event.pointerId)
 }
@@ -161,12 +125,14 @@ function applyGalaxyData(data: Partial<GalaxyStarListResponse>) {
     !Array.isArray(data.stars) ||
     !Array.isArray(data.connections) ||
     !Array.isArray(data.hiddenStarIds) ||
+    !Array.isArray(data.blackHoleEntries) ||
     typeof data.totalCount !== 'number'
   ) {
     throw new Error('星星数据格式无效')
   }
   sentStars.value = data.stars
   hiddenStarIds.value = data.hiddenStarIds
+  blackHoleEntries.value = data.blackHoleEntries
   blackHoleTotalCount.value = data.totalCount
   if (props.blackHoleView) blackHoleListLoaded.value = true
   galaxyScene?.setSentStars(sentStars.value)
@@ -174,10 +140,11 @@ function applyGalaxyData(data: Partial<GalaxyStarListResponse>) {
   galaxyScene?.setConnections(data.connections)
   if (selectedStar.value) {
     const updatedSelection = sentStars.value.find((star) => star.id === selectedStar.value?.id)
-    selectedStar.value =
-      updatedSelection && (props.blackHoleView || !isBlackHoleStar(updatedSelection))
-        ? updatedSelection
-        : undefined
+    if (updatedSelection) {
+      selectedStar.value = updatedSelection
+    } else if (!props.blackHoleView) {
+      selectedStar.value = undefined
+    }
   }
 }
 
@@ -230,7 +197,7 @@ async function loadBlackHoleWave() {
     const packet = await post('/wpi/user/galaxy-star/list', listLoading, {
       view: 'blackhole',
       limit: blackHoleWaveSize,
-      excludeIds: sentStars.value.map((star) => star.id),
+      excludeIds: blackHoleEntries.value.map((entry) => entry.id),
     })
     applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
   } catch (error) {
@@ -272,7 +239,37 @@ async function refreshGalaxyAfterStarSent() {
 function selectSentStar(star: SentGalaxyStar) {
   if (blackHoleSwipeHandled.value || !canViewStarDetails.value) return
   selectedStar.value = sentStars.value.find((candidate) => candidate.id === star.id)
+  selectedCommentId.value = ''
   voteError.value = ''
+}
+
+async function openBlackHoleEntry(entry: GalaxyBlackHoleEntry) {
+  if (blackHoleSwipeHandled.value || !canViewStarDetails.value || blackHoleContentLoading.value)
+    return
+  try {
+    const packet = await post('/wpi/user/galaxy-star/blackhole-content', blackHoleContentLoading, {
+      entryId: entry.id,
+    })
+    const data = packet.data as
+      | { star?: GalaxyStarView; selectedCommentId?: string }
+      | undefined
+    if (!data?.star) throw new Error('黑洞内容详情格式无效')
+    selectedStar.value = data.star
+    selectedCommentId.value = data.selectedCommentId ?? ''
+    voteError.value = ''
+    await nextTick()
+    if (selectedCommentId.value) {
+      document
+        .getElementById(`sent-star-comment-${selectedCommentId.value}`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  } catch (error) {
+    console.error('读取黑洞内容详情失败', error)
+    sceneError.value =
+      (error as { msg?: string; message?: string }).msg ||
+      (error as { message?: string }).message ||
+      '该内容已不再符合黑洞条件，请刷新后重试。'
+  }
 }
 
 async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
@@ -288,6 +285,34 @@ async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
     applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
   } catch (error) {
     console.error('提交星星评价失败', error)
+    voteError.value =
+      (error as { msg?: string; message?: string }).msg ||
+      (error as { message?: string }).message ||
+      '评价失败，请稍后重试。'
+  } finally {
+    voteLoading.value = false
+  }
+}
+
+async function voteForComment(star: GalaxyStarView, comment: GalaxyStarComment, vote: GalaxyStarVote) {
+  if (!hasSentToday.value || comment.isOwn || comment.myVote || voteLoading.value) return
+  voteError.value = ''
+  voteLoading.value = true
+  try {
+    const packet = await post('/wpi/user/galaxy-star/comment-vote', voteLoading, {
+      starId: star.id,
+      commentId: comment.id,
+      vote,
+    })
+    const data = packet.data as { star?: GalaxyStarView } | undefined
+    if (!data?.star) throw new Error('评论评价数据格式无效')
+    selectedStar.value = data.star
+    sentStars.value = sentStars.value.map((candidate) =>
+      candidate.id === data.star?.id ? data.star : candidate,
+    )
+    void loadGalaxyStars()
+  } catch (error) {
+    console.error('提交评论评价失败', error)
     voteError.value =
       (error as { msg?: string; message?: string }).msg ||
       (error as { message?: string }).message ||
@@ -404,11 +429,6 @@ function handleCameraCenter() {
 }
 
 onMounted(() => {
-  updateBlackHoleGridSize()
-  window.addEventListener('resize', updateBlackHoleGridSize)
-})
-
-onMounted(() => {
   if (canvasHost.value) {
     galaxyScene = new GalaxyScene(
       canvasHost.value,
@@ -425,7 +445,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateBlackHoleGridSize)
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
   window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
@@ -445,40 +464,43 @@ onBeforeUnmount(() => {
       <button type="button" @click="router.push({ name: 'galaxy' })">返回星空</button>
       <div>
         <h1>黑洞星域</h1>
-        <p>踩数 > 赞数 × 1.5 且踩数 > 8 · 共 {{ blackHoleTotalCount }} 颗</p>
+        <p>踩数 > 赞数 × 1.5 且踩数 > 8 · 共 {{ blackHoleTotalCount }} 条内容</p>
       </div>
     </header>
     <section
       v-if="props.blackHoleView"
       class="black-hole-list"
-      aria-label="被踩星球"
+      aria-label="被踩内容"
       @pointerdown="handleBlackHolePointerDown"
       @pointerup="handleBlackHolePointerUp"
       @pointercancel="handleBlackHolePointerUp"
     >
       <p v-if="listLoading && !blackHoleListLoaded" class="black-hole-empty">
-        正在搜寻被引力捕获的星球…
+        正在搜寻被引力捕获的内容…
       </p>
-      <p v-else-if="downvotedStars.length === 0" class="black-hole-empty">暂无符合条件的星球</p>
+      <p v-else-if="blackHoleWave.length === 0" class="black-hole-empty">暂无符合条件的内容</p>
       <template v-else>
         <Transition name="black-hole-wave">
-          <div :key="blackHoleWaveKey" class="black-hole-grid">
-            <button
-              v-for="layout in blackHolePlanetLayouts"
-              :key="layout.star.id"
-              class="black-hole-planet"
-              type="button"
-              :style="layout.style"
-              :aria-label="`${layout.star.title}，被踩 ${layout.star.dislikeCount} 次`"
-              @click="selectSentStar(layout.star)"
+          <div :key="blackHoleWaveKey" class="black-hole-content-list">
+            <div
+              v-for="(entry, index) in blackHoleWave"
+              :key="entry.id"
+              class="black-hole-content-entry"
+              :style="blackHoleEntryStyle(entry, index)"
             >
-              <span class="black-hole-planet-orb" aria-hidden="true"></span>
-              <strong class="black-hole-planet-name">{{ layout.star.title }}</strong>
-            </button>
+              <button
+                class="black-hole-content-text"
+                type="button"
+                :aria-label="`打开被踩${entry.kind === 'comment' ? '评论' : '星体内容'}，被踩 ${entry.dislikeCount} 次`"
+                @click="openBlackHoleEntry(entry)"
+              >
+                {{ entry.content }}
+              </button>
+            </div>
           </div>
         </Transition>
         <p class="black-hole-wave-hint">
-          {{ blackHoleWave.length }} / {{ blackHoleTotalCount }} · 滑动屏幕刷新下一波
+          {{ blackHoleWave.length }} / {{ blackHoleTotalCount }} 条 · 滑动屏幕刷新下一批
         </p>
       </template>
     </section>
@@ -562,7 +584,9 @@ onBeforeUnmount(() => {
                 v-for="comment in selectedCommentThreads"
                 :key="comment.id"
                 class="sent-star-comment"
+                :class="{ 'selected-comment': comment.id === selectedCommentId }"
                 :style="{ '--thread-depth': Math.min(comment.depth, 5) }"
+                :id="`sent-star-comment-${comment.id}`"
               >
                 <div class="sent-star-comment-author">
                   <strong>{{ comment.sourceStarTitle || '匿名用户' }}</strong>
@@ -572,13 +596,43 @@ onBeforeUnmount(() => {
                   回复 {{ comment.replyToTitle }}
                 </p>
                 <p class="sent-star-comment-content">{{ comment.content }}</p>
-                <button
-                  class="sent-star-reply-toggle"
-                  type="button"
-                  @click="toggleCommentReply(comment)"
-                >
-                  {{ replyingToCommentId === comment.id ? '取消回复' : '回复' }}
-                </button>
+                <div class="sent-star-comment-actions">
+                  <div class="sent-star-comment-votes">
+                    <button
+                      type="button"
+                      :class="{ selected: comment.myVote === 'like' }"
+                      :disabled="
+                        comment.isOwn ||
+                        !hasSentToday ||
+                        voteLoading ||
+                        Boolean(comment.myVote)
+                      "
+                      @click="voteForComment(selectedStar, comment, 'like')"
+                    >
+                      赞 {{ comment.likeCount ?? 0 }}
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ selected: comment.myVote === 'dislike' }"
+                      :disabled="
+                        comment.isOwn ||
+                        !hasSentToday ||
+                        voteLoading ||
+                        Boolean(comment.myVote)
+                      "
+                      @click="voteForComment(selectedStar, comment, 'dislike')"
+                    >
+                      踩 {{ comment.dislikeCount ?? 0 }}
+                    </button>
+                  </div>
+                  <button
+                    class="sent-star-reply-toggle"
+                    type="button"
+                    @click="toggleCommentReply(comment)"
+                  >
+                    {{ replyingToCommentId === comment.id ? '取消回复' : '回复' }}
+                  </button>
+                </div>
                 <form
                   v-if="replyingToCommentId === comment.id"
                   class="sent-star-comment-form sent-star-reply-form"
@@ -693,9 +747,16 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.black-hole-grid {
+.black-hole-content-list {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
+  width: min(90vw, 90vh);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  clip-path: circle(50%);
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .black-hole-wave-enter-active,
@@ -717,88 +778,75 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.black-hole-planet {
+.black-hole-content-entry {
   position: absolute;
-  display: flex;
-  width: clamp(90px, 12vw, 132px);
-  min-height: 60px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 0;
-  transform: translate(-50%, -50%);
+  top: var(--entry-y);
+  left: var(--entry-x);
+  width: min(68%, 300px);
+  padding: 4px;
+  transform: rotate(var(--entry-angle));
+  animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite alternate;
   border: 0;
   background: transparent;
-  color: #edf4ff;
+  color: rgba(229, 234, 250, var(--entry-opacity));
   cursor: pointer;
-  text-shadow: 0 1px 8px #02040b;
-  transition:
-    filter 180ms ease,
-    z-index 180ms ease;
+  filter: drop-shadow(0 0 10px rgba(165, 190, 255, 0.36));
+  pointer-events: auto;
+  text-align: left;
+  text-shadow: 0 0 12px rgba(147, 173, 255, 0.68), 0 1px 8px #02040b;
+  transition: color 180ms ease, filter 180ms ease;
 }
 
-.black-hole-planet:hover {
-  z-index: 1;
-  filter: brightness(1.3);
-}
-
-.black-hole-planet-orb {
-  width: calc(var(--planet-size) * 1.6);
-  aspect-ratio: 1;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background-image: var(--star-texture);
-  background-size: contain;
-  filter: drop-shadow(0 0 3px var(--planet-color));
-  animation: black-hole-star-pulse 3s ease-in-out var(--twinkle-delay) infinite alternate;
-}
-
-@keyframes black-hole-star-pulse {
-  from {
-    opacity: 0.86;
-    transform: scale(0.86);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1.14);
-  }
-}
-
-.black-hole-planet-name,
-.black-hole-planet > span:last-child {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-  font-size: clamp(8px, 1vh, 11px);
-  line-height: 1.05;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.black-hole-planet-name {
-  display: block;
-  width: 100%;
-  margin-top: 2px;
-  overflow: visible;
+.black-hole-content-entry:hover {
   color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-  opacity: 1;
-  text-align: center;
-  text-overflow: clip;
-  text-shadow:
-    0 0 5px var(--planet-color),
-    0 0 12px var(--planet-color),
-    0 1px 8px #02040b;
-  visibility: visible;
-  -webkit-text-fill-color: #ffffff;
+  filter: drop-shadow(0 0 14px rgba(195, 209, 255, 0.8));
 }
 
-.black-hole-planet > span:last-child {
-  color: #ffb7c5;
+@keyframes black-hole-drift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--entry-angle));
+  }
+
+  27% {
+    transform: translate3d(var(--drift-x), calc(var(--drift-y) * -0.45), 0)
+      rotate(calc(var(--entry-angle) * -0.6));
+  }
+
+  61% {
+    transform: translate3d(calc(var(--drift-x) * -0.5), var(--drift-y), 0)
+      rotate(calc(var(--entry-angle) * 0.4));
+  }
+
+  100% {
+    transform: translate3d(var(--drift-x), var(--drift-y), 0)
+      rotate(calc(var(--entry-angle) * -0.35));
+  }
+}
+
+.black-hole-content-text {
+  display: -webkit-box;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--entry-size);
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .black-hole-content-entry {
+    animation: none;
+  }
 }
 
 .black-hole-wave-hint {
@@ -1031,6 +1079,11 @@ onBeforeUnmount(() => {
   background: rgba(86, 121, 168, 0.1);
 }
 
+.sent-star-comment.selected-comment {
+  border-color: color-mix(in srgb, var(--star-color) 72%, transparent);
+  background: color-mix(in srgb, var(--star-color) 14%, rgba(86, 121, 168, 0.1));
+}
+
 .sent-star-comment-author {
   display: flex;
   align-items: center;
@@ -1064,8 +1117,40 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
-.sent-star-reply-toggle {
+.sent-star-comment-actions,
+.sent-star-comment-votes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sent-star-comment-actions {
+  justify-content: space-between;
   margin-top: 10px;
+}
+
+.sent-star-comment-votes button {
+  padding: 4px 9px;
+  border: 1px solid rgba(174, 203, 239, 0.2);
+  border-radius: 999px;
+  background: rgba(86, 121, 168, 0.12);
+  color: #b8c9de;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sent-star-comment-votes button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.sent-star-comment-votes button.selected {
+  border-color: var(--star-color);
+  color: var(--star-color);
+}
+
+.sent-star-reply-toggle {
   padding: 0;
   border: 0;
   background: none;
