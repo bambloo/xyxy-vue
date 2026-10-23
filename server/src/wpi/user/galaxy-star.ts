@@ -31,7 +31,7 @@ interface GalaxyStarRecord extends SentGalaxyStar {
   }[]
   likeCount?: number
   dislikeCount?: number
-  comments?: (GalaxyStarComment & { userTag: string })[]
+  comments?: (GalaxyStarComment & { userTag: string; anonymousDay?: string })[]
   links?: { sourceStarId: string; createdAt: string }[]
 }
 
@@ -194,6 +194,45 @@ export default async function handler(
       }
       throw error
     }
+    const anonymousCommentRecords = await collection
+      .find(
+        { comments: { $elemMatch: { userTag: user.tag, anonymousDay: day } } },
+        { projection: { _id: 1, comments: 1 } },
+      )
+      .toArray()
+    for (const commentRecord of anonymousCommentRecords) {
+      const anonymousComments =
+        commentRecord.comments?.filter(
+          (comment) => comment.userTag === user.tag && comment.anonymousDay === day,
+        ) ?? []
+      if (anonymousComments.length === 0) continue
+      await collection.updateOne(
+        {
+          _id: commentRecord._id,
+          comments: { $elemMatch: { userTag: user.tag, anonymousDay: day } },
+        },
+        {
+          $set: {
+            'comments.$[anonymousComment].sourceStarId': star.id,
+            'comments.$[anonymousComment].sourceStarTitle': star.title,
+          },
+          $unset: { 'comments.$[anonymousComment].anonymousDay': '' },
+          $push: {
+            links: {
+              $each: anonymousComments.map(({ createdAt }) => ({
+                sourceStarId: star.id,
+                createdAt,
+              })),
+            },
+          },
+        },
+        {
+          arrayFilters: [
+            { 'anonymousComment.userTag': user.tag, 'anonymousComment.anonymousDay': day },
+          ],
+        },
+      )
+    }
     return response(res, BamblooStatusCode.Success, undefined, { star })
   }
 
@@ -273,9 +312,6 @@ export default async function handler(
     }
 
     const sourceStar = await collection.findOne({ _id: `${user.tag}:${day}` })
-    if (!sourceStar) {
-      throw new BamblooError(BamblooStatusCode.BadRequest, '今天寄出星星后才能评论')
-    }
     const target = await collection.findOne({ id: starId }, { projection: { _id: 1, userTag: 1 } })
     if (!target) {
       throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
@@ -296,21 +332,24 @@ export default async function handler(
     const createdAt = format_timestamp(now)
     const comment: GalaxyStarComment & { userTag: string } = {
       id: randomUUID(),
-      sourceStarId: sourceStar.id,
-      sourceStarTitle: sourceStar.title,
       content,
       createdAt,
       userTag: user.tag,
+      ...(sourceStar
+        ? { sourceStarId: sourceStar.id, sourceStarTitle: sourceStar.title }
+        : { anonymousDay: day }),
       ...(parentCommentId ? { parentCommentId } : {}),
     }
     const updated = await collection.updateOne(
       { _id: target._id },
-      {
-        $push: {
-          comments: comment,
-          links: { sourceStarId: sourceStar.id, createdAt },
-        },
-      },
+      sourceStar
+        ? {
+            $push: {
+              comments: comment,
+              links: { sourceStarId: sourceStar.id, createdAt },
+            },
+          }
+        : { $push: { comments: comment } },
     )
     if (updated.modifiedCount !== 1) {
       throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
@@ -414,7 +453,9 @@ async function listStars(
       likeCount,
       dislikeCount,
       connectionCount: connectionCounts.get(star.id) ?? 0,
-      comments: comments.map(({ userTag: _commentUserTag, ...comment }) => comment),
+      comments: comments.map(
+        ({ userTag: _commentUserTag, anonymousDay: _anonymousDay, ...comment }) => comment,
+      ),
       isOwn: ownerTag === userTag,
       myVote: votes.find((entry) => entry.userTag === userTag)?.vote,
     }),

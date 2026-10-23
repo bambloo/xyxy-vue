@@ -255,6 +255,20 @@ function handleStarSent(event: Event) {
   galaxyScene?.setSentStars(sentStars.value)
   galaxyScene?.setDownvotedStarIds(hiddenStarIds.value)
   galaxyScene?.setStarSendAvailable(false)
+  void refreshGalaxyAfterStarSent()
+}
+
+async function refreshGalaxyAfterStarSent() {
+  try {
+    const packet = await post('/wpi/user/galaxy-star', listLoading, {
+      action: 'list',
+      ...currentListViewParams(true),
+    })
+    applyGalaxyData(packet.data as Partial<GalaxyStarListResponse>)
+  } catch (error) {
+    console.error('刷新星星评论关联失败', error)
+    sceneError.value = '星星已发送，但评论关联刷新失败，请重新加载页面。'
+  }
 }
 
 function selectSentStar(star: SentGalaxyStar) {
@@ -288,7 +302,7 @@ async function voteForStar(star: GalaxyStarView, vote: GalaxyStarVote) {
 
 async function commentOnStar(star: GalaxyStarView, parentCommentId?: string) {
   const content = commentText.value.trim()
-  if (!hasSentToday.value || !content || commentLoading.value) return
+  if (!content || commentLoading.value) return
   commentError.value = ''
   commentLoading.value = true
   try {
@@ -319,15 +333,15 @@ function commentThreads(comments: GalaxyStarComment[]) {
     comments
       .filter((comment) => comment.parentCommentId === parentCommentId)
       .forEach((comment) => {
-        flattened.push({ ...comment, depth, replyToTitle: parentTitle })
-        appendReplies(comment.id, depth + 1, comment.sourceStarTitle)
+        flattened.push({ ...comment, depth, replyToTitle: parentTitle || '匿名用户' })
+        appendReplies(comment.id, depth + 1, comment.sourceStarTitle ?? '匿名用户')
       })
   }
   comments
     .filter((comment) => !comment.parentCommentId)
     .forEach((comment) => {
       flattened.push({ ...comment, depth: 0 })
-      appendReplies(comment.id, 1, comment.sourceStarTitle)
+      appendReplies(comment.id, 1, comment.sourceStarTitle ?? '匿名用户')
     })
   return flattened
 }
@@ -518,7 +532,7 @@ onBeforeUnmount(() => {
           </div>
           <p v-if="selectedStar.isOwn" class="sent-star-permission-hint">这是你寄出的星星</p>
           <p v-else-if="!hasSentToday" class="sent-star-permission-hint">
-            今天寄出星星后即可点赞、点踩或评论
+            寄出星星前的评论将匿名显示；寄出后会自动关联到你的星星
           </p>
           <p v-if="voteError" class="sent-star-vote-error" role="alert">{{ voteError }}</p>
 
@@ -535,7 +549,7 @@ onBeforeUnmount(() => {
                 :style="{ '--thread-depth': Math.min(comment.depth, 5) }"
               >
                 <div class="sent-star-comment-author">
-                  <strong>{{ comment.sourceStarTitle }}</strong>
+                  <strong>{{ comment.sourceStarTitle || '匿名用户' }}</strong>
                   <time>{{ comment.createdAt }}</time>
                 </div>
                 <p v-if="comment.replyToTitle" class="sent-star-reply-context">
@@ -543,7 +557,6 @@ onBeforeUnmount(() => {
                 </p>
                 <p class="sent-star-comment-content">{{ comment.content }}</p>
                 <button
-                  v-if="hasSentToday"
                   class="sent-star-reply-toggle"
                   type="button"
                   @click="toggleCommentReply(comment)"
@@ -586,7 +599,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
         <form
-          v-if="hasSentToday && !replyingToCommentId"
+          v-if="!replyingToCommentId"
           class="sent-star-comment-form sent-star-main-comment-form"
           @submit.prevent="commentOnStar(selectedStar)"
         >

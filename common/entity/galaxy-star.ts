@@ -31,8 +31,8 @@ export interface GalaxyStarListResponse {
 
 export interface GalaxyStarComment {
   id: string
-  sourceStarId: string
-  sourceStarTitle: string
+  sourceStarId?: string
+  sourceStarTitle?: string
   content: string
   createdAt: string
   parentCommentId?: string
