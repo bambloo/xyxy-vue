@@ -59,7 +59,7 @@ export class AiAstrologer {
         ],
         thinking: { type: 'enabled' },
         reasoning_effort: 'max',
-        max_tokens: 2 * 1024,
+        max_tokens: 8 * 1024,
         temperature: 1,
       }),
       signal: AbortSignal.timeout(180000),

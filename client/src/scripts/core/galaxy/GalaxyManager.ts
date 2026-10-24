@@ -37,7 +37,6 @@ const IDLE_WANDER_ACCELERATION = 0.8
 const IDLE_WANDER_TURN_SPEED = 0.02
 const IDLE_WANDER_ROLL_SPEED = 0.06
 const CAMERA_ROLL_ACCELERATION = 0.8
-const CAMERA_ROLL_MAX_SPEED = 1.2
 const WANDER_TARGET_REACHED_DISTANCE = 70
 const WANDER_TARGET_BOUNDARY_MARGIN = 80
 
@@ -87,8 +86,8 @@ export class GalaxyManager {
   private selectedStar?: GalaxyStar
   private pointerStartX = 0
   private pointerStartY = 0
-  private pointerYaw = 0
-  private pointerPitch = 0
+  private previousPointerX = 0
+  private previousPointerY = 0
   private targetYaw = 0
   private targetPitch = 0
   private isDragging = false
@@ -96,7 +95,6 @@ export class GalaxyManager {
   private readonly touchPointers = new Map<number, THREE.Vector2>()
   private pinchDistance?: number
   private pinchAngle?: number
-  private pinchAngleTime = 0
   private touchGesture = false
   private lastInteractionTime = performance.now()
   private lastUpdateTime = this.lastInteractionTime
@@ -128,7 +126,6 @@ export class GalaxyManager {
         this.pointerMoved = true
         this.pinchDistance = this.currentPinchDistance()
         this.pinchAngle = this.currentPinchAngle()
-        this.pinchAngleTime = performance.now()
         this.targetRollVelocity = 0
         this.recordInteraction()
         this.capturePointer(event)
@@ -139,8 +136,8 @@ export class GalaxyManager {
     this.pointerMoved = false
     this.pointerStartX = event.clientX
     this.pointerStartY = event.clientY
-    this.pointerYaw = this.targetYaw
-    this.pointerPitch = this.targetPitch
+    this.previousPointerX = event.clientX
+    this.previousPointerY = event.clientY
     this.recordInteraction()
     this.capturePointer(event)
   }
@@ -151,7 +148,6 @@ export class GalaxyManager {
       if (this.touchPointers.size > 1) {
         const distance = this.currentPinchDistance()
         const angle = this.currentPinchAngle()
-        const now = performance.now()
         let angleDelta = 0
         if (distance !== undefined && this.pinchDistance !== undefined) {
           this.moveForward((distance - this.pinchDistance) * 0.4)
@@ -161,33 +157,27 @@ export class GalaxyManager {
             THREE.MathUtils.euclideanModulo(angle - this.pinchAngle + Math.PI, Math.PI * 2) -
             Math.PI
         }
-        const angleElapsed = Math.max(1 / 120, (now - this.pinchAngleTime) / 1000)
         this.pinchDistance = distance
         this.pinchAngle = angle
-        this.pinchAngleTime = now
         this.pointerMoved = true
         this.recordInteraction()
-        this.targetRollVelocity =
-          Math.abs(angleDelta) > 0.0001
-            ? THREE.MathUtils.clamp(
-                angleDelta / angleElapsed,
-                -CAMERA_ROLL_MAX_SPEED,
-                CAMERA_ROLL_MAX_SPEED,
-              )
-            : 0
+        if (Math.abs(angleDelta) > 0.0001) {
+          this.rollVelocity = 0
+          this.targetRollVelocity = 0
+          this.options.camera.rotation.z += angleDelta
+        }
         return
       }
     }
     if (!this.isDragging) return
     if (Math.hypot(event.clientX - this.pointerStartX, event.clientY - this.pointerStartY) > 6)
       this.pointerMoved = true
-    this.targetYaw =
-      this.pointerYaw - (event.clientX - this.pointerStartX) * CAMERA_LOOK_SENSITIVITY
-    this.targetPitch = THREE.MathUtils.clamp(
-      this.pointerPitch - (event.clientY - this.pointerStartY) * CAMERA_LOOK_SENSITIVITY,
-      -CAMERA_PITCH_LIMIT,
-      CAMERA_PITCH_LIMIT,
+    this.rotateCameraLook(
+      event.clientX - this.previousPointerX,
+      event.clientY - this.previousPointerY,
     )
+    this.previousPointerX = event.clientX
+    this.previousPointerY = event.clientY
     this.recordInteraction()
   }
 
@@ -200,7 +190,21 @@ export class GalaxyManager {
         this.pinchAngle = undefined
         this.targetRollVelocity = 0
       }
+      if (this.touchPointers.size === 1) {
+        const remainingPointer = this.touchPointers.values().next().value
+        if (remainingPointer) {
+          this.pointerStartX = remainingPointer.x
+          this.pointerStartY = remainingPointer.y
+          this.previousPointerX = remainingPointer.x
+          this.previousPointerY = remainingPointer.y
+          this.isDragging = true
+        }
+      } else {
+        this.isDragging = false
+      }
       if (this.touchPointers.size === 0) this.touchGesture = false
+    } else {
+      this.isDragging = false
     }
     if (!this.pointerMoved && !suppressSelection && !suppressTouchTap) this.selectStar(event)
     this.isDragging = this.touchPointers.size === 1 && !suppressTouchTap
@@ -318,6 +322,8 @@ export class GalaxyManager {
   }
 
   private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
+    if (this.isDragging) return
+
     const camera = this.options.camera
     const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : 10
     const yawDifference =
@@ -333,6 +339,36 @@ export class GalaxyManager {
       maxRollVelocityChange,
     )
     camera.rotation.z += this.rollVelocity * deltaSeconds
+  }
+
+  private rotateCameraLook(deltaX: number, deltaY: number) {
+    if (deltaX === 0 && deltaY === 0) return
+
+    const camera = this.options.camera
+    const orientation = camera.quaternion.clone()
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(orientation)
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(orientation)
+    const horizontalRotation = new THREE.Quaternion().setFromAxisAngle(
+      up,
+      -deltaX * CAMERA_LOOK_SENSITIVITY,
+    )
+    const verticalRotation = new THREE.Quaternion().setFromAxisAngle(
+      right,
+      -deltaY * CAMERA_LOOK_SENSITIVITY,
+    )
+    orientation.premultiply(horizontalRotation).premultiply(verticalRotation)
+
+    const rotation = new THREE.Euler().setFromQuaternion(orientation, 'YXZ')
+    const pitch = THREE.MathUtils.clamp(
+      rotation.x,
+      -CAMERA_PITCH_LIMIT,
+      CAMERA_PITCH_LIMIT,
+    )
+    camera.rotation.set(pitch, rotation.y, rotation.z, 'YXZ')
+    this.targetYaw = camera.rotation.y
+    this.targetPitch = camera.rotation.x
+    this.rollVelocity = 0
+    this.targetRollVelocity = 0
   }
 
   private moveForward(distance: number) {
@@ -512,7 +548,7 @@ export class GalaxyManager {
       this.links.length = 0
       this.clearSelection(this.options.galaxy)
     }
-    this.sentStars.forEach((star, id) => {
+    this.sentStars.forEach((star) => {
       const visible = this.isStarVisible()
       star.star.setVisible(visible)
       star.label.visible = visible

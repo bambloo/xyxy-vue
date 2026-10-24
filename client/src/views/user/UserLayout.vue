@@ -56,9 +56,10 @@ function goToTab(tab: UserMenuItem) {
 }
 
 watch(tabs, (availableTabs) => {
-  if (!availableTabs.length) return
+  const firstAvailableTab = availableTabs[0]
+  if (!firstAvailableTab) return
   if (!availableTabs.some((tab) => tab.key === activeTab.value)) {
-    void router.replace({ name: availableTabs[0].route })
+    void router.replace({ name: firstAvailableTab.route })
   }
 }, { immediate: true })
 

@@ -18,6 +18,9 @@ import {
   hasCompletedDailyFirstVisit,
   markDailyFirstVisitCompleted,
   markTimeFortuneOpened,
+  TIME_FORTUNE_CLOSE_EVENT,
+  TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT,
+  type PairedDialogView,
   TIME_FORTUNE_DIALOG_STATE_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_ARRIVED_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_CANCEL_EVENT,
@@ -57,6 +60,7 @@ const runId = ref(0)
 const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
 const composerOpen = ref(false)
+const pairedDialogView = ref<PairedDialogView>('fortune')
 const profileDialogOpen = ref(false)
 const siteInfoOpen = ref(false)
 const detailsError = ref('')
@@ -200,10 +204,18 @@ function openDailyFortune(automatic = false) {
     if (automatic) markDailyFirstVisitCompleted(userTag)
   }
   void openFortuneDialog(false)
+  setPairedDialogView('fortune')
   window.dispatchEvent(
     new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
       detail: { onlyIfAvailable: true, pairedWithFortune: true },
     }),
+  )
+}
+
+function setPairedDialogView(view: PairedDialogView) {
+  pairedDialogView.value = view
+  window.dispatchEvent(
+    new CustomEvent<PairedDialogView>(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, { detail: view }),
   )
 }
 
@@ -313,6 +325,10 @@ function handleHistoryOpen() {
   void openFortuneDialog(true)
 }
 
+function handleClose() {
+  setDialogOpen(false)
+}
+
 function handleButtonToggle() {
   if (dialogOpen.value) {
     setDialogOpen(false)
@@ -327,6 +343,10 @@ function openSiteInfo() {
 
 function handleComposerState(event: Event) {
   composerOpen.value = (event as CustomEvent<boolean>).detail
+}
+
+function handlePairedDialogView(event: Event) {
+  pairedDialogView.value = (event as CustomEvent<PairedDialogView>).detail
 }
 
 function handleDialogPointerDown(event: PointerEvent) {
@@ -359,14 +379,18 @@ function clearDialogDrag(event: PointerEvent) {
 onMounted(() => {
   window.addEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.addEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
+  window.addEventListener(TIME_FORTUNE_CLOSE_EVENT, handleClose)
   window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
+  window.addEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
 })
 
 onBeforeUnmount(() => {
   stopFirstVisitSequence()
   window.removeEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.removeEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
+  window.removeEventListener(TIME_FORTUNE_CLOSE_EVENT, handleClose)
   window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
+  window.removeEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   runId.value += 1
   dragStart = undefined
 })
@@ -378,13 +402,20 @@ onBeforeUnmount(() => {
       <div
         v-if="dialogOpen"
         class="fortune-overlay"
-        :class="{ 'fortune-overlay-paired': composerOpen }"
+        :class="{
+          'fortune-overlay-paired': composerOpen,
+          'fortune-overlay-mobile-active': composerOpen && pairedDialogView === 'fortune',
+          'fortune-overlay-mobile-peek': composerOpen && pairedDialogView !== 'fortune',
+        }"
         @click.self="setDialogOpen(false)"
       >
         <section
           ref="fortuneDialog"
           class="fortune-dialog"
-          :class="{ 'fortune-dialog-paired': composerOpen }"
+          :class="{
+            'fortune-dialog-paired': composerOpen,
+            'fortune-dialog-mobile-peek': composerOpen && pairedDialogView !== 'fortune',
+          }"
           role="dialog"
           aria-modal="true"
           aria-labelledby="fortune-title"
@@ -487,8 +518,10 @@ onBeforeUnmount(() => {
 
 .fortune-dialog {
   position: relative;
+  box-sizing: border-box;
   width: min(100%, 520px);
   max-height: min(80vh, 720px);
+  max-height: min(80dvh, 720px);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -511,21 +544,41 @@ onBeforeUnmount(() => {
   grid-column: 1;
   width: 100%;
   max-height: min(88vh, 860px);
+  max-height: min(88dvh, 860px);
 }
 
 @media (max-width: 760px) {
   .fortune-overlay-paired {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    padding: 12px;
+    display: block;
+    padding: 0;
+    pointer-events: none;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .fortune-overlay-mobile-active {
+    z-index: 1201;
+  }
+
+  .fortune-overlay-mobile-peek {
+    z-index: 1200;
   }
 
   .fortune-dialog-paired {
-    grid-row: 1;
-    max-height: 45vh;
-    padding: 28px 20px 18px;
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    width: calc(100vw - 52px);
+    height: min(88vh, 860px);
+    height: min(88dvh, 860px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 34px 20px 22px;
+    pointer-events: auto;
+    transform: translateY(-50%);
+    transition: transform 240ms ease;
   }
+
 }
 
 .fortune-dialog::-webkit-scrollbar {

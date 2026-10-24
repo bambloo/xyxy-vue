@@ -8,11 +8,16 @@ import SecuritySettingsView from '@/views/user/security/SecuritySettingsView.vue
 import UserListView from '@/views/user/users/UserListView.vue'
 import SiteInfoView from '@/views/user/SiteInfoView.vue'
 import GalaxyTestView from '@/views/user/GalaxyTestView.vue'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const history =
+  window.location.protocol === 'file:'
+    ? createWebHashHistory()
+    : createWebHistory(import.meta.env.BASE_URL)
+
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history,
   routes: [
     {
       path: '/login',

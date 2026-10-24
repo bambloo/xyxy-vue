@@ -9,7 +9,8 @@
     "common/**/*.ts",
   ],
   "exclude": [
-    "src/**/__tests__/*"
+    "src/**/__tests__/*",
+    "client/src/**/__tests__/*"
   ],
   "compilerOptions": {
     // Extra safety for array and object lookups, but may have false positives.

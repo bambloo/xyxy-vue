@@ -9,12 +9,18 @@ import {
   type GalaxyStarComposeOptions,
 } from '@/events/galaxy-star'
 import { post } from '@/scripts/request'
-import { TIME_FORTUNE_DIALOG_STATE_EVENT } from '@/events/time-fortune'
+import {
+  TIME_FORTUNE_CLOSE_EVENT,
+  TIME_FORTUNE_DIALOG_STATE_EVENT,
+  TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT,
+  type PairedDialogView,
+} from '@/events/time-fortune'
 
 const isOpen = ref(false)
 const composerDialog = ref<HTMLElement | null>(null)
 const pairedWithFortune = ref(false)
 const fortuneDialogOpen = ref(false)
+const pairedDialogView = ref<PairedDialogView>('fortune')
 const statusLoading = ref(false)
 const sending = ref(false)
 const canSend = ref<boolean>()
@@ -39,6 +45,7 @@ async function openComposer(event?: Event) {
     if (typeof result?.canSend !== 'boolean') {
       throw new Error('星星发送状态暂不可用，请稍后重试。')
     }
+
     canSend.value = result.canSend
     if (options?.onlyIfAvailable && !result.canSend) {
       closeComposer()
@@ -68,10 +75,40 @@ function handleFortuneDialogState(event: Event) {
   fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
 }
 
+function setPairedDialogView(view: PairedDialogView) {
+  pairedDialogView.value = view
+  window.dispatchEvent(
+    new CustomEvent<PairedDialogView>(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, { detail: view }),
+  )
+}
+
+function handlePairedDialogView(event: Event) {
+  pairedDialogView.value = (event as CustomEvent<PairedDialogView>).detail
+}
+
 function handleOutsidePointerDown(event: PointerEvent) {
   if (!isOpen.value || !(event.target instanceof Node)) return
-  if (composerDialog.value?.contains(event.target)) return
+  const target = event.target
+  if (composerDialog.value?.contains(target)) {
+    if (pairedWithFortune.value && fortuneDialogOpen.value) {
+      setPairedDialogView('composer')
+    }
+    return
+  }
+  if (
+    pairedWithFortune.value &&
+    fortuneDialogOpen.value &&
+    target instanceof Element &&
+    target.closest('.fortune-dialog')
+  ) {
+    setPairedDialogView('fortune')
+    return
+  }
+  const shouldCloseFortune = pairedWithFortune.value && fortuneDialogOpen.value
   closeComposer()
+  if (shouldCloseFortune) {
+    window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
+  }
 }
 
 async function sendStar() {
@@ -104,11 +141,13 @@ async function sendStar() {
 onMounted(() => {
   window.addEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.addEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.addEventListener('pointerdown', handleOutsidePointerDown)
 })
 onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.removeEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.removeEventListener('pointerdown', handleOutsidePointerDown)
 })
 </script>
@@ -119,7 +158,13 @@ onBeforeUnmount(() => {
       <div
         v-if="isOpen"
         class="star-compose-overlay"
-        :class="{ 'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen }"
+        :class="{
+          'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen,
+          'star-compose-overlay-mobile-active':
+            pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'composer',
+          'star-compose-overlay-mobile-peek':
+            pairedWithFortune && fortuneDialogOpen && pairedDialogView !== 'composer',
+        }"
         @click.self="closeComposer"
       >
         <section
@@ -219,8 +264,10 @@ onBeforeUnmount(() => {
 
 .star-compose-dialog {
   position: relative;
+  box-sizing: border-box;
   width: min(100%, 480px);
   max-height: min(80vh, 720px);
+  max-height: min(80dvh, 720px);
   overflow: auto;
   padding: 34px clamp(24px, 6vw, 42px) 30px;
   border: 1px solid rgba(163, 207, 255, 0.38);
@@ -238,23 +285,50 @@ onBeforeUnmount(() => {
   grid-column: 2;
   width: 100%;
   max-height: min(88vh, 860px);
+  max-height: min(88dvh, 860px);
   pointer-events: auto;
 }
 
 @media (max-width: 760px) {
   .star-compose-overlay-paired {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    padding: 12px;
+    display: block;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
   }
 
   .star-compose-overlay-paired .star-compose-dialog {
-    grid-column: 1;
-    grid-row: 2;
-    max-height: 45vh;
-    padding: 28px 20px 18px;
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    width: calc(100vw - 52px);
+    height: min(88vh, 860px);
+    height: min(88dvh, 860px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 34px 20px 22px;
+    transform: translateY(-50%);
+    transition: transform 240ms ease;
   }
+
+  .star-compose-overlay-mobile-active .star-compose-dialog {
+    --fortune-peek-width: clamp(112px, 30vw, 220px);
+    left: var(--fortune-peek-width);
+    width: calc(100vw - var(--fortune-peek-width) - 12px);
+  }
+
+  .star-compose-overlay-mobile-active {
+    z-index: 1201;
+  }
+
+  .star-compose-overlay-mobile-peek {
+    z-index: 1200;
+  }
+
+  .star-compose-overlay-mobile-peek .star-compose-dialog {
+    transform: translate(calc(100vw - 64px), -50%);
+  }
+
 }
 
 .star-compose-close {
@@ -354,6 +428,10 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   opacity: 0;
   cursor: pointer;
+}
+
+.star-compose-switch {
+  display: none;
 }
 
 .star-compose-color {

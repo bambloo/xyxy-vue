@@ -1,6 +1,9 @@
 export const TIME_FORTUNE_TOGGLE_EVENT = 'time-fortune:toggle'
 export const TIME_FORTUNE_HISTORY_EVENT = 'time-fortune:history'
 export const TIME_FORTUNE_DIALOG_STATE_EVENT = 'time-fortune:dialog-state'
+export const TIME_FORTUNE_CLOSE_EVENT = 'time-fortune:close'
+export const TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT = 'time-fortune:paired-dialog-view'
+export type PairedDialogView = 'fortune' | 'composer'
 export const TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT = 'time-fortune:first-visit-meteor'
 export const TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT =
   'time-fortune:first-visit-meteor-started'

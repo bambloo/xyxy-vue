@@ -4,6 +4,7 @@ import { BamblooStatusCode } from '../../../common/status'
 import type { ResponsePacket } from '../../../common/status'
 
 const AUTH_STORAGE_KEY = 'bambloo-auth'
+type PostData = Uint8Array | { [key: string]: unknown }
 
 // type ResponseCallback = (packet: ResponsePacket) => unknown
 
@@ -13,13 +14,13 @@ const AUTH_STORAGE_KEY = 'bambloo-auth'
 //   global_error_callback = callback
 // }
 
-export function post(
+export function post<Raw extends boolean = false>(
   url: string,
   loading: Ref<boolean>,
-  data?: Buffer | { [key: string]: unknown },
+  data?: PostData,
   headers?: AxiosHeaders,
-  raw?: Buffer,
-): Promise<ResponsePacket> {
+  raw?: Raw,
+): Promise<Raw extends true ? Blob : ResponsePacket> {
   loading.value = true
   const token = localStorage.getItem(AUTH_STORAGE_KEY)
   return axios(url, {
@@ -36,7 +37,7 @@ export function post(
       loading.value = false
       if (raw) {
         // console.log(response.data)
-        return response.data
+        return response.data as Blob
       }
       const data = response.data as ResponsePacket
       if (data.code == BamblooStatusCode.Success) {
@@ -53,5 +54,5 @@ export function post(
       } else {
         throw err
       }
-    })
+    }) as Promise<Raw extends true ? Blob : ResponsePacket>
 }

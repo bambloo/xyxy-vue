@@ -9,6 +9,7 @@ const backendPort = Number(process.env.PORT) || 3000
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [
     vue({
       template: {
