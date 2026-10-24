@@ -101,31 +101,17 @@ onBeforeUnmount(() => effect?.destroy())
 </script>
 
 <template>
-  <button
-    class="sun-portal-button"
-    type="button"
-    :aria-label="label"
-    :title="title"
-    :disabled="disabled"
-    :class="{ 'is-swiping': isSwiping, 'has-notification': notification }"
-    :style="{
+  <button class="sun-portal-button" type="button" :aria-label="label" :title="title" :disabled="disabled"
+    :class="{ 'is-swiping': isSwiping, 'has-notification': notification }" :style="{
       '--glow-x': `${glowOffset.x}px`,
       '--glow-y': `${glowOffset.y}px`,
       '--glow-blur': `${glowOffset.blur}px`,
       '--glow-opacity': glowOffset.opacity,
-    }"
-    @pointerdown.stop="handlePointerDown"
-    @pointermove.stop="handlePointerMove"
-    @pointerup.stop="handlePointerUp"
-    @pointercancel.stop="clearPointer"
-    @click.stop="handleClick"
-    @keydown.enter.prevent="handleClick"
-    @keydown.space.prevent="handleClick"
-    @keydown.arrow-up.prevent="emit('swipe-up')"
-    @keydown.arrow-down.prevent="emit('swipe-down')"
-    @keydown.arrow-left.prevent="emit('swipe-left')"
-    @keydown.arrow-right.prevent="emit('swipe-right')"
-  >
+    }" @pointerdown.stop="handlePointerDown" @pointermove.stop="handlePointerMove" @pointerup.stop="handlePointerUp"
+    @pointercancel.stop="clearPointer" @click.stop="handleClick" @keydown.enter.prevent="handleClick"
+    @keydown.space.prevent="handleClick" @keydown.arrow-up.prevent="emit('swipe-up')"
+    @keydown.arrow-down.prevent="emit('swipe-down')" @keydown.arrow-left.prevent="emit('swipe-left')"
+    @keydown.arrow-right.prevent="emit('swipe-right')">
     <canvas ref="canvas" class="sun-portal-canvas" aria-hidden="true"></canvas>
   </button>
 </template>
@@ -151,25 +137,52 @@ onBeforeUnmount(() => effect?.destroy())
 .sun-portal-button.is-swiping {
   transition: none;
   animation: none;
-  filter: drop-shadow(
-    var(--glow-x) var(--glow-y) var(--glow-blur) rgba(220, 239, 255, var(--glow-opacity))
-  );
+  filter: drop-shadow(var(--glow-x) var(--glow-y) var(--glow-blur) rgba(220, 239, 255, var(--glow-opacity)));
 }
 
 .sun-portal-button.has-notification {
   animation: sun-portal-notification-glow 1.25s ease-in-out infinite;
 }
 
+.sun-portal-button.has-notification::before {
+  position: absolute;
+  z-index: 0;
+  inset: -34%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse,
+      rgba(190, 220, 255, 0.78) 0%,
+      rgba(125, 181, 255, 0.46) 34%,
+      rgba(90, 150, 255, 0.18) 54%,
+      transparent 72%);
+  filter: blur(8px);
+  content: '';
+  pointer-events: none;
+  animation: sun-portal-notification-halo 1.25s ease-in-out infinite;
+}
+
 @keyframes sun-portal-notification-glow {
+
   0%,
   100% {
-    filter: drop-shadow(0 0 8px rgba(190, 220, 255, 0.5))
-      drop-shadow(0 0 15px rgba(218, 237, 255, 0.64));
+    filter: drop-shadow(0 0 9px rgba(190, 220, 255, 0.58)) drop-shadow(0 0 17px rgba(218, 237, 255, 0.68));
   }
 
   50% {
-    filter: drop-shadow(0 0 13px rgba(226, 242, 255, 0.92))
-      drop-shadow(0 0 26px rgba(174, 211, 255, 0.82));
+    filter: drop-shadow(0 0 11px rgba(226, 242, 255, 0.78)) drop-shadow(0 0 21px rgba(174, 211, 255, 0.74));
+  }
+}
+
+@keyframes sun-portal-notification-halo {
+
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.72);
+  }
+
+  50% {
+    opacity: 0.82;
+    transform: scale(0.92);
   }
 }
 
@@ -205,6 +218,15 @@ onBeforeUnmount(() => effect?.destroy())
 @media (prefers-reduced-motion: reduce) {
   .sun-portal-button {
     transition: none;
+    animation: none;
+  }
+
+  .sun-portal-button.has-notification {
+    filter: drop-shadow(0 0 15px rgba(190, 220, 255, 0.9)) drop-shadow(0 0 30px rgba(125, 181, 255, 0.72));
+  }
+
+  .sun-portal-button.has-notification::before {
+    opacity: 0.9;
     animation: none;
   }
 }
