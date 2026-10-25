@@ -28,8 +28,9 @@ const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
 const GALAXY_CAMERA_CENTER_LIMIT = 40
 const CAMERA_PITCH_LIMIT = Math.PI / 2 - 0.04
-const DEFAULT_BLACK_HOLE_SCREEN_X = 0.68
-const DEFAULT_BLACK_HOLE_SCREEN_Y = 0.62
+const DEFAULT_BLACK_HOLE_RIGHT_INSET = 0.22
+const DEFAULT_BLACK_HOLE_TOP_INSET = 0.22
+const BLACK_HOLE_ORBIT_RADIUS = 980 * 0.3
 const CAMERA_LOOK_SENSITIVITY = 0.0005
 const IDLE_WANDER_DELAY = 8000
 const IDLE_WANDER_SPEED = 1
@@ -40,6 +41,26 @@ const IDLE_WANDER_ROLL_SPEED = 0.06
 const CAMERA_ROLL_ACCELERATION = 0.8
 const WANDER_TARGET_REACHED_DISTANCE = 70
 const WANDER_TARGET_BOUNDARY_MARGIN = 80
+
+export function calculateDefaultViewQuaternion(
+  cameraPosition: THREE.Vector3,
+  aspect: number,
+  fov: number,
+) {
+  const worldDirection = new THREE.Vector3(0, 0, BLACK_HOLE_ORBIT_RADIUS)
+    .sub(cameraPosition)
+    .normalize()
+  const halfFovTangent = Math.tan(THREE.MathUtils.degToRad(fov / 2))
+  const targetInCameraSpace = new THREE.Vector3(
+    (1 - DEFAULT_BLACK_HOLE_RIGHT_INSET * 2) * aspect * halfFovTangent,
+    (1 - DEFAULT_BLACK_HOLE_TOP_INSET * 2) * halfFovTangent,
+    -1,
+  ).normalize()
+  return new THREE.Quaternion().setFromUnitVectors(
+    targetInCameraSpace,
+    worldDirection.clone().normalize(),
+  )
+}
 
 type SentStarVisual = {
   data: SentGalaxyStar
@@ -91,6 +112,7 @@ export class GalaxyManager {
   private previousPointerY = 0
   private targetYaw = 0
   private targetPitch = 0
+  private readonly targetDefaultQuaternion = new THREE.Quaternion()
   private isDragging = false
   private pointerMoved = false
   private readonly touchPointers = new Map<number, THREE.Vector2>()
@@ -111,7 +133,7 @@ export class GalaxyManager {
     this.options = options
     options.camera.rotation.order = 'YXZ'
     this.applyDefaultViewRotation()
-    options.camera.rotation.set(this.targetPitch, this.targetYaw, 0, 'YXZ')
+    options.camera.quaternion.copy(this.targetDefaultQuaternion)
   }
 
   updateDefaultViewForResize() {
@@ -220,9 +242,16 @@ export class GalaxyManager {
 
   resetView() {
     this.recordInteraction()
+    this.isDragging = false
+    this.pointerMoved = false
+    this.touchPointers.clear()
+    this.touchGesture = false
+    this.pinchDistance = undefined
+    this.pinchAngle = undefined
     this.cameraTargetPosition = new THREE.Vector3(0, 0, 0)
     this.isDefaultView = true
     this.isReturningToDefaultView = true
+    this.rollVelocity = 0
     this.applyDefaultViewRotation()
     this.targetRollVelocity = 0
   }
@@ -302,6 +331,7 @@ export class GalaxyManager {
     this.lastUpdateTime = time
     const isIdleWandering = time - this.lastInteractionTime >= IDLE_WANDER_DELAY
     if (isIdleWandering) this.isDefaultView = false
+    if (this.isDefaultView || this.isReturningToDefaultView) this.applyDefaultViewRotation()
     if (this.touchPointers.size < 2) {
       this.targetRollVelocity = isIdleWandering ? IDLE_WANDER_ROLL_SPEED : 0
     }
@@ -358,23 +388,30 @@ export class GalaxyManager {
   }
 
   private applyDefaultViewRotation() {
-    const { camera, host } = this.options
-    const aspect = Math.max(1, host.clientWidth) / Math.max(1, host.clientHeight)
-    const halfFovTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
-    const verticalOffset = DEFAULT_BLACK_HOLE_SCREEN_Y * halfFovTangent
-    this.targetPitch = -Math.atan(verticalOffset)
-    this.targetYaw =
-      Math.PI +
-      Math.atan(
-        DEFAULT_BLACK_HOLE_SCREEN_X * aspect * halfFovTangent * Math.cos(this.targetPitch),
-      )
+    const { camera } = this.options
+    this.targetDefaultQuaternion.copy(
+      calculateDefaultViewQuaternion(camera.position, Math.max(camera.aspect, 0.01), camera.fov),
+    )
   }
 
   private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
     if (this.isDragging) return
 
     const camera = this.options.camera
-    const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : this.isReturningToDefaultView ? 2.4 : 10
+    if (this.isDefaultView || this.isReturningToDefaultView) {
+      const turnSpeed = this.isReturningToDefaultView ? 2.4 : 10
+      camera.quaternion.slerp(
+        this.targetDefaultQuaternion,
+        1 - Math.exp(-turnSpeed * deltaSeconds),
+      )
+      this.rollVelocity = 0
+      this.targetRollVelocity = 0
+      if (this.isReturningToDefaultView && camera.quaternion.angleTo(this.targetDefaultQuaternion) < 0.002) {
+        this.isReturningToDefaultView = false
+      }
+      return
+    }
+    const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : 10
     const yawDifference =
       THREE.MathUtils.euclideanModulo(this.targetYaw - camera.rotation.y + Math.PI, Math.PI * 2) -
       Math.PI
@@ -388,13 +425,6 @@ export class GalaxyManager {
       maxRollVelocityChange,
     )
     camera.rotation.z += this.rollVelocity * deltaSeconds
-    if (
-      this.isReturningToDefaultView &&
-      Math.abs(yawDifference) < 0.002 &&
-      Math.abs(this.targetPitch - camera.rotation.x) < 0.002
-    ) {
-      this.isReturningToDefaultView = false
-    }
   }
 
   private rotateCameraLook(deltaX: number, deltaY: number) {

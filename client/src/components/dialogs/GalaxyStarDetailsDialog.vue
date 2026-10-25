@@ -335,7 +335,12 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: 22px max(24px, env(safe-area-inset-right)) 22px max(24px, env(safe-area-inset-left));
+}
+
+.sent-star-dialog-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .sent-star-content {
