@@ -9,10 +9,14 @@ import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
 import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import {
-  GALAXY_STAR_COMMENT_OPEN_EVENT,
   GALAXY_STAR_COMMENT_QUEUE_EVENT,
+  GALAXY_STAR_COMPOSER_STATE_EVENT,
 } from '@/events/galaxy-star'
-import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
+import {
+  TIME_FORTUNE_CLOSE_EVENT,
+  TIME_FORTUNE_DIALOG_STATE_EVENT,
+  TIME_FORTUNE_TOGGLE_EVENT,
+} from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
@@ -32,10 +36,12 @@ const canShowPortalButton = computed(
       (!auth.isLoggedIn && Boolean(activationTag.value))),
 )
 const queuedCommentStarCount = ref(0)
+const fortuneDialogOpen = ref(false)
+const composerDialogOpen = ref(false)
 const portalLabel = computed(() =>
   queuedCommentStarCount.value > 0
-    ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论，点击查看；上划回到星系中心，下划拉远镜头`
-    : '上划回到星系中心，下划拉远镜头；点击查看星言星语',
+    ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论；单击打开或关闭每日锦言`
+    : '单击打开或关闭每日锦言；上划回到星系中心，下划拉远镜头',
 )
 const tag = computed(() => {
   const routeTag = route.params.tag
@@ -129,11 +135,11 @@ function handleCameraCenter() {
 
 function handleFortuneActivate() {
   if (!isGalaxyRoute.value) return
-  if (queuedCommentStarCount.value > 0) {
-    window.dispatchEvent(new Event(GALAXY_STAR_COMMENT_OPEN_EVENT))
+  if (fortuneDialogOpen.value || composerDialogOpen.value) {
+    window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
     return
   }
-  window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
+  window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
 }
 
 function handleCommentQueueChange(event: Event) {
@@ -141,12 +147,24 @@ function handleCommentQueueChange(event: Event) {
   queuedCommentStarCount.value = Number.isInteger(count) && count > 0 ? count : 0
 }
 
+function handleFortuneDialogState(event: Event) {
+  fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
+}
+
+function handleComposerDialogState(event: Event) {
+  composerDialogOpen.value = (event as CustomEvent<boolean>).detail
+}
+
 onMounted(() => {
   window.addEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
+  window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerDialogState)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
+  window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerDialogState)
   document.documentElement.classList.remove('galaxy-no-scroll')
   document.body.classList.remove('galaxy-no-scroll')
 })
@@ -155,12 +173,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <template v-if="isTagRoute">
-      <TagUserView
-        v-if="tagState === 'inactive' || tagState === 'active'"
-        :key="`${tag}-${tagState}`"
-        :tag="tag!"
-        :active="tagState === 'active'"
-      />
+      <TagUserView v-if="tagState === 'inactive' || tagState === 'active'" :key="`${tag}-${tagState}`" :tag="tag!"
+        :active="tagState === 'active'" />
       <div v-else class="empty-page" aria-hidden="true"></div>
     </template>
     <RouterView v-else-if="appState === 'ready'" v-slot="{ Component }">
@@ -172,18 +186,9 @@ onBeforeUnmount(() => {
     <TimeFortuneDialog />
     <GalaxyStarComposer />
     <Teleport to="body">
-      <SunPortalButton
-        v-if="canShowPortalButton"
-        class="sun-portal-control"
-        :label="portalLabel"
-        :title="portalLabel"
-        :notification="queuedCommentStarCount > 0"
-        @swipe-up="handleCameraCenter"
-        @swipe-down="handleCameraZoomOut"
-        @swipe-left="handleFortuneSwipe"
-        @swipe-right="handleFortuneSwipe"
-        @activate="handleFortuneActivate"
-      />
+      <SunPortalButton v-if="canShowPortalButton" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
+        :notification="queuedCommentStarCount > 0" @swipe-up="handleCameraCenter" @swipe-down="handleCameraZoomOut"
+        @swipe-left="handleFortuneSwipe" @swipe-right="handleFortuneSwipe" @activate="handleFortuneActivate" />
     </Teleport>
   </div>
 </template>
@@ -198,6 +203,16 @@ onBeforeUnmount(() => {
   --space-text: #e8f1fb;
   --space-muted: #9db4cb;
   --space-gold: #f0bd63;
+  --portal-control-bottom: clamp(112px, 13vh, 168px);
+  --dialog-bottom-reserve: calc(var(--portal-control-bottom) + 16px);
+  --dialog-available-height: calc(100vh - 24px - var(--dialog-bottom-reserve));
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --portal-control-bottom: clamp(112px, 13dvh, 168px);
+    --dialog-available-height: calc(100dvh - 24px - var(--dialog-bottom-reserve));
+  }
 }
 
 html,
@@ -244,9 +259,9 @@ body {
 
 .sun-portal-control {
   position: fixed;
-  z-index: 1000;
+  z-index: 1300;
   left: 50%;
-  bottom: clamp(112px, 13vh, 168px);
+  bottom: var(--portal-control-bottom);
   transform: translateX(-50%);
 }
 
@@ -275,6 +290,7 @@ body.star-dialog-open .sun-portal-control {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .portal-route-enter-active,
   .portal-route-leave-active {
     transition: none;

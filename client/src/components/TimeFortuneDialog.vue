@@ -430,113 +430,115 @@ onBeforeUnmount(() => {
         class="fortune-overlay"
         :class="{
           'fortune-overlay-paired': composerOpen,
-          'fortune-overlay-mobile-active': composerOpen && pairedDialogView === 'fortune',
-          'fortune-overlay-mobile-peek': composerOpen && pairedDialogView !== 'fortune',
+          'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'fortune',
+          'fortune-overlay-paired-inactive': composerOpen && pairedDialogView !== 'fortune',
         }"
         @click.self="setDialogOpen(false)"
       >
-        <section
-          ref="fortuneDialog"
-          class="fortune-dialog"
-          :class="{
-            'fortune-dialog-paired': composerOpen,
-            'fortune-dialog-mobile-peek': composerOpen && pairedDialogView !== 'fortune',
-          }"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="fortune-title"
-          @pointerdown="handleDialogPointerDown"
-          @pointermove="handleDialogPointerMove"
-          @pointerup="clearDialogDrag"
-          @pointercancel="clearDialogDrag"
+        <button
+          v-if="composerOpen && pairedDialogView === 'composer'"
+          class="dialog-edge-tab dialog-edge-tab-fortune"
+          type="button"
+          aria-label="打开每日锦言"
+          @click.stop="setPairedDialogView('fortune')"
         >
-          <div class="dialog-header-actions">
-            <button
-              v-if="details?.history"
-              class="dialog-icon-button dialog-action"
-              type="button"
-              :aria-label="t('timeFortune.editProfile')"
-              :title="t('timeFortune.editProfile')"
-              @click="profileDialogOpen = true"
-            >
-              <ion-icon name="create-outline" aria-hidden="true"></ion-icon>
-            </button>
-            <button
-              v-if="details?.history"
-              class="dialog-icon-button dialog-action"
-              type="button"
-              :aria-label="t('siteInfo.title')"
-              :title="t('siteInfo.title')"
-              @click="openSiteInfo"
-            >
-              <ion-icon name="document-text-outline" aria-hidden="true"></ion-icon>
-            </button>
-            <button
-              class="dialog-icon-button dialog-close"
-              type="button"
-              aria-label="关闭"
-              @click="setDialogOpen(false)"
-            >
-              ×
-            </button>
-          </div>
-          <p class="dialog-eyebrow">Words From the Stars</p>
-          <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
-          <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
-          <p v-else-if="detailsError" class="dialog-status dialog-error" role="alert">
-            {{ detailsError }}
-          </p>
-          <template v-else-if="details">
-            <TimeFortuneHistory v-if="details.history" :days="details.days" />
-            <template v-else>
-              <article
-                v-if="isActivationPreview"
-                class="fortune-entry activation-locked-entry"
-                role="button"
-                tabindex="0"
-                :aria-label="t('timeFortune.activate')"
-                @click="openActivationForm"
-                @keydown.enter.prevent="openActivationForm"
-                @keydown.space.prevent="openActivationForm"
+          每日锦言
+        </button>
+        <Transition name="dialog-switch">
+          <section
+            v-if="!composerOpen || pairedDialogView === 'fortune'"
+            ref="fortuneDialog"
+            class="fortune-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fortune-title"
+            @pointerdown="handleDialogPointerDown"
+            @pointermove="handleDialogPointerMove"
+            @pointerup="clearDialogDrag"
+            @pointercancel="clearDialogDrag"
+          >
+            <div class="dialog-header-actions">
+              <button
+                v-if="details?.history"
+                class="dialog-icon-button dialog-action"
+                type="button"
+                :aria-label="t('timeFortune.editProfile')"
+                :title="t('timeFortune.editProfile')"
+                @click="profileDialogOpen = true"
               >
-                <h3>
-                  每日锦言
-                  <span class="fortune-lock-icon" aria-hidden="true">
-                    <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
-                  </span>
-                </h3>
-                <p>{{ t('timeFortune.activationRequired') }}</p>
-              </article>
+                <ion-icon name="create-outline" aria-hidden="true"></ion-icon>
+              </button>
+              <button
+                v-if="details?.history"
+                class="dialog-icon-button dialog-action"
+                type="button"
+                :aria-label="t('siteInfo.title')"
+                :title="t('siteInfo.title')"
+                @click="openSiteInfo"
+              >
+                <ion-icon name="document-text-outline" aria-hidden="true"></ion-icon>
+              </button>
+            </div>
+            <p class="dialog-eyebrow">Words From the Stars</p>
+            <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
+            <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
+            <p v-else-if="detailsError" class="dialog-status dialog-error" role="alert">
+              {{ detailsError }}
+            </p>
+            <template v-else-if="details">
+              <TimeFortuneHistory v-if="details.history" :days="details.days" />
               <template v-else>
-                <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
-                <section v-for="day in details.days" :key="day.date">
-                  <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
-                    <h3>每日锦言</h3>
-                    <p>{{ day.dailyFortune }}</p>
-                  </article>
-                  <article
-                    v-for="fortune in day.timeFortunes"
-                    :key="fortune.timeName"
-                    :class="[
-                      'fortune-entry',
-                      'time-entry',
-                      { 'current-time-entry': fortune.timeName === details.timeName },
-                    ]"
-                  >
-                    <h3>
-                      {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
-                      <span v-if="fortune.timeName === details.timeName" class="current-time-label"
-                        >当前时辰</span
-                      >
-                    </h3>
-                    <p>{{ fortune.message }}</p>
-                  </article>
-                </section>
+                <article
+                  v-if="isActivationPreview"
+                  class="fortune-entry activation-locked-entry"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="t('timeFortune.activate')"
+                  @click="openActivationForm"
+                  @keydown.enter.prevent="openActivationForm"
+                  @keydown.space.prevent="openActivationForm"
+                >
+                  <h3>
+                    每日锦言
+                    <span class="fortune-lock-icon" aria-hidden="true">
+                      <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
+                    </span>
+                  </h3>
+                  <p>{{ t('timeFortune.activationRequired') }}</p>
+                </article>
+                <template v-else>
+                  <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
+                  <section v-for="day in details.days" :key="day.date">
+                    <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
+                      <h3>每日锦言</h3>
+                      <p>{{ day.dailyFortune }}</p>
+                    </article>
+                    <article
+                      v-for="fortune in day.timeFortunes"
+                      :key="fortune.timeName"
+                      :class="[
+                        'fortune-entry',
+                        'time-entry',
+                        { 'current-time-entry': fortune.timeName === details.timeName },
+                      ]"
+                    >
+                      <h3>
+                        {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
+                        <span
+                          v-if="fortune.timeName === details.timeName"
+                          class="current-time-label"
+                          >当前时辰</span
+                        >
+                      </h3>
+                      <p>{{ fortune.message }}</p>
+                    </article>
+                  </section>
+                </template>
               </template>
             </template>
-          </template>
-          <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
-        </section>
+            <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
+          </section>
+        </Transition>
       </div>
     </Transition>
     <UserProfileEditDialog :open="profileDialogOpen" @close="profileDialogOpen = false" />
@@ -551,23 +553,36 @@ onBeforeUnmount(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: rgba(1, 7, 19, 0.76);
-  backdrop-filter: blur(12px);
+  padding: 24px 24px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
 }
 
 .fortune-overlay-paired {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 24px;
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.fortune-overlay-paired-active {
+  z-index: 1100;
+  pointer-events: auto;
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
+}
+
+.fortune-overlay-paired-inactive {
+  z-index: 1200;
 }
 
 .fortune-dialog {
   position: relative;
   box-sizing: border-box;
   width: min(100%, 520px);
-  max-height: min(80vh, 720px);
-  max-height: min(80dvh, 720px);
+  height: min(
+    720px,
+    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
+  );
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -575,56 +590,78 @@ onBeforeUnmount(() => {
   interpolate-size: allow-keywords;
   cursor: grab;
   padding: 34px clamp(24px, 6vw, 48px) 24px;
-  border: 1px solid rgba(163, 207, 255, 0.38);
+  border: 0;
   border-radius: 24px;
-  background:
-    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, 0.2), transparent 54%),
-    linear-gradient(145deg, rgba(13, 34, 65, 0.98), rgba(5, 15, 32, 0.98));
-  box-shadow:
-    0 28px 90px rgba(0, 0, 0, 0.55),
-    inset 0 0 36px rgba(121, 175, 241, 0.08);
+  background: transparent;
+  box-shadow: none;
   color: #e8f1fb;
 }
 
-.fortune-dialog-paired {
-  grid-column: 1;
-  width: 100%;
-  max-height: min(88vh, 860px);
-  max-height: min(88dvh, 860px);
+.dialog-switch-enter-active,
+.dialog-switch-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@media (max-width: 760px) {
-  .fortune-overlay-paired {
-    display: block;
-    padding: 0;
-    pointer-events: none;
-    background: transparent;
-    backdrop-filter: none;
+.dialog-switch-enter-from,
+.dialog-switch-leave-to {
+  opacity: 0;
+  transform: translateX(12px) scale(0.985);
+}
+
+.dialog-edge-tab {
+  position: fixed;
+  z-index: 1;
+  top: 50%;
+  padding: 16px 10px;
+  border: 1px solid rgba(163, 207, 255, 0.52);
+  background: rgba(13, 34, 65, 0.96);
+  box-shadow: 0 0 18px rgba(130, 185, 255, 0.42);
+  color: #f5d58e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-rl;
+  pointer-events: auto;
+  transform: translateY(-50%);
+  animation: dialog-edge-tab-pulse 1.8s ease-in-out infinite;
+}
+
+.dialog-edge-tab-fortune {
+  right: 0;
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+}
+
+@media (max-width: 640px) {
+  .fortune-overlay-paired-active .fortune-dialog {
+    width: min(520px, calc(100vw - 80px));
+    margin-right: 32px;
+  }
+}
+
+@keyframes dialog-edge-tab-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    box-shadow: 0 0 12px rgba(130, 185, 255, 0.28);
   }
 
-  .fortune-overlay-mobile-active {
-    z-index: 1201;
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 24px rgba(130, 185, 255, 0.78);
   }
+}
 
-  .fortune-overlay-mobile-peek {
-    z-index: 1200;
+@media (prefers-reduced-motion: reduce) {
+  .dialog-edge-tab,
+  .dialog-switch-enter-active,
+  .dialog-switch-leave-active {
+    animation: none;
+    transition: none;
   }
-
-  .fortune-dialog-paired {
-    position: absolute;
-    top: 50%;
-    left: 12px;
-    width: calc(100vw - 52px);
-    height: min(88vh, 860px);
-    height: min(88dvh, 860px);
-    max-height: calc(100vh - 24px);
-    max-height: calc(100dvh - 24px);
-    padding: 34px 20px 22px;
-    pointer-events: auto;
-    transform: translateY(-50%);
-    transition: transform 240ms ease;
-  }
-
 }
 
 .fortune-dialog::-webkit-scrollbar {
@@ -669,11 +706,6 @@ onBeforeUnmount(() => {
   font-size: 21px;
 }
 
-.dialog-close {
-  font-size: 26px;
-  line-height: 1;
-}
-
 .dialog-eyebrow {
   margin: 0;
   color: #96bce7;
@@ -693,7 +725,7 @@ onBeforeUnmount(() => {
 
 .fortune-entry {
   padding: 18px 20px;
-  border: 1px solid rgba(149, 186, 227, 0.17);
+  border: 0;
   border-radius: 16px;
   background: rgba(137, 177, 226, 0.07);
 }
@@ -716,7 +748,6 @@ onBeforeUnmount(() => {
 
 .activation-locked-entry:hover,
 .activation-locked-entry:focus-visible {
-  border-color: rgba(240, 189, 99, 0.72);
   background: linear-gradient(135deg, rgba(240, 189, 99, 0.16), rgba(137, 177, 226, 0.08));
   outline: none;
 }
@@ -747,7 +778,6 @@ onBeforeUnmount(() => {
 }
 
 .current-time-entry {
-  border-color: rgba(240, 189, 99, 0.72);
   background: linear-gradient(135deg, rgba(240, 189, 99, 0.16), rgba(137, 177, 226, 0.08));
   box-shadow:
     inset 0 0 24px rgba(240, 189, 99, 0.08),
@@ -762,7 +792,7 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 7px;
-  border: 1px solid rgba(240, 189, 99, 0.5);
+  border: 0;
   border-radius: 999px;
   color: #f5d58e;
   font-size: 10px;

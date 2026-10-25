@@ -73,9 +73,9 @@ function toggleHistoryEntry(event: MouseEvent) {
   align-items: center;
   gap: 12px;
   padding: 13px 16px;
-  border: 1px solid rgba(149, 186, 227, .22);
+  border: 0;
   border-radius: 12px;
-  background: rgba(137, 177, 226, .1);
+  background: rgba(137, 177, 226, 0.1);
   color: #f4e6bf;
   cursor: pointer;
   font-size: 15px;
@@ -101,7 +101,7 @@ function toggleHistoryEntry(event: MouseEvent) {
   border-right: 1.5px solid #edc981;
   content: '';
   transform: rotate(45deg);
-  transition: transform 260ms cubic-bezier(.2, .8, .2, 1);
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .history-day[open] > summary::before,
@@ -111,30 +111,28 @@ function toggleHistoryEntry(event: MouseEvent) {
 
 .history-day[open] > summary {
   margin-bottom: 12px;
-  border-color: rgba(163, 207, 255, .38);
-  background: rgba(137, 177, 226, .14);
+  background: rgba(137, 177, 226, 0.14);
 }
 
 .history-entry {
   margin-top: 10px;
   padding: 14px 16px;
-  border: 1px solid rgba(149, 186, 227, .17);
+  border: 0;
   border-radius: 16px;
-  background: rgba(137, 177, 226, .07);
+  background: rgba(137, 177, 226, 0.07);
   cursor: pointer;
 }
 
 .daily-history-entry,
 .time-history-entry {
   margin-inline-start: 16px;
-  border-inline-start-color: rgba(237, 201, 129, .42);
-  background: rgba(137, 177, 226, .045);
+  background: rgba(137, 177, 226, 0.045);
 }
 
 .daily-history-entry {
   background:
-    radial-gradient(ellipse at 50% 50%, rgba(137, 177, 226, .09), transparent 76%),
-    rgba(137, 177, 226, .045);
+    radial-gradient(ellipse at 50% 50%, rgba(137, 177, 226, 0.09), transparent 76%),
+    rgba(137, 177, 226, 0.045);
 }
 
 .history-entry > summary {
@@ -162,10 +160,10 @@ function toggleHistoryEntry(event: MouseEvent) {
   opacity: 0;
   transform: translateY(-5px);
   transition:
-    block-size 360ms cubic-bezier(.2, .8, .2, 1),
+    block-size 360ms cubic-bezier(0.2, 0.8, 0.2, 1),
     content-visibility 360ms allow-discrete,
     opacity 220ms ease,
-    transform 280ms cubic-bezier(.2, .8, .2, 1);
+    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .history-day[open]::details-content,
@@ -191,6 +189,5 @@ function toggleHistoryEntry(event: MouseEvent) {
   .history-entry::details-content {
     transition: none;
   }
-
 }
 </style>

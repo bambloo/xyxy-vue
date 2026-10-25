@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { GALAXY_STAR_COLORS, type SentGalaxyStar } from '../../../common/entity/galaxy-star'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import type { SentGalaxyStar } from '../../../common/entity/galaxy-star'
 import {
   GALAXY_STAR_COMPOSE_EVENT,
   announceGalaxyStarComposerState,
@@ -27,14 +27,14 @@ const canSend = ref<boolean>()
 const error = ref('')
 const title = ref('')
 const content = ref('')
-const color = ref<string>(GALAXY_STAR_COLORS[0])
-const isCustomColor = computed(() => !GALAXY_STAR_COLORS.some((preset) => preset === color.value))
+const color = ref('#7ec8ff')
 
 async function openComposer(event?: Event) {
   const options =
     event instanceof CustomEvent
       ? (event.detail as GalaxyStarComposeOptions | undefined)
       : undefined
+  const isFortunePairedComposer = options?.pairedWithFortune === true
   pairedWithFortune.value = options?.pairedWithFortune === true
   statusLoading.value = true
   error.value = ''
@@ -51,11 +51,19 @@ async function openComposer(event?: Event) {
       closeComposer()
       return
     }
+    if (isFortunePairedComposer && !fortuneDialogOpen.value) {
+      closeComposer()
+      return
+    }
     isOpen.value = true
     announceGalaxyStarComposerState(true)
     announceGalaxyStarSendStatus(result.canSend)
   } catch (cause) {
     console.error('读取每日星星发送状态失败', cause)
+    if (isFortunePairedComposer && !fortuneDialogOpen.value) {
+      closeComposer()
+      return
+    }
     isOpen.value = true
     announceGalaxyStarComposerState(true)
     error.value =
@@ -73,6 +81,10 @@ function closeComposer() {
 
 function handleFortuneDialogState(event: Event) {
   fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
+}
+
+function handleFortuneClose() {
+  if (isOpen.value) closeComposer()
 }
 
 function setPairedDialogView(view: PairedDialogView) {
@@ -95,6 +107,7 @@ function handleOutsidePointerDown(event: PointerEvent) {
     }
     return
   }
+  if (target instanceof Element && target.closest('.dialog-edge-tab')) return
   if (
     pairedWithFortune.value &&
     fortuneDialogOpen.value &&
@@ -105,9 +118,10 @@ function handleOutsidePointerDown(event: PointerEvent) {
     return
   }
   const shouldCloseFortune = pairedWithFortune.value && fortuneDialogOpen.value
-  closeComposer()
   if (shouldCloseFortune) {
     window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
+  } else {
+    closeComposer()
   }
 }
 
@@ -141,12 +155,14 @@ async function sendStar() {
 onMounted(() => {
   window.addEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.addEventListener(TIME_FORTUNE_CLOSE_EVENT, handleFortuneClose)
   window.addEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.addEventListener('pointerdown', handleOutsidePointerDown)
 })
 onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
+  window.removeEventListener(TIME_FORTUNE_CLOSE_EVENT, handleFortuneClose)
   window.removeEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.removeEventListener('pointerdown', handleOutsidePointerDown)
 })
@@ -160,82 +176,77 @@ onBeforeUnmount(() => {
         class="star-compose-overlay"
         :class="{
           'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen,
-          'star-compose-overlay-mobile-active':
+          'star-compose-overlay-paired-active':
             pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'composer',
-          'star-compose-overlay-mobile-peek':
+          'star-compose-overlay-paired-inactive':
             pairedWithFortune && fortuneDialogOpen && pairedDialogView !== 'composer',
         }"
         @click.self="closeComposer"
       >
-        <section
-          class="star-compose-dialog"
-          ref="composerDialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="star-compose-title"
+        <button
+          v-if="pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'fortune'"
+          class="dialog-edge-tab dialog-edge-tab-star"
+          type="button"
+          aria-label="打开寄出星星"
+          @click.stop="setPairedDialogView('composer')"
         >
-          <button class="star-compose-close" type="button" aria-label="关闭" @click="closeComposer">
-            ×
-          </button>
-          <p class="star-compose-eyebrow">A MESSAGE TO THE GALAXY</p>
-          <h2 id="star-compose-title">寄出一颗星星</h2>
-          <p v-if="statusLoading" class="star-compose-status">正在确认今日发送机会…</p>
-          <p v-else-if="error" class="star-compose-status star-compose-error" role="alert">
-            {{ error }}
-            <button v-if="canSend === undefined" type="button" @click="openComposer">重试</button>
-          </p>
-          <p v-else-if="canSend === false" class="star-compose-status">
-            今日的星星已经送出，明天再来吧。
-          </p>
-          <form v-else-if="canSend" class="star-compose-form" @submit.prevent="sendStar">
-            <label>
-              星星标题
-              <input v-model="title" maxlength="40" required placeholder="为这颗星星取个名字" />
-            </label>
-            <label>
-              星星内容
-              <textarea
-                v-model="content"
-                maxlength="500"
-                required
-                rows="4"
-                placeholder="写下想送往银河的话"
-              ></textarea>
-            </label>
-            <fieldset class="star-compose-colors">
-              <legend>选择星星颜色</legend>
-              <button
-                v-for="preset in GALAXY_STAR_COLORS"
-                :key="preset"
-                type="button"
-                class="star-compose-color"
-                :class="{ selected: preset === color }"
-                :style="{ '--swatch-color': preset }"
-                :aria-label="`选择颜色 ${preset}`"
-                :aria-pressed="preset === color"
-                @click="color = preset"
-              ></button>
-              <label
-                class="star-compose-color star-compose-custom-color"
-                :class="{ selected: isCustomColor }"
-                :style="{ '--selected-color': color }"
-              >
-                <input
-                  v-model="color"
-                  type="color"
-                  aria-label="自定义星星颜色"
-                  title="自定义星星颜色"
-                />
-              </label>
-            </fieldset>
-            <p v-if="error" class="star-compose-status star-compose-error" role="alert">
+          寄出星星
+        </button>
+        <Transition name="dialog-switch">
+          <section
+            v-if="!pairedWithFortune || !fortuneDialogOpen || pairedDialogView === 'composer'"
+            class="star-compose-dialog"
+            ref="composerDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="star-compose-title"
+          >
+            <p class="star-compose-eyebrow">A MESSAGE TO THE GALAXY</p>
+            <h2 id="star-compose-title">寄出一颗星星</h2>
+            <p v-if="statusLoading" class="star-compose-status">正在确认今日发送机会…</p>
+            <p v-else-if="error" class="star-compose-status star-compose-error" role="alert">
               {{ error }}
+              <button v-if="canSend === undefined" type="button" @click="openComposer">重试</button>
             </p>
-            <button class="star-compose-submit" type="submit" :disabled="sending">
-              {{ sending ? '正在发送…' : '发送星星' }}
-            </button>
-          </form>
-        </section>
+            <p v-else-if="canSend === false" class="star-compose-status">
+              今日的星星已经送出，明天再来吧。
+            </p>
+            <form v-else-if="canSend" class="star-compose-form" @submit.prevent="sendStar">
+              <label>
+                星星标题
+                <input v-model="title" maxlength="40" required placeholder="为这颗星星取个名字" />
+              </label>
+              <label>
+                星星内容
+                <textarea
+                  v-model="content"
+                  maxlength="500"
+                  required
+                  rows="4"
+                  placeholder="写下想送往银河的话"
+                ></textarea>
+              </label>
+              <label class="star-compose-color-picker">
+                选择星星颜色
+                <span>{{ color }}</span>
+                <span class="star-compose-color-swatch" :style="{ '--swatch-color': color }">
+                  <input
+                    v-model="color"
+                    type="color"
+                    aria-label="自定义星星颜色"
+                    title="自定义星星颜色"
+                  />
+                </span>
+              </label>
+              <p v-if="error" class="star-compose-status star-compose-error" role="alert">
+                {{ error }}
+              </p>
+              <button class="star-compose-submit" type="submit" :disabled="sending">
+                {{ sending ? '正在发送…' : '发送星星' }}
+              </button>
+            </form>
+          </section>
+        </Transition>
       </div>
     </Transition>
   </Teleport>
@@ -248,98 +259,111 @@ onBeforeUnmount(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: rgba(1, 7, 19, 0.76);
-  backdrop-filter: blur(12px);
+  padding: 24px 24px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
 }
 
 .star-compose-overlay-paired {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 24px;
   pointer-events: none;
   background: transparent;
   backdrop-filter: none;
 }
 
+.star-compose-overlay-paired-active {
+  z-index: 1100;
+  pointer-events: auto;
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
+}
+
+.star-compose-overlay-paired-inactive {
+  z-index: 1200;
+}
+
 .star-compose-dialog {
   position: relative;
   box-sizing: border-box;
-  width: min(100%, 480px);
-  max-height: min(80vh, 720px);
-  max-height: min(80dvh, 720px);
+  width: min(520px, 100%);
+  height: min(
+    720px,
+    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
+  );
   overflow: auto;
+  pointer-events: auto;
   padding: 34px clamp(24px, 6vw, 42px) 30px;
-  border: 1px solid rgba(163, 207, 255, 0.38);
+  border: 0;
   border-radius: 24px;
-  background:
-    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, 0.2), transparent 54%),
-    linear-gradient(145deg, rgba(13, 34, 65, 0.98), rgba(5, 15, 32, 0.98));
-  box-shadow:
-    0 28px 90px rgba(0, 0, 0, 0.55),
-    inset 0 0 36px rgba(121, 175, 241, 0.08);
+  background: transparent;
+  box-shadow: none;
   color: #e8f1fb;
 }
 
-.star-compose-overlay-paired .star-compose-dialog {
-  grid-column: 2;
-  width: 100%;
-  max-height: min(88vh, 860px);
-  max-height: min(88dvh, 860px);
-  pointer-events: auto;
+.dialog-switch-enter-active,
+.dialog-switch-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@media (max-width: 760px) {
-  .star-compose-overlay-paired {
-    display: block;
-    padding: 0;
-    background: transparent;
-    backdrop-filter: none;
-  }
-
-  .star-compose-overlay-paired .star-compose-dialog {
-    position: absolute;
-    top: 50%;
-    left: 12px;
-    width: calc(100vw - 52px);
-    height: min(88vh, 860px);
-    height: min(88dvh, 860px);
-    max-height: calc(100vh - 24px);
-    max-height: calc(100dvh - 24px);
-    padding: 34px 20px 22px;
-    transform: translateY(-50%);
-    transition: transform 240ms ease;
-  }
-
-  .star-compose-overlay-mobile-active .star-compose-dialog {
-    --fortune-peek-width: clamp(112px, 30vw, 220px);
-    left: var(--fortune-peek-width);
-    width: calc(100vw - var(--fortune-peek-width) - 12px);
-  }
-
-  .star-compose-overlay-mobile-active {
-    z-index: 1201;
-  }
-
-  .star-compose-overlay-mobile-peek {
-    z-index: 1200;
-  }
-
-  .star-compose-overlay-mobile-peek .star-compose-dialog {
-    transform: translate(calc(100vw - 64px), -50%);
-  }
-
+.dialog-switch-enter-from,
+.dialog-switch-leave-to {
+  opacity: 0;
+  transform: translateX(12px) scale(0.985);
 }
 
-.star-compose-close {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  border: 0;
-  background: transparent;
-  color: #dce8f6;
+.dialog-edge-tab {
+  position: fixed;
+  z-index: 1;
+  top: 50%;
+  padding: 16px 10px;
+  border: 1px solid rgba(163, 207, 255, 0.52);
+  background: rgba(13, 34, 65, 0.96);
+  box-shadow: 0 0 18px rgba(130, 185, 255, 0.42);
+  color: #f5d58e;
   cursor: pointer;
-  font-size: 28px;
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-rl;
+  pointer-events: auto;
+  transform: translateY(-50%);
+  animation: dialog-edge-tab-pulse 1.8s ease-in-out infinite;
+}
+
+.dialog-edge-tab-star {
+  right: 0;
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+}
+
+@media (max-width: 640px) {
+  .star-compose-overlay-paired-active .star-compose-dialog {
+    width: min(520px, calc(100vw - 80px));
+    margin-right: 32px;
+  }
+}
+
+@keyframes dialog-edge-tab-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    box-shadow: 0 0 12px rgba(130, 185, 255, 0.28);
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 24px rgba(130, 185, 255, 0.78);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-edge-tab,
+  .dialog-switch-enter-active,
+  .dialog-switch-leave-active {
+    animation: none;
+    transition: none;
+  }
 }
 
 .star-compose-eyebrow {
@@ -392,7 +416,7 @@ onBeforeUnmount(() => {
   width: 100%;
   box-sizing: border-box;
   padding: 11px 12px;
-  border: 1px solid rgba(163, 207, 255, 0.26);
+  border: 0;
   border-radius: 10px;
   background: rgba(2, 9, 20, 0.58);
   color: #eef4ff;
@@ -403,79 +427,39 @@ onBeforeUnmount(() => {
   resize: vertical;
 }
 
-.star-compose-colors {
+.star-compose-color-picker {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.star-compose-colors legend {
-  margin-bottom: 12px;
   color: #dce8f6;
   font-size: 13px;
 }
 
-.star-compose-custom-color input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  opacity: 0;
-  cursor: pointer;
+.star-compose-color-picker > span:nth-child(2) {
+  color: #9db4cb;
+  font-variant-numeric: tabular-nums;
 }
 
-.star-compose-switch {
-  display: none;
-}
-
-.star-compose-color {
+.star-compose-color-swatch {
   position: relative;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 2px solid rgba(255, 255, 255, 0.45);
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
   border-radius: 50%;
   background: var(--swatch-color);
   cursor: pointer;
 }
 
-.star-compose-custom-color {
-  isolation: isolate;
-  background: conic-gradient(
-    #ff5252,
-    #ffb142,
-    #fffa65,
-    #32ff7e,
-    #18dcff,
-    #7d5fff,
-    #cd84f1,
-    #ff5252
-  );
-}
-
-.star-compose-custom-color::after {
+.star-compose-color-swatch input {
   position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid #ffffff;
-  border-radius: 50%;
-  background: var(--selected-color);
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-  content: '';
-  pointer-events: none;
-}
-
-.star-compose-color.selected {
-  outline: 2px solid #fff;
-  outline-offset: 3px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
+  border: 0;
+  background: transparent;
+  opacity: 0.02;
+  cursor: pointer;
 }
 
 .star-compose-submit {
