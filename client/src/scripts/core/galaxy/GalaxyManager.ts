@@ -29,7 +29,7 @@ const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
 const GALAXY_CAMERA_CENTER_LIMIT = 40
 const CAMERA_PITCH_LIMIT = Math.PI / 2 - 0.04
-const CAMERA_LOOK_SENSITIVITY = 0.0035
+const CAMERA_LOOK_SENSITIVITY = 0.0005
 const IDLE_WANDER_DELAY = 8000
 const IDLE_WANDER_SPEED = 1
 const IDLE_WANDER_RETURN_SPEED = 3
@@ -150,7 +150,7 @@ export class GalaxyManager {
         const angle = this.currentPinchAngle()
         let angleDelta = 0
         if (distance !== undefined && this.pinchDistance !== undefined) {
-          this.moveForward((distance - this.pinchDistance) * 0.4)
+          this.moveForward((distance - this.pinchDistance) * 0.25)
         }
         if (angle !== undefined && this.pinchAngle !== undefined) {
           angleDelta =
@@ -214,15 +214,15 @@ export class GalaxyManager {
   }
 
   wheel(event: WheelEvent) {
-    this.moveForward(-event.deltaY * 0.12)
+    this.moveForward(-event.deltaY * 0.04)
   }
 
   resetView() {
+    this.recordInteraction()
     this.cameraTargetPosition = new THREE.Vector3(0, 0, 0)
     this.targetYaw = 0
     this.targetPitch = 0
     this.targetRollVelocity = 0
-    this.recordInteraction()
   }
 
   zoomOut() {
@@ -255,6 +255,7 @@ export class GalaxyManager {
     const targetPosition = starPosition.clone().add(currentOffset)
     this.constrainCameraPosition(targetPosition)
     const targetDirection = starPosition.clone().sub(targetPosition).normalize()
+    this.recordInteraction()
     this.cameraTargetPosition = targetPosition
     this.targetYaw = Math.atan2(-targetDirection.x, -targetDirection.z)
     this.targetPitch = THREE.MathUtils.clamp(
@@ -263,7 +264,6 @@ export class GalaxyManager {
       CAMERA_PITCH_LIMIT,
     )
     this.targetRollVelocity = 0
-    this.recordInteraction()
     return true
   }
 
@@ -319,6 +319,10 @@ export class GalaxyManager {
     this.lastInteractionTime = performance.now()
     this.wanderTarget = undefined
     this.wanderVelocity.set(0, 0, 0)
+    this.targetYaw = this.options.camera.rotation.y
+    this.targetPitch = this.options.camera.rotation.x
+    this.rollVelocity = 0
+    this.targetRollVelocity = 0
   }
 
   private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
@@ -359,11 +363,7 @@ export class GalaxyManager {
     orientation.premultiply(horizontalRotation).premultiply(verticalRotation)
 
     const rotation = new THREE.Euler().setFromQuaternion(orientation, 'YXZ')
-    const pitch = THREE.MathUtils.clamp(
-      rotation.x,
-      -CAMERA_PITCH_LIMIT,
-      CAMERA_PITCH_LIMIT,
-    )
+    const pitch = THREE.MathUtils.clamp(rotation.x, -CAMERA_PITCH_LIMIT, CAMERA_PITCH_LIMIT)
     camera.rotation.set(pitch, rotation.y, rotation.z, 'YXZ')
     this.targetYaw = camera.rotation.y
     this.targetPitch = camera.rotation.x
