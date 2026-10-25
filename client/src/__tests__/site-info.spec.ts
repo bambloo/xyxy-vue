@@ -6,7 +6,7 @@ import { i18n, setLocale } from '../i18n'
 import { post } from '../scripts/request'
 import { useAuthStore } from '../stores/auth'
 import { canAccessMenu, userMenuItems } from '../views/user/menu-config'
-import SiteInfoView from '../views/user/SiteInfoView.vue'
+import SiteInfoDialog from '../components/dialogs/SiteInfoDialog.vue'
 
 vi.mock('../scripts/request', () => ({
   post: vi.fn(),
@@ -42,7 +42,7 @@ describe('website declarations and suggestions', () => {
       } as never)
       .mockResolvedValueOnce({ data: {} } as never)
 
-    const wrapper = mount(SiteInfoView, { global: { plugins: [i18n] } })
+    const wrapper = mount(SiteInfoDialog, { global: { plugins: [i18n] } })
     await flushPromises()
 
     const pageItems = wrapper.findAll('.page-list-item').map((item) => item.text())
@@ -82,7 +82,7 @@ describe('website declarations and suggestions', () => {
     wrapper.unmount()
   })
 
-  it('renders as an independent dialog and closes without routing', async () => {
+  it('renders as an independent dialog without an explicit close button', async () => {
     login()
     vi.mocked(post).mockResolvedValueOnce({
       data: {
@@ -93,16 +93,16 @@ describe('website declarations and suggestions', () => {
         suggestions: [],
       },
     } as never)
-    const wrapper = mount(SiteInfoView, {
+    const wrapper = mount(SiteInfoDialog, {
       props: { dialog: true },
       global: { plugins: [i18n] },
       attachTo: document.body,
     })
     await flushPromises()
 
-    expect(document.body.querySelector('.site-info-overlay')).not.toBeNull()
-    document.body.querySelector<HTMLButtonElement>('.site-info-dialog .dialog-close')?.click()
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    const overlay = document.body.querySelector<HTMLElement>('.site-info-overlay')
+    expect(overlay).not.toBeNull()
+    expect(document.body.querySelector('.site-info-dialog .dialog-close')).toBeNull()
 
     wrapper.unmount()
   })
@@ -150,7 +150,7 @@ describe('website declarations and suggestions', () => {
           }),
       )
 
-    const wrapper = mount(SiteInfoView, { global: { plugins: [i18n] } })
+    const wrapper = mount(SiteInfoDialog, { global: { plugins: [i18n] } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('账号管理规定')

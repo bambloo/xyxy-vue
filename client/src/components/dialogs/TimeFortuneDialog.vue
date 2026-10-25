@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import '@/styles/daily-fortune.css'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
@@ -10,10 +9,15 @@ import {
   GALAXY_STAR_COMPOSER_STATE_EVENT,
   type GalaxyStarComposeOptions,
 } from '@/events/galaxy-star'
-import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
-import UserProfileEditDialog from '@/components/UserProfileEditDialog.vue'
-import SiteInfoView from '@/views/user/SiteInfoView.vue'
-import { timeFortuneRange } from '@/utils/time-fortune'
+import TimeFortuneHistoryDialog from '@/components/dialogs/TimeFortuneHistoryDialog.vue'
+import UserProfileEditDialog from '@/components/dialogs/UserProfileEditDialog.vue'
+import SiteInfoDialog from '@/components/dialogs/SiteInfoDialog.vue'
+import {
+  announceDialogStackState,
+  DIALOG_STACK_CLOSE_DIALOG_EVENT,
+  requestTopDialogClose,
+} from '@/events/dialog-stack'
+import { currentTimeFortuneName, timeFortuneRange } from '@/utils/time-fortune'
 import {
   hasCompletedDailyFirstVisit,
   markDailyFirstVisitCompleted,
@@ -69,16 +73,76 @@ const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
 const composerOpen = ref(false)
 const pairedDialogView = ref<PairedDialogView>('fortune')
+const centeredAfterComposer = ref(false)
 const profileDialogOpen = ref(false)
 const siteInfoOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
 const fortuneDialog = ref<HTMLElement | null>(null)
+const pairedFortuneTop = ref<number>()
+const pairedFortuneMaxHeight = ref<number>()
+const currentTime = ref(new Date())
+const currentTimeName = computed(() => currentTimeFortuneName(currentTime.value))
+const currentDateTime = computed(
+  () =>
+    new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).format(currentTime.value),
+)
+let clockInterval: ReturnType<typeof setInterval> | undefined
 let dragStart: { pointerId: number; y: number; scrollTop: number } | undefined
 let firstVisitSequenceId = 0
 let firstVisitSequenceActive = false
 let cancelFirstVisitMeteor: (() => void) | undefined
 let activeFirstVisitMeteorSequenceId: number | undefined
+let pairedLayoutFrame: number | undefined
+let composerResizeObserver: ResizeObserver | undefined
+
+watch(profileDialogOpen, (open) => announceDialogStackState('profile', open))
+watch(siteInfoOpen, (open) => announceDialogStackState('site-info', open))
+watch(
+  [composerOpen, pairedDialogView, detailsLoading, detailsError, details],
+  updatePairedFortuneLayout,
+  { flush: 'post' },
+)
+
+function updatePairedFortuneLayout() {
+  if (!composerOpen.value || pairedDialogView.value !== 'composer') {
+    pairedFortuneTop.value = undefined
+    pairedFortuneMaxHeight.value = undefined
+    composerResizeObserver?.disconnect()
+    return
+  }
+
+  if (pairedLayoutFrame !== undefined) cancelAnimationFrame(pairedLayoutFrame)
+  pairedLayoutFrame = requestAnimationFrame(() => {
+    pairedLayoutFrame = undefined
+    const composer = document.querySelector<HTMLElement>(
+      '.star-compose-overlay-paired-active .star-compose-dialog',
+    )
+    const fortune = fortuneDialog.value
+    if (!composer || !fortune) return
+
+    composerResizeObserver?.observe(composer)
+    const composerTop = composer.getBoundingClientRect().top
+    pairedFortuneMaxHeight.value = Math.max(
+      0,
+      Math.min(window.innerHeight * 0.48, composerTop - 48),
+    )
+    void nextTick(() => {
+      if (!composerOpen.value || pairedDialogView.value !== 'composer') return
+      const height = fortune.getBoundingClientRect().height
+      const centeredTop = window.innerHeight / 2
+      const maxTop = composer.getBoundingClientRect().top - 24 - height / 2
+      pairedFortuneTop.value = Math.max(24 + height / 2, Math.min(centeredTop, maxTop))
+    })
+  })
+}
 
 function responseData(packet: { data?: unknown }): FortuneDetails | undefined {
   return packet.data as FortuneDetails | undefined
@@ -206,11 +270,14 @@ async function openFortuneDialog(history: boolean) {
 
 function setDialogOpen(open: boolean) {
   dialogOpen.value = open
+  if (!open) centeredAfterComposer.value = false
   window.dispatchEvent(new CustomEvent(TIME_FORTUNE_DIALOG_STATE_EVENT, { detail: open }))
+  announceDialogStackState('fortune', open)
 }
 
 function openDailyFortune(automatic = false) {
   stopFirstVisitSequence()
+  centeredAfterComposer.value = false
   const userTag = auth.currentUser?.tag || activationTag.value
   if (userTag) {
     markTimeFortuneOpened(userTag)
@@ -218,14 +285,29 @@ function openDailyFortune(automatic = false) {
   }
   void openFortuneDialog(false)
   setPairedDialogView('fortune')
-  if (!automatic && !isActivationPreview.value) {
+  if (!isActivationPreview.value) {
     window.dispatchEvent(
       new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
-        detail: { onlyIfAvailable: true, pairedWithFortune: true },
+        detail: { pairedWithFortune: true },
       }),
     )
   }
 }
+
+watch(
+  () => `${localDate()}:${currentTimeName.value}`,
+  (period, previousPeriod) => {
+    if (
+      period !== previousPeriod &&
+      dialogOpen.value &&
+      details.value &&
+      !details.value.history &&
+      !isActivationPreview.value
+    ) {
+      void openFortuneDialog(false)
+    }
+  },
+)
 
 function setPairedDialogView(view: PairedDialogView) {
   pairedDialogView.value = view
@@ -345,6 +427,20 @@ function handleClose() {
   setDialogOpen(false)
 }
 
+function handleOverlayClick() {
+  if (composerOpen.value && pairedDialogView.value === 'fortune') {
+    handleClose()
+    return
+  }
+  requestTopDialogClose()
+}
+
+function handleDialogStackClose(event: Event) {
+  if ((event as CustomEvent<string>).detail === 'fortune') handleClose()
+  if ((event as CustomEvent<string>).detail === 'profile') profileDialogOpen.value = false
+  if ((event as CustomEvent<string>).detail === 'site-info') siteInfoOpen.value = false
+}
+
 function handleButtonToggle() {
   if (dialogOpen.value) {
     setDialogOpen(false)
@@ -369,6 +465,7 @@ function openSiteInfo() {
 
 function handleComposerState(event: Event) {
   composerOpen.value = (event as CustomEvent<boolean>).detail
+  if (!composerOpen.value) centeredAfterComposer.value = dialogOpen.value
 }
 
 function handlePairedDialogView(event: Event) {
@@ -403,18 +500,31 @@ function clearDialogDrag(event: PointerEvent) {
 }
 
 onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    composerResizeObserver = new ResizeObserver(updatePairedFortuneLayout)
+  }
+  window.addEventListener('resize', updatePairedFortuneLayout)
+  clockInterval = setInterval(() => {
+    currentTime.value = new Date()
+  }, 1000)
   window.addEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.addEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
   window.addEventListener(TIME_FORTUNE_CLOSE_EVENT, handleClose)
+  window.addEventListener(DIALOG_STACK_CLOSE_DIALOG_EVENT, handleDialogStackClose)
   window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
   window.addEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
 })
 
 onBeforeUnmount(() => {
+  if (clockInterval) clearInterval(clockInterval)
+  if (pairedLayoutFrame !== undefined) cancelAnimationFrame(pairedLayoutFrame)
+  composerResizeObserver?.disconnect()
+  window.removeEventListener('resize', updatePairedFortuneLayout)
   stopFirstVisitSequence()
   window.removeEventListener(TIME_FORTUNE_HISTORY_EVENT, handleHistoryOpen)
   window.removeEventListener(TIME_FORTUNE_TOGGLE_EVENT, handleButtonToggle)
   window.removeEventListener(TIME_FORTUNE_CLOSE_EVENT, handleClose)
+  window.removeEventListener(DIALOG_STACK_CLOSE_DIALOG_EVENT, handleDialogStackClose)
   window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerState)
   window.removeEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   runId.value += 1
@@ -426,57 +536,33 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="fortune-dialog">
       <div
-        v-if="dialogOpen"
+        v-if="dialogOpen && !profileDialogOpen && !siteInfoOpen"
         class="fortune-overlay"
         :class="{
+          'fortune-overlay-centered': centeredAfterComposer,
           'fortune-overlay-paired': composerOpen,
-          'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'fortune',
-          'fortune-overlay-paired-inactive': composerOpen && pairedDialogView !== 'fortune',
+          'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'composer',
         }"
-        @click.self="setDialogOpen(false)"
+        :style="{
+          '--paired-fortune-top': pairedFortuneTop === undefined ? '50%' : `${pairedFortuneTop}px`,
+          '--paired-fortune-max-height':
+            pairedFortuneMaxHeight === undefined ? '48vh' : `${pairedFortuneMaxHeight}px`,
+        }"
+        @click.self="handleOverlayClick"
       >
-        <button
-          v-if="composerOpen && pairedDialogView === 'composer'"
-          class="dialog-edge-tab dialog-edge-tab-fortune"
-          type="button"
-          aria-label="打开每日锦言"
-          @click.stop="setPairedDialogView('fortune')"
-        >
-          每日锦言
-        </button>
         <Transition name="dialog-switch">
-          <section
-            v-if="!composerOpen || pairedDialogView === 'fortune'"
-            ref="fortuneDialog"
-            class="fortune-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="fortune-title"
-            @pointerdown="handleDialogPointerDown"
-            @pointermove="handleDialogPointerMove"
-            @pointerup="clearDialogDrag"
-            @pointercancel="clearDialogDrag"
-          >
+          <section ref="fortuneDialog" class="fortune-dialog"
+            role="dialog" :aria-modal="!composerOpen" aria-labelledby="fortune-title" @pointerdown="handleDialogPointerDown"
+            @pointermove="handleDialogPointerMove" @pointerup="clearDialogDrag" @pointercancel="clearDialogDrag">
             <div class="dialog-header-actions">
-              <button
-                v-if="details?.history"
-                class="dialog-icon-button dialog-action"
-                type="button"
-                :aria-label="t('timeFortune.editProfile')"
-                :title="t('timeFortune.editProfile')"
-                @click="profileDialogOpen = true"
-              >
-                <ion-icon name="create-outline" aria-hidden="true"></ion-icon>
+              <button v-if="details?.history" class="dialog-icon-button dialog-action" type="button"
+                :aria-label="t('timeFortune.editProfile')" :title="t('timeFortune.editProfile')"
+                @click="profileDialogOpen = true">
+                <ion-icon name="person-outline" aria-hidden="true"></ion-icon>
               </button>
-              <button
-                v-if="details?.history"
-                class="dialog-icon-button dialog-action"
-                type="button"
-                :aria-label="t('siteInfo.title')"
-                :title="t('siteInfo.title')"
-                @click="openSiteInfo"
-              >
-                <ion-icon name="document-text-outline" aria-hidden="true"></ion-icon>
+              <button v-if="details?.history" class="dialog-icon-button dialog-action" type="button"
+                :aria-label="t('siteInfo.title')" :title="t('siteInfo.title')" @click="openSiteInfo">
+                <ion-icon name="settings-outline" aria-hidden="true"></ion-icon>
               </button>
             </div>
             <p class="dialog-eyebrow">Words From the Stars</p>
@@ -486,18 +572,11 @@ onBeforeUnmount(() => {
               {{ detailsError }}
             </p>
             <template v-else-if="details">
-              <TimeFortuneHistory v-if="details.history" :days="details.days" />
+              <TimeFortuneHistoryDialog v-if="details.history" :days="details.days" />
               <template v-else>
-                <article
-                  v-if="isActivationPreview"
-                  class="fortune-entry activation-locked-entry"
-                  role="button"
-                  tabindex="0"
-                  :aria-label="t('timeFortune.activate')"
-                  @click="openActivationForm"
-                  @keydown.enter.prevent="openActivationForm"
-                  @keydown.space.prevent="openActivationForm"
-                >
+                <article v-if="isActivationPreview" class="fortune-entry activation-locked-entry" role="button"
+                  tabindex="0" :aria-label="t('timeFortune.activate')" @click="openActivationForm"
+                  @keydown.enter.prevent="openActivationForm" @keydown.space.prevent="openActivationForm">
                   <h3>
                     每日锦言
                     <span class="fortune-lock-icon" aria-hidden="true">
@@ -508,29 +587,20 @@ onBeforeUnmount(() => {
                 </article>
                 <template v-else>
                   <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
-                  <section v-for="day in details.days" :key="day.date">
-                    <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
-                      <h3>每日锦言</h3>
+                  <div v-if="details.days.length" class="fortune-current-datetime">
+                    {{ currentDateTime }} · {{ currentTimeName }}
+                  </div>
+                  <section v-for="day in details.days.slice(0, 1)" :key="day.date">
+                    <article v-if="day.dailyFortune" class="fortune-entry">
+                      <!-- <h3>每日锦言</h3> -->
                       <p>{{ day.dailyFortune }}</p>
                     </article>
-                    <article
-                      v-for="fortune in day.timeFortunes"
-                      :key="fortune.timeName"
-                      :class="[
-                        'fortune-entry',
-                        'time-entry',
-                        { 'current-time-entry': fortune.timeName === details.timeName },
-                      ]"
-                    >
-                      <h3>
-                        {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
-                        <span
-                          v-if="fortune.timeName === details.timeName"
-                          class="current-time-label"
-                          >当前时辰</span
-                        >
+                    <article v-for="fortune in day.timeFortunes.filter((entry) => entry.timeName === currentTimeName)"
+                      :key="fortune.timeName" class="fortune-entry time-entry">
+                      <h3 class="current-fortune-period">
+                        {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}：{{ fortune.message }}
                       </h3>
-                      <p>{{ fortune.message }}</p>
+
                     </article>
                   </section>
                 </template>
@@ -542,7 +612,7 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
     <UserProfileEditDialog :open="profileDialogOpen" @close="profileDialogOpen = false" />
-    <SiteInfoView v-if="siteInfoOpen" dialog @close="siteInfoOpen = false" />
+    <SiteInfoDialog v-if="siteInfoOpen" dialog @close="siteInfoOpen = false" />
   </Teleport>
 </template>
 
@@ -559,42 +629,65 @@ onBeforeUnmount(() => {
 }
 
 .fortune-overlay-paired {
+  pointer-events: auto;
+  padding: 24px;
+  background: rgba(1, 7, 19, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+.fortune-overlay-centered {
+  padding: 24px;
+}
+
+.fortune-overlay-centered .fortune-dialog {
+  height: auto;
+  max-height: min(720px, calc(100vh - 48px));
+}
+
+.fortune-overlay-paired-active {
+  z-index: 1100;
   pointer-events: none;
   background: transparent;
   backdrop-filter: none;
 }
 
-.fortune-overlay-paired-active {
-  z-index: 1100;
+.fortune-overlay-paired .fortune-dialog {
+  height: auto;
+  max-height: 48vh;
+  padding: 36px 24px 12px;
   pointer-events: auto;
-  background: rgba(1, 7, 19, 0.36);
-  backdrop-filter: blur(3px);
-}
-
-.fortune-overlay-paired-inactive {
-  z-index: 1200;
 }
 
 .fortune-dialog {
   position: relative;
   box-sizing: border-box;
   width: min(100%, 520px);
-  height: min(
-    720px,
-    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
-  );
+  height: min(720px,
+      var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px)));
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
   touch-action: pan-y;
   interpolate-size: allow-keywords;
   cursor: grab;
-  padding: 34px clamp(24px, 6vw, 48px) 24px;
+  padding: 34px 24px 24px;
   border: 0;
   border-radius: 24px;
   background: transparent;
   box-shadow: none;
   color: #e8f1fb;
+}
+
+.fortune-overlay-paired-active .fortune-dialog {
+  position: fixed;
+  top: var(--paired-fortune-top, 50%);
+  left: 50%;
+  width: min(520px, calc(100vw - 48px));
+  height: auto;
+  max-height: var(--paired-fortune-max-height, 48vh);
+  margin: 0;
+  padding: 36px 24px 12px;
+  transform: translate(-50%, -50%);
 }
 
 .dialog-switch-enter-active,
@@ -629,20 +722,8 @@ onBeforeUnmount(() => {
   animation: dialog-edge-tab-pulse 1.8s ease-in-out infinite;
 }
 
-.dialog-edge-tab-fortune {
-  right: 0;
-  border-right: 0;
-  border-radius: 12px 0 0 12px;
-}
-
-@media (max-width: 640px) {
-  .fortune-overlay-paired-active .fortune-dialog {
-    width: min(520px, calc(100vw - 80px));
-    margin-right: 32px;
-  }
-}
-
 @keyframes dialog-edge-tab-pulse {
+
   0%,
   100% {
     opacity: 0.72;
@@ -656,6 +737,7 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .dialog-edge-tab,
   .dialog-switch-enter-active,
   .dialog-switch-leave-active {
@@ -730,11 +812,7 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.daily-fortune-sparkle {
-  background: rgba(137, 177, 226, 0.06);
-}
-
-.fortune-entry + .fortune-entry {
+.fortune-entry+.fortune-entry {
   margin-top: 14px;
 }
 
@@ -744,6 +822,20 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.08em;
+}
+
+.fortune-current-datetime {
+  position: absolute;
+  top: 14px;
+  right: 20px;
+  color: #c3d7ee;
+  font-size: 11px;
+  text-align: right;
+}
+
+.fortune-entry h3.current-fortune-period {
+  color: #8fe3ae;
+  text-align: start;
 }
 
 .activation-locked-entry {
@@ -779,29 +871,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   line-height: 1.8;
   white-space: pre-wrap;
-}
-
-.current-time-entry {
-  background: linear-gradient(135deg, rgba(240, 189, 99, 0.16), rgba(137, 177, 226, 0.08));
-  box-shadow:
-    inset 0 0 24px rgba(240, 189, 99, 0.08),
-    0 0 18px rgba(240, 189, 99, 0.08);
-}
-
-.current-time-entry h3 {
-  color: #f5d58e;
-}
-
-.current-time-label {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 7px;
-  border: 0;
-  border-radius: 999px;
-  color: #f5d58e;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  vertical-align: 1px;
 }
 
 .dialog-status {
@@ -841,6 +910,6 @@ onBeforeUnmount(() => {
 
 .fortune-dialog-enter-from .fortune-dialog,
 .fortune-dialog-leave-to .fortune-dialog {
-  transform: translateY(12px) scale(0.98);
+  transform: translateY(12px);
 }
 </style>

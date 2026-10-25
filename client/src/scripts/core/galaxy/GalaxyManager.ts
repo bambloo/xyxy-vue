@@ -21,10 +21,9 @@ type GalaxyManagerOptions = {
 }
 
 const starColors = ['#7ec8ff', '#a7e8ff', '#ffd27d', '#ff9fba', '#b69cff', '#8ff0da']
-const SENT_STAR_LABEL_OFFSET_PIXELS = 48
-const SENT_STAR_LABEL_WIDTH_PIXELS = 144
-const SENT_STAR_LABEL_HEIGHT_PIXELS = 36
-const SENT_STAR_LABEL_MAX_DISTANCE = 160
+const SENT_STAR_LABEL_OFFSET = 3
+const SENT_STAR_LABEL_WIDTH = 8
+const SENT_STAR_LABEL_HEIGHT = 2
 const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
 const GALAXY_CAMERA_CENTER_LIMIT = 40
@@ -508,7 +507,7 @@ export class GalaxyManager {
           u_color: { value: new THREE.Color(data.color) },
         },
         transparent: true,
-        depthTest: false,
+        depthTest: true,
         opacity: 0.9,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -637,15 +636,12 @@ export class GalaxyManager {
     if (this.sentStars.size === 0) return
     galaxy.updateMatrixWorld(true)
     camera.updateMatrixWorld(true)
-    const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
-    const viewportHeight = Math.max(1, this.options.renderer.domElement.clientHeight)
+    // const cameraPosition = camera.getWorldPosition(new THREE.Vector3())
     this.sentStars.forEach((star) => {
       const worldPosition = galaxy.localToWorld(star.star.position.clone())
       const cameraSpacePosition = camera.worldToLocal(worldPosition.clone())
       const inFrontOfCamera = cameraSpacePosition.z < 0
-      const withinLabelRange =
-        worldPosition.distanceTo(cameraPosition) <= SENT_STAR_LABEL_MAX_DISTANCE
-      star.label.visible = this.isStarVisible() && inFrontOfCamera && withinLabelRange
+      star.label.visible = this.isStarVisible() && inFrontOfCamera
       if (!star.label.visible) return
 
       const minimumLabelDepth = camera.near + 5
@@ -657,18 +653,11 @@ export class GalaxyManager {
         labelCameraPosition.y *= depthScale
         labelCameraPosition.z = -minimumLabelDepth
       }
-      const safeDepth = -labelCameraPosition.z
-      const viewHeight = 2 * safeDepth * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5))
-      const worldUnitsPerPixel = viewHeight / viewportHeight
-      labelCameraPosition.y += worldUnitsPerPixel * SENT_STAR_LABEL_OFFSET_PIXELS
+      labelCameraPosition.y += SENT_STAR_LABEL_OFFSET
       const galaxyQuaternion = galaxy.getWorldQuaternion(new THREE.Quaternion())
       const cameraQuaternion = camera.getWorldQuaternion(new THREE.Quaternion())
       star.label.quaternion.copy(galaxyQuaternion.invert().multiply(cameraQuaternion))
-      star.label.scale.set(
-        worldUnitsPerPixel * SENT_STAR_LABEL_WIDTH_PIXELS,
-        worldUnitsPerPixel * SENT_STAR_LABEL_HEIGHT_PIXELS,
-        1,
-      )
+      star.label.scale.set(SENT_STAR_LABEL_WIDTH, SENT_STAR_LABEL_HEIGHT, 1)
       camera.localToWorld(labelCameraPosition)
       star.label.position.copy(galaxy.worldToLocal(labelCameraPosition))
     })

@@ -14,6 +14,12 @@ const timeNames = [
   '晚子时',
 ]
 
+export function currentTimeFortuneName(date = new Date()) {
+  const hour = date.getHours()
+  const index = hour === 23 ? 12 : Math.floor(((hour + 1) % 24) / 2)
+  return timeNames[index]!
+}
+
 export function timeFortuneOrder(timeName: string) {
   const index = timeNames.indexOf(timeName)
   return index < 0 ? timeNames.length : index

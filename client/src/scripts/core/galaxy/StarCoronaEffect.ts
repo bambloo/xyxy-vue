@@ -1,5 +1,17 @@
 import * as THREE from 'three'
 
+const SYNODIC_MONTH_MS = 29.53058867 * 24 * 60 * 60 * 1000
+const BASE_NEW_MOON = Date.UTC(2000, 0, 6, 18, 14)
+
+export function getMoonPhase(date = new Date()) {
+  const elapsed = (date.getTime() - BASE_NEW_MOON + 24 * 60 * 60 * 1000 * 6) % SYNODIC_MONTH_MS
+  return ((elapsed + SYNODIC_MONTH_MS) % SYNODIC_MONTH_MS) / SYNODIC_MONTH_MS
+}
+
+export function getMoonIllumination(phase: number) {
+  return 1 - Math.abs(phase - 0.5) * 2
+}
+
 const vertexShader = `
   varying vec2 vUv;
   void main() {
@@ -105,201 +117,9 @@ const sunButtonFragmentShader = `
   precision highp float;
   varying vec2 vUv;
   uniform vec2 u_resolution;
-  uniform float u_time;
   uniform float u_moon_phase;
 
-  float noise3D(vec3 p) {
-    return fract(sin(dot(p, vec3(12.9898, 78.233, 128.852))) * 43758.5453) * 2.0 - 1.0;
-  }
-
-  float simplex3D(vec3 p) {
-    float f3 = 1.0 / 3.0;
-    float s = (p.x + p.y + p.z) * f3;
-    ivec3 cell = ivec3(floor(p + vec3(s)));
-    float g3 = 1.0 / 6.0;
-    float t = float(cell.x + cell.y + cell.z) * g3;
-    vec3 x0 = p - (vec3(cell) - t);
-    ivec3 i1;
-    ivec3 i2;
-
-    if (x0.x >= x0.y) {
-      if (x0.y >= x0.z) {
-        i1 = ivec3(1, 0, 0);
-        i2 = ivec3(1, 1, 0);
-      } else if (x0.x >= x0.z) {
-        i1 = ivec3(1, 0, 0);
-        i2 = ivec3(1, 0, 1);
-      } else {
-        i1 = ivec3(0, 0, 1);
-        i2 = ivec3(1, 0, 1);
-      }
-    } else {
-      if (x0.y < x0.z) {
-        i1 = ivec3(0, 0, 1);
-        i2 = ivec3(0, 1, 1);
-      } else if (x0.x < x0.z) {
-        i1 = ivec3(0, 1, 0);
-        i2 = ivec3(0, 1, 1);
-      } else {
-        i1 = ivec3(0, 1, 0);
-        i2 = ivec3(1, 1, 0);
-      }
-    }
-
-    vec3 x1 = x0 - vec3(i1) + g3;
-    vec3 x2 = x0 - vec3(i2) + 2.0 * g3;
-    vec3 x3 = x0 - 1.0 + 3.0 * g3;
-    vec3 cell0 = vec3(cell);
-    vec3 cell1 = vec3(cell + i1);
-    vec3 cell2 = vec3(cell + i2);
-    vec3 cell3 = vec3(cell + ivec3(1));
-    vec3 gr0 = normalize(vec3(noise3D(cell0), noise3D(cell0 * 2.01), noise3D(cell0 * 2.02)) + 0.00001);
-    vec3 gr1 = normalize(vec3(noise3D(cell1), noise3D(cell1 * 2.01), noise3D(cell1 * 2.02)) + 0.00001);
-    vec3 gr2 = normalize(vec3(noise3D(cell2), noise3D(cell2 * 2.01), noise3D(cell2 * 2.02)) + 0.00001);
-    vec3 gr3 = normalize(vec3(noise3D(cell3), noise3D(cell3 * 2.01), noise3D(cell3 * 2.02)) + 0.00001);
-    float t0 = max(0.5 - dot(x0, x0), 0.0);
-    float t1 = max(0.5 - dot(x1, x1), 0.0);
-    float t2 = max(0.5 - dot(x2, x2), 0.0);
-    float t3 = max(0.5 - dot(x3, x3), 0.0);
-    t0 *= t0;
-    t1 *= t1;
-    t2 *= t2;
-    t3 *= t3;
-
-    return 96.0 * (
-      t0 * t0 * dot(gr0, x0) +
-      t1 * t1 * dot(gr1, x1) +
-      t2 * t2 * dot(gr2, x2) +
-      t3 * t3 * dot(gr3, x3)
-    );
-  }
-
-  float fbm(vec3 p) {
-    float value = 0.5 * simplex3D(p);
-    p *= 2.01;
-    value += 0.25 * simplex3D(p);
-    p *= 2.02;
-    value += 0.125 * simplex3D(p);
-    p *= 2.03;
-    value += 0.0625 * simplex3D(p);
-    p *= 2.04;
-    value += 0.03125 * simplex3D(p);
-    p *= 2.05;
-    value += 0.015625 * simplex3D(p);
-    return value;
-  }
-
-  vec4 hash4(vec4 value) {
-    return fract(sin(value) * 1399763.5453123);
-  }
-
-  float noise4q(vec4 point) {
-    vec4 offsets = vec4(0.0, 0.25, 0.5, 0.75);
-    vec4 wCell = floor(point.wwww + offsets);
-    vec4 base = floor(point.xxxx + offsets)
-      + floor(point.yyyy + offsets) * 157.0
-      + floor(point.zzzz + offsets) * 113.0;
-    vec4 p1 = base + fract(wCell * 0.00390625) * vec4(164352.0, -164352.0, 163840.0, -163840.0);
-    vec4 p2 = base + fract((wCell + 1.0) * 0.00390625) * vec4(164352.0, -164352.0, 163840.0, -163840.0);
-    vec4 blendX = fract(point.xxxx + offsets);
-    vec4 blendY = fract(point.yyyy + offsets);
-    blendX = blendX * blendX * (3.0 - 2.0 * blendX);
-    blendY = blendY * blendY * (3.0 - 2.0 * blendY);
-    vec4 n1 = vec4(0.0, 1.0, 157.0, 158.0);
-    vec4 n2 = vec4(113.0, 114.0, 270.0, 271.0);
-    vec4 lowerA = mix(hash4(p1), hash4(n1.yyyy + p1), blendX);
-    vec4 lowerB = mix(hash4(n1.zzzz + p1), hash4(n1.wwww + p1), blendX);
-    vec4 upperA = mix(hash4(p2), hash4(n1.yyyy + p2), blendX);
-    vec4 upperB = mix(hash4(n1.zzzz + p2), hash4(n1.wwww + p2), blendX);
-    lowerA = mix(lowerA, lowerB, blendY);
-    upperA = mix(upperA, upperB, blendY);
-    lowerB = mix(hash4(n2.xxxx + p1), hash4(n2.yyyy + p1), blendX);
-    upperB = mix(hash4(n2.zzzz + p1), hash4(n2.wwww + p1), blendX);
-    lowerB = mix(lowerB, upperB, blendY);
-    upperB = mix(hash4(n2.xxxx + p2), hash4(n2.yyyy + p2), blendX);
-    vec4 upperC = mix(hash4(n2.zzzz + p2), hash4(n2.wwww + p2), blendX);
-    upperB = mix(upperB, upperC, blendY);
-    blendX = fract(point.zzzz + offsets);
-    blendY = fract(point.wwww + offsets);
-    blendX = blendX * blendX * (3.0 - 2.0 * blendX);
-    blendY = blendY * blendY * (3.0 - 2.0 * blendY);
-    lowerA = mix(lowerA, lowerB, blendX);
-    upperA = mix(upperA, upperB, blendX);
-    lowerA = mix(lowerA, upperA, blendY);
-    float value = dot(lowerA, vec4(0.25));
-    return value * value * (3.0 - 2.0 * value);
-  }
-
-  float noiseSphere(vec3 ray, vec3 position, float radius, mat3 rotation, float zoom, vec3 offset, float anim) {
-    float projection = dot(ray, position);
-    float distanceSquared = dot(position, position) - projection * projection;
-    float sum = 0.0;
-    float stepSize = 0.03125;
-    float scale = zoom / (stepSize * stepSize);
-    float amplitude = 5.0;
-    for (int index = 0; index < 3; index++) {
-      float radiusSquared = radius * radius;
-      if (distanceSquared < radiusSquared) {
-        float depth = sqrt(radiusSquared - distanceSquared);
-        vec3 surfacePoint = (ray * (projection - depth) - position) * rotation;
-        sum += abs(noise4q(vec4(surfacePoint * scale + offset * amplitude, anim * amplitude)) * stepSize);
-      }
-      amplitude -= 2.0;
-      stepSize *= 4.0;
-      scale *= 0.0625;
-      radius -= radius * 0.02;
-    }
-    return sum;
-  }
-
-  float ring(vec3 ray, vec3 position, float radius, float size) {
-    float projection = dot(ray, position);
-    float distanceSquared = dot(position, position) - projection * projection;
-    return max(0.0, 1.0 - size * abs(radius - sqrt(distanceSquared)));
-  }
-
-  float ringRayNoise(vec3 ray, vec3 position, float radius, float size, mat3 rotation, float anim) {
-    float projection = dot(ray, position);
-    vec3 projected = ray * projection - position;
-    float distanceToCenter = length(projected);
-    projected = normalize(projected * rotation);
-    float band = max(0.0, 1.0 - size * abs(radius - distanceToCenter));
-    float detail = pow(noise4q(vec4(projected, -anim + distanceToCenter)) * 2.0, 2.0);
-    float noise = 0.4;
-    float secondary = 1.0;
-    if (distanceToCenter > radius) {
-      noise = noise4q(vec4(projected * 10.0, -anim + distanceToCenter));
-      secondary = noise4q(vec4(projected * 50.0, -anim * 2.5 + distanceToCenter * 2.0)) * 2.0;
-    }
-    noise = noise * noise * detail * secondary;
-    return pow(band, 4.0) + band * band * noise;
-  }
-
-  vec4 noiseSpace(vec3 ray, vec3 position, float radius, mat3 rotation, float zoom, vec3 offset) {
-    float projection = dot(ray, position);
-    float distanceSquared = dot(position, position) - projection * projection;
-    float depth = sqrt(abs(radius * radius - distanceSquared));
-    vec3 surfacePoint = (ray * (projection - depth) - position) * rotation * (zoom / 0.09375);
-    float base = abs(noise4q(vec4(surfacePoint + offset, 0.0)) * 0.09375);
-    base += abs(noise4q(vec4(surfacePoint * 0.5 + offset, 0.0)) * 0.1875);
-    base += abs(noise4q(vec4(surfacePoint * 0.25 + offset, 0.0)) * 0.375);
-    return vec4(
-      base * 2.0,
-      abs(noise4q(vec4(surfacePoint * 0.1 + offset, 0.0))),
-      abs(noise4q(vec4(surfacePoint * 0.1 + offset * 6.0, 0.0))),
-      abs(noise4q(vec4(surfacePoint * 0.1 + offset * 13.0, 0.0)))
-    );
-  }
-
-  float sphereZero(vec3 ray, vec3 position, float radius) {
-    float projection = dot(ray, position);
-    float distanceSquared = dot(position, position) - projection * projection;
-    return distanceSquared < radius * radius ? 0.0 : 1.0;
-  }
-
   void main() {
-    vec2 point = (vUv * 2.0 - 1.0) * vec2(u_resolution.x / u_resolution.y, 1.0);
-    float time = u_time;
     vec2 pos = (vUv - 0.5) * u_resolution;
     float radius = u_resolution.y / 3.0;
     float radiusSquared = dot(pos, pos);
@@ -308,19 +128,6 @@ const sunButtonFragmentShader = `
 
     vec3 normal = normalize(vec3(pos, zIn));
     vec3 normalOut = normalize(vec3(pos, zOut) + vec3(0.0, 0.0, 0.0001));
-    float roughness = 0.05;
-    float nx = fbm(normal + vec3(roughness, 0.0, 0.0)) * 0.5 + 0.5;
-    float ny = fbm(normal + vec3(0.0, roughness, 0.0)) * 0.5 + 0.5;
-    float nz = fbm(normal + vec3(0.0, 0.0, roughness)) * 0.5 + 0.5;
-    normal = normalize(normal * vec3(nx, ny, nz));
-
-    float textureRotation = time * 0.025;
-    vec3 terrainNormal = vec3(
-      normal.x * cos(textureRotation) - normal.y * sin(textureRotation),
-      normal.x * sin(textureRotation) + normal.y * cos(textureRotation),
-      normal.z
-    );
-    float terrain = 1.0 - (fbm(terrainNormal) * 0.5 + 0.5);
     float insideSphere = 1.0 - smoothstep(radius - 1.0, radius + 1.0, length(pos));
     float outsideSphere = 1.0 - insideSphere;
     float innerAtmosphere = max(0.0, (radius * 0.2) / max(zIn, 0.001) - 0.2) * insideSphere;
@@ -328,17 +135,22 @@ const sunButtonFragmentShader = `
     float phaseAngle = u_moon_phase * 6.28318530718;
     vec3 lightDirection = normalize(vec3(sin(phaseAngle), 0.0, -cos(phaseAngle)));
     float diffuse = max(0.0, dot(normal, lightDirection));
-    float diffuseOut = max(0.0, dot(normalOut, lightDirection) + 0.3);
+    float diffuseOut = max(0.0, dot(normalOut, lightDirection) + 0.1);
 
-    float luminance =
-      terrain * diffuse * 1.75 + innerAtmosphere * diffuse + outerAtmosphere * diffuseOut;
-    vec3 color = vec3(clamp(luminance, 0.0, 1.0));
+    float illumination = 0.5 - 0.5 * cos(phaseAngle);
+    float earthshine = (1.0 - diffuse) * mix(0.015, 0.12, 1.0 - illumination);
+    float luminance = earthshine + diffuse * 1.0
+      + innerAtmosphere * diffuse + outerAtmosphere * diffuseOut;
+    vec3 moonColor = vec3(1.0, 0.78, 0.28) ;
+    vec3 color = moonColor * clamp(luminance, 0.15, 0.8);
     float atmosphereAlpha = clamp(
       innerAtmosphere * diffuse + outerAtmosphere * diffuseOut,
       0.0,
       1.0
     );
-    float alpha = max(insideSphere, atmosphereAlpha * outsideSphere);
+    float halo = exp(-max(length(pos) - radius, 0.0) * 0.08) * illumination * 0.3;
+    float alpha = max(insideSphere, max(atmosphereAlpha, halo) * outsideSphere);
+    color += vec3(1.0, 0.78, 0.28) * halo;
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `
@@ -375,10 +187,8 @@ export class StarCoronaCanvasEffect {
   private readonly gl: WebGLRenderingContext
   private readonly program: WebGLProgram
   private readonly resolutionLocation: WebGLUniformLocation
-  private readonly timeLocation: WebGLUniformLocation
   private readonly moonPhaseLocation: WebGLUniformLocation
   private frame = 0
-  private readonly startTime = performance.now()
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl', { alpha: true, antialias: true })
@@ -406,13 +216,10 @@ export class StarCoronaCanvasEffect {
     this.program = program
 
     const resolutionLocation = gl.getUniformLocation(program, 'u_resolution')
-    const timeLocation = gl.getUniformLocation(program, 'u_time')
     const moonPhaseLocation = gl.getUniformLocation(program, 'u_moon_phase')
     if (resolutionLocation === null) throw new Error('Unable to locate shader uniform u_resolution')
-    if (timeLocation === null) throw new Error('Unable to locate shader uniform u_time')
     if (moonPhaseLocation === null) throw new Error('Unable to locate shader uniform u_moon_phase')
     this.resolutionLocation = resolutionLocation
-    this.timeLocation = timeLocation
     this.moonPhaseLocation = moonPhaseLocation
     canvas.width = 220 * Math.min(window.devicePixelRatio || 1, 2)
     canvas.height = canvas.width
@@ -460,36 +267,8 @@ export class StarCoronaCanvasEffect {
     this.gl.clear(this.gl.COLOR_BUFFER_BIT)
     this.gl.useProgram(this.program)
     this.gl.uniform2f(this.resolutionLocation, this.canvas.width, this.canvas.height)
-    this.gl.uniform1f(this.timeLocation, (performance.now() - this.startTime) * 0.001)
-    this.gl.uniform1f(this.moonPhaseLocation, this.getMoonPhase())
+    const phase = getMoonPhase()
+    this.gl.uniform1f(this.moonPhaseLocation, phase)
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3)
-  }
-
-  private getMoonPhase() {
-    const lunarDateFormatter = new Intl.DateTimeFormat('en-u-ca-chinese', { day: 'numeric' })
-    const today = new Date()
-    const lunarDay = Number(
-      lunarDateFormatter.formatToParts(today).find(({ type }) => type === 'day')?.value,
-    )
-    if (!Number.isInteger(lunarDay) || lunarDay < 1 || lunarDay > 30) {
-      throw new Error('Unable to determine the current Chinese lunar day')
-    }
-
-    const dateAtNoon = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12)
-    let lunarMonthLength = lunarDay
-    for (let offset = 1; offset <= 30; offset++) {
-      const nextDay = new Date(dateAtNoon)
-      nextDay.setDate(dateAtNoon.getDate() + offset)
-      const nextLunarDay = Number(
-        lunarDateFormatter.formatToParts(nextDay).find(({ type }) => type === 'day')?.value,
-      )
-      if (nextLunarDay === 1) {
-        lunarMonthLength = lunarDay + offset - 1
-        break
-      }
-    }
-
-    if (lunarDay <= 15) return ((lunarDay - 1) / 14) * 0.5
-    return 0.5 + ((lunarDay - 15) / (lunarMonthLength - 15)) * 0.5
   }
 }

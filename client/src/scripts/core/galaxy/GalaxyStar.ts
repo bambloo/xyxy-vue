@@ -62,10 +62,7 @@ export class GalaxyStar {
   update(time = 0) {
     const pulse = 1 + Math.sin(time * 0.004 + this.phase) * 0.14
     const isSentStar = Boolean(this.sentStarColor)
-    const interactionGlow = Math.min(
-      1,
-      Math.log2(this.connectionCount + 1) / (isSentStar ? 4 : 5),
-    )
+    const interactionGlow = Math.min(1, Math.log2(this.connectionCount + 1) / (isSentStar ? 4 : 5))
     const brightness = isSentStar ? 1.18 + interactionGlow * 1.35 : 1 + interactionGlow * 1.2
     const opacity =
       this.regularOpacity +
@@ -104,5 +101,4 @@ export class GalaxyStar {
     fieldColors.setXYZ(this.index, color.r, color.g, color.b)
     fieldColors.needsUpdate = true
   }
-
 }

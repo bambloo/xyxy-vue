@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import type { SentGalaxyStar } from '../../../common/entity/galaxy-star'
+import type { SentGalaxyStar } from '../../../../common/entity/galaxy-star'
 import {
   GALAXY_STAR_COMPOSE_EVENT,
   announceGalaxyStarComposerState,
+  announceGalaxyStarNavigate,
   announceGalaxyStarSendStatus,
   announceGalaxyStarSent,
   type GalaxyStarComposeOptions,
 } from '@/events/galaxy-star'
 import { post } from '@/scripts/request'
+import { DIALOG_STACK_CLOSE_DIALOG_EVENT, requestTopDialogClose } from '@/events/dialog-stack'
 import {
   TIME_FORTUNE_CLOSE_EVENT,
   TIME_FORTUNE_DIALOG_STATE_EVENT,
@@ -24,6 +26,8 @@ const pairedDialogView = ref<PairedDialogView>('fortune')
 const statusLoading = ref(false)
 const sending = ref(false)
 const canSend = ref<boolean>()
+const sentStarColor = ref('')
+const sentStarId = ref('')
 const error = ref('')
 const title = ref('')
 const content = ref('')
@@ -39,18 +43,22 @@ async function openComposer(event?: Event) {
   statusLoading.value = true
   error.value = ''
   canSend.value = undefined
+  sentStarColor.value = ''
+  sentStarId.value = ''
   try {
     const packet = await post('/wpi/user/galaxy-star/status', statusLoading)
-    const result = packet.data as { canSend?: boolean } | undefined
+    const result = packet.data as
+      { canSend?: boolean; todayStarColor?: string; todayStarId?: string } | undefined
     if (typeof result?.canSend !== 'boolean') {
       throw new Error('星星发送状态暂不可用，请稍后重试。')
     }
+    if (!result.canSend && !result.todayStarId) {
+      throw new Error('今天寄出的星星信息暂不可用，请稍后重试。')
+    }
 
     canSend.value = result.canSend
-    if (options?.onlyIfAvailable && !result.canSend) {
-      closeComposer()
-      return
-    }
+    sentStarColor.value = result.todayStarColor ?? ''
+    sentStarId.value = result.todayStarId ?? ''
     if (isFortunePairedComposer && !fortuneDialogOpen.value) {
       closeComposer()
       return
@@ -74,6 +82,15 @@ async function openComposer(event?: Event) {
 }
 
 function closeComposer() {
+  if (pairedWithFortune.value && fortuneDialogOpen.value) {
+    announceGalaxyStarComposerState(false)
+    setPairedDialogView('fortune')
+    return
+  }
+  dismissComposer()
+}
+
+function dismissComposer() {
   isOpen.value = false
   pairedWithFortune.value = false
   announceGalaxyStarComposerState(false)
@@ -81,17 +98,43 @@ function closeComposer() {
 
 function handleFortuneDialogState(event: Event) {
   fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
+  if (!fortuneDialogOpen.value && pairedWithFortune.value) dismissComposer()
 }
 
 function handleFortuneClose() {
-  if (isOpen.value) closeComposer()
+  if (isOpen.value) dismissComposer()
+}
+
+function handleDialogStackClose(event: Event) {
+  if ((event as CustomEvent<string>).detail === 'composer') closeComposer()
 }
 
 function setPairedDialogView(view: PairedDialogView) {
+  if (
+    view === 'composer' &&
+    pairedWithFortune.value &&
+    fortuneDialogOpen.value &&
+    pairedDialogView.value !== 'composer'
+  ) {
+    announceGalaxyStarComposerState(true)
+  }
   pairedDialogView.value = view
   window.dispatchEvent(
     new CustomEvent<PairedDialogView>(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, { detail: view }),
   )
+}
+
+function handleStarEdgeTabClick() {
+  if (canSend.value === false && sentStarId.value) {
+    if (pairedWithFortune.value && fortuneDialogOpen.value) {
+      window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
+    } else {
+      closeComposer()
+    }
+    announceGalaxyStarNavigate(sentStarId.value)
+    return
+  }
+  setPairedDialogView('composer')
 }
 
 function handlePairedDialogView(event: Event) {
@@ -117,12 +160,14 @@ function handleOutsidePointerDown(event: PointerEvent) {
     setPairedDialogView('fortune')
     return
   }
-  const shouldCloseFortune = pairedWithFortune.value && fortuneDialogOpen.value
-  if (shouldCloseFortune) {
-    window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
-  } else {
-    closeComposer()
+  if (
+    pairedWithFortune.value &&
+    fortuneDialogOpen.value &&
+    pairedDialogView.value === 'fortune'
+  ) {
+    return
   }
+  requestTopDialogClose()
 }
 
 async function sendStar() {
@@ -139,6 +184,8 @@ async function sendStar() {
       throw new Error('星星发送失败，请稍后重试。')
     }
     canSend.value = false
+    sentStarColor.value = result.star.color
+    sentStarId.value = result.star.id
     title.value = ''
     content.value = ''
     announceGalaxyStarSent(result.star)
@@ -156,6 +203,7 @@ onMounted(() => {
   window.addEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
   window.addEventListener(TIME_FORTUNE_CLOSE_EVENT, handleFortuneClose)
+  window.addEventListener(DIALOG_STACK_CLOSE_DIALOG_EVENT, handleDialogStackClose)
   window.addEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.addEventListener('pointerdown', handleOutsidePointerDown)
 })
@@ -163,6 +211,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMPOSE_EVENT, openComposer)
   window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
   window.removeEventListener(TIME_FORTUNE_CLOSE_EVENT, handleFortuneClose)
+  window.removeEventListener(DIALOG_STACK_CLOSE_DIALOG_EVENT, handleDialogStackClose)
   window.removeEventListener(TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT, handlePairedDialogView)
   document.removeEventListener('pointerdown', handleOutsidePointerDown)
 })
@@ -181,16 +230,21 @@ onBeforeUnmount(() => {
           'star-compose-overlay-paired-inactive':
             pairedWithFortune && fortuneDialogOpen && pairedDialogView !== 'composer',
         }"
-        @click.self="closeComposer"
+        @click.self="requestTopDialogClose"
       >
         <button
           v-if="pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'fortune'"
           class="dialog-edge-tab dialog-edge-tab-star"
           type="button"
-          aria-label="打开寄出星星"
-          @click.stop="setPairedDialogView('composer')"
+          :aria-label="canSend === false ? '前往今天寄出的星星' : '打开寄出星星'"
+          :style="{ '--sent-star-color': canSend === false ? sentStarColor : '#f5d58e' }"
+          @click.stop="handleStarEdgeTabClick"
         >
-          寄出星星
+          <ion-icon
+            :name="canSend === false ? 'star' : 'star-outline'"
+            aria-hidden="true"
+          ></ion-icon>
+          {{ canSend === false ? '定位星星' : '寄出星星' }}
         </button>
         <Transition name="dialog-switch">
           <section
@@ -198,11 +252,9 @@ onBeforeUnmount(() => {
             class="star-compose-dialog"
             ref="composerDialog"
             role="dialog"
-            aria-modal="true"
+            :aria-modal="!pairedWithFortune || !fortuneDialogOpen"
             aria-labelledby="star-compose-title"
           >
-            <p class="star-compose-eyebrow">A MESSAGE TO THE GALAXY</p>
-            <h2 id="star-compose-title">寄出一颗星星</h2>
             <p v-if="statusLoading" class="star-compose-status">正在确认今日发送机会…</p>
             <p v-else-if="error" class="star-compose-status star-compose-error" role="alert">
               {{ error }}
@@ -212,44 +264,48 @@ onBeforeUnmount(() => {
               今日的星星已经送出，明天再来吧。
             </p>
             <form v-else-if="canSend" class="star-compose-form" @submit.prevent="sendStar">
-              <label>
-                星星标题
+              <div class="star-compose-title-color-row">
                 <input v-model="title" maxlength="40" required placeholder="为这颗星星取个名字" />
-              </label>
-              <label>
-                星星内容
+                <div class="star-compose-color-picker">
+                  <label
+                    class="star-compose-color-swatch"
+                    :style="{ '--swatch-color': color }"
+                    aria-label="选择星星颜色"
+                  >
+                    <input
+                      id="star-compose-color"
+                      v-model="color"
+                      class="star-compose-color-input"
+                      type="color"
+                      aria-label="星星颜色"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div class="star-compose-content-row">
                 <textarea
                   v-model="content"
                   maxlength="500"
                   required
-                  rows="4"
+                  rows="3"
                   placeholder="写下想送往银河的话"
                 ></textarea>
-              </label>
-              <div class="star-compose-color-picker">
-                <label for="star-compose-color" class="star-compose-color-title">
-                  选择星星颜色
-                </label>
-                <label
-                  class="star-compose-color-swatch"
-                  :style="{ '--swatch-color': color }"
-                  aria-label="选择星星颜色"
+                <button
+                  class="star-compose-submit"
+                  type="submit"
+                  :disabled="sending"
+                  :aria-label="sending ? '正在发送星星' : '发送星星'"
+                  :title="sending ? '正在发送星星' : '发送星星'"
                 >
-                  <input
-                    id="star-compose-color"
-                    v-model="color"
-                    class="star-compose-color-input"
-                    type="color"
-                    aria-label="星星颜色"
-                  />
-                </label>
+                  <ion-icon
+                    :name="sending ? 'hourglass-outline' : 'star-outline'"
+                    aria-hidden="true"
+                  ></ion-icon>
+                </button>
               </div>
               <p v-if="error" class="star-compose-status star-compose-error" role="alert">
                 {{ error }}
               </p>
-              <button class="star-compose-submit" type="submit" :disabled="sending">
-                {{ sending ? '正在发送…' : '发送星星' }}
-              </button>
             </form>
           </section>
         </Transition>
@@ -277,10 +333,10 @@ onBeforeUnmount(() => {
 }
 
 .star-compose-overlay-paired-active {
-  z-index: 1100;
-  pointer-events: auto;
-  background: rgba(1, 7, 19, 0.36);
-  backdrop-filter: blur(3px);
+  z-index: 1200;
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
 }
 
 .star-compose-overlay-paired-inactive {
@@ -290,12 +346,14 @@ onBeforeUnmount(() => {
 .star-compose-dialog {
   position: relative;
   box-sizing: border-box;
-  width: min(520px, 100%);
-  height: min(
-    720px,
+  width: min(460px, 100%);
+  height: auto;
+  max-height: min(
+    520px,
     var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
   );
   overflow: auto;
+  scrollbar-width: none;
   pointer-events: auto;
   padding: 34px clamp(24px, 6vw, 42px) 30px;
   border: 0;
@@ -303,6 +361,41 @@ onBeforeUnmount(() => {
   background: transparent;
   box-shadow: none;
   color: #e8f1fb;
+}
+
+.star-compose-dialog::-webkit-scrollbar {
+  display: none;
+}
+
+.star-compose-overlay-paired-active .star-compose-dialog,
+.star-compose-overlay-paired-inactive .star-compose-dialog,
+.star-compose-overlay.fortune-dialog-leave-active .star-compose-dialog {
+  position: fixed;
+  top: auto;
+  bottom: calc(
+    var(--portal-control-bottom, clamp(112px, 13vh, 168px)) +
+      var(--portal-control-size, 61.6px) + 16px
+  );
+  left: 50%;
+  width: min(460px, calc(100vw - 48px));
+  height: auto;
+  max-height: min(
+    520px,
+    max(
+      120px,
+      calc(
+        50vh - var(--portal-control-bottom, clamp(112px, 13vh, 168px)) -
+          var(--portal-control-size, 61.6px) - 32px
+      )
+    )
+  );
+  margin: 0;
+  padding: 24px clamp(20px, 5vw, 32px);
+  transform: translateX(-50%);
+  border: 1px solid rgba(163, 207, 255, 0.5);
+  border-radius: 20px;
+  background: rgba(5, 12, 28, 0.78);
+  box-shadow: 0 0 28px rgba(130, 185, 255, 0.16);
 }
 
 .dialog-switch-enter-active,
@@ -338,16 +431,18 @@ onBeforeUnmount(() => {
 }
 
 .dialog-edge-tab-star {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   right: 0;
+  top: 72%;
   border-right: 0;
   border-radius: 12px 0 0 12px;
 }
 
-@media (max-width: 640px) {
-  .star-compose-overlay-paired-active .star-compose-dialog {
-    width: min(520px, calc(100vw - 80px));
-    margin-right: 32px;
-  }
+.dialog-edge-tab-star ion-icon {
+  color: var(--sent-star-color, #f5d58e);
+  font-size: 18px;
 }
 
 @keyframes dialog-edge-tab-pulse {
@@ -407,7 +502,18 @@ onBeforeUnmount(() => {
 
 .star-compose-form {
   display: grid;
-  gap: 18px;
+  gap: 14px;
+}
+
+.star-compose-title-color-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.star-compose-title-color-row > input {
+  min-width: 0;
+  flex: 1;
 }
 
 .star-compose-form label {
@@ -430,11 +536,22 @@ onBeforeUnmount(() => {
 }
 
 .star-compose-form textarea {
+  min-width: 0;
+  min-height: 88px;
+  max-height: 160px;
   resize: vertical;
+}
+
+.star-compose-content-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
 }
 
 .star-compose-color-picker {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -475,15 +592,25 @@ onBeforeUnmount(() => {
 }
 
 .star-compose-submit {
+  display: grid;
+  width: 32px;
+  height: 32px;
   justify-self: end;
-  padding: 10px 18px;
+  place-items: center;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: #edc981;
-  color: #172238;
+  background: transparent;
+  color: #edc981;
   cursor: pointer;
-  font: inherit;
-  font-weight: 600;
+}
+
+.star-compose-submit ion-icon {
+  font-size: 28px;
+}
+
+.star-compose-submit:focus-visible {
+  outline: 2px solid #edc981;
+  outline-offset: 3px;
 }
 
 .star-compose-submit:disabled {

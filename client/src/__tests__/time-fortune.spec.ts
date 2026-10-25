@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { timeFortuneOrder, timeFortuneRange } from '@/utils/time-fortune'
+import { currentTimeFortuneName, timeFortuneOrder, timeFortuneRange } from '@/utils/time-fortune'
 import {
   clearDailyFirstVisitCompleted,
   hasCompletedDailyFirstVisit,
@@ -8,7 +8,7 @@ import {
   markDailyFirstVisitCompleted,
   markTimeFortuneOpened,
 } from '@/events/time-fortune'
-import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
+import TimeFortuneHistoryDialog from '@/components/dialogs/TimeFortuneHistoryDialog.vue'
 
 describe('time fortune periods', () => {
   afterEach(() => {
@@ -57,8 +57,16 @@ describe('time fortune periods', () => {
     expect(timeFortuneOrder('亥时')).toBeLessThan(timeFortuneOrder('晚子时'))
   })
 
+  it('returns the current traditional time period', () => {
+    expect(currentTimeFortuneName(new Date(2026, 9, 26, 0, 30))).toBe('早子时')
+    expect(currentTimeFortuneName(new Date(2026, 9, 26, 1, 0))).toBe('丑时')
+    expect(currentTimeFortuneName(new Date(2026, 9, 26, 17, 0))).toBe('酉时')
+    expect(currentTimeFortuneName(new Date(2026, 9, 26, 19, 0))).toBe('戌时')
+    expect(currentTimeFortuneName(new Date(2026, 9, 26, 23, 0))).toBe('晚子时')
+  })
+
   it('opens the newest daily fortune and last generated time fortune by default', () => {
-    const wrapper = mount(TimeFortuneHistory, {
+    const wrapper = mount(TimeFortuneHistoryDialog, {
       props: {
         days: [
           {
@@ -89,7 +97,7 @@ describe('time fortune periods', () => {
   })
 
   it('toggles a fortune by clicking anywhere on its card', async () => {
-    const wrapper = mount(TimeFortuneHistory, {
+    const wrapper = mount(TimeFortuneHistoryDialog, {
       props: {
         days: [
           {
@@ -103,7 +111,7 @@ describe('time fortune periods', () => {
         ],
       },
     })
-    const entry = wrapper.get('.history-entry')
+    const entry = wrapper.findAll('.time-history-entry')[0]!
 
     expect(entry.element.open).toBe(false)
     await entry.trigger('click')

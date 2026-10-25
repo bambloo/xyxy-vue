@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import '@/styles/daily-fortune.css'
 import { timeFortuneOrder, timeFortuneRange } from '@/utils/time-fortune'
 
 interface TimeFortune {
@@ -36,7 +35,12 @@ function toggleHistoryEntry(event: MouseEvent) {
 </script>
 
 <template>
-  <details v-for="(day, index) in orderedDays(days)" :key="day.date" class="history-day" :open="index === 0">
+  <details
+    v-for="(day, index) in orderedDays(days)"
+    :key="day.date"
+    class="history-day"
+    :open="index === 0"
+  >
     <summary>{{ day.date }}</summary>
     <details v-if="day.dailyFortune" class="history-entry daily-history-entry" :open="index === 0"
       @click="toggleHistoryEntry">

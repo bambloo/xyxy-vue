@@ -2,8 +2,9 @@
 import { defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, type AuthUser } from '@/stores/auth'
+import { requestTopDialogClose } from '@/events/dialog-stack'
 import { post } from '@/scripts/request'
-import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../common/entity/user'
 import {
   is_at_least_five_years_old,
   is_valid_email,
@@ -99,21 +100,13 @@ async function saveProfile() {
 <template>
   <Teleport to="body">
     <Transition name="profile-editor">
-      <div v-if="open" class="profile-editor-overlay" @click.self="emit('close')">
+      <div v-if="open" class="profile-editor-overlay" @click.self="requestTopDialogClose">
         <section
           class="profile-editor-dialog"
           role="dialog"
           aria-modal="true"
           aria-labelledby="profile-editor-title"
         >
-          <button
-            class="profile-editor-close"
-            type="button"
-            :aria-label="t('common.close')"
-            @click="emit('close')"
-          >
-            ×
-          </button>
           <p class="profile-editor-eyebrow">{{ t('profile.eyebrow') }}</p>
           <h2 id="profile-editor-title">{{ t('profile.title') }}</h2>
           <form @submit.prevent="saveProfile">
@@ -171,39 +164,35 @@ async function saveProfile() {
 <style scoped>
 .profile-editor-overlay {
   position: fixed;
-  z-index: 1100;
+  z-index: 1200;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 20px;
-  background: rgba(1, 7, 19, .82);
-  backdrop-filter: blur(10px);
+  padding: 24px 24px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
 }
 
 .profile-editor-dialog {
   position: relative;
-  width: min(100%, 560px);
-  max-height: min(88vh, 760px);
+  box-sizing: border-box;
+  width: min(520px, 100%);
+  height: min(
+    720px,
+    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
+  );
   overflow: auto;
-  padding: 30px clamp(20px, 5vw, 36px);
-  border: 1px solid rgba(163, 207, 255, .38);
-  border-radius: 22px;
-  background:
-    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, .18), transparent 54%),
-    linear-gradient(145deg, rgba(13, 34, 65, .99), rgba(5, 15, 32, .99));
-  box-shadow: 0 28px 90px rgba(0, 0, 0, .55);
+  scrollbar-width: none;
+  padding: 34px clamp(24px, 6vw, 48px) 24px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  box-shadow: none;
   color: #e8f1fb;
 }
 
-.profile-editor-close {
-  position: absolute;
-  top: 10px;
-  right: 14px;
-  border: 0;
-  background: transparent;
-  color: #b7cde4;
-  font-size: 28px;
-  cursor: pointer;
+.profile-editor-dialog::-webkit-scrollbar {
+  display: none;
 }
 
 .profile-editor-eyebrow {
@@ -215,11 +204,11 @@ async function saveProfile() {
 }
 
 h2 {
-  margin: 8px 0 24px;
+  margin: 8px 0 26px;
   color: #f4e6bf;
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 500;
-  letter-spacing: .12em;
+  letter-spacing: 0.18em;
   text-align: center;
 }
 
@@ -315,6 +304,10 @@ textarea {
 }
 
 @media (max-width: 560px) {
+  .profile-editor-overlay {
+    padding: 16px 16px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  }
+
   .profile-editor-fields {
     grid-template-columns: 1fr;
   }

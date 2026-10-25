@@ -124,7 +124,10 @@ export function getGalaxyStarStatus(
 ) {
   const day = getGalaxyStarDay(now)
   return collection
-    .findOne({ _id: `${user.tag}:${day}` }, { projection: { _id: 1, id: 1 } })
+    .findOne(
+      { _id: `${user.tag}:${day}` },
+      { projection: { _id: 1, id: 1, color: 1 } },
+    )
     .then((sentToday) => {
       const tomorrow = new Date(now)
       tomorrow.setHours(24, 0, 0, 0)
@@ -132,6 +135,7 @@ export function getGalaxyStarStatus(
         canSend: !sentToday,
         hasSentToday: Boolean(sentToday),
         todayStarId: sentToday?.id,
+        todayStarColor: sentToday?.color,
         resetsAt: tomorrow.toISOString(),
       })
     })

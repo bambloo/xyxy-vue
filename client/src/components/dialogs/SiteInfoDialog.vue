@@ -8,8 +8,9 @@ import {
   type SiteDeclarationId,
   type SiteSuggestion,
 } from '../../../../common/entity/site-info'
-import { post } from '../../scripts/request'
-import { useAuthStore } from '../../stores/auth'
+import { post } from '@/scripts/request'
+import { useAuthStore } from '@/stores/auth'
+import { requestTopDialogClose } from '@/events/dialog-stack'
 
 const props = withDefaults(defineProps<{ dialog?: boolean }>(), { dialog: false })
 const emit = defineEmits<{ close: [] }>()
@@ -144,18 +145,9 @@ onMounted(() => {
   <Teleport to="body" :disabled="!props.dialog">
     <div
       :class="{ 'site-info-overlay': props.dialog }"
-      @click.self="props.dialog && emit('close')"
+      @click.self="props.dialog && requestTopDialogClose()"
     >
       <section :class="['site-info-page', { 'site-info-dialog': props.dialog }]" role="region">
-        <button
-          v-if="props.dialog"
-          class="dialog-close"
-          type="button"
-          :aria-label="t('common.close')"
-          @click="emit('close')"
-        >
-          ×
-        </button>
     <header class="page-heading">
       <button v-if="selectedPage" class="back-button" type="button" @click="goBackToList">
         {{ t('siteInfo.backToList') }}
@@ -309,46 +301,35 @@ onMounted(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 1rem;
-  background: rgba(1, 7, 19, .78);
-  backdrop-filter: blur(10px);
+  padding: 24px 24px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  background: rgba(1, 7, 19, 0.36);
+  backdrop-filter: blur(3px);
 }
 
 .site-info-dialog {
+  box-sizing: border-box;
   position: relative;
-  width: min(100%, 700px);
-  max-height: min(88vh, 820px);
+  width: min(520px, 100%);
+  height: min(
+    720px,
+    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
+  );
   overflow: auto;
-  padding: 1.5rem;
-  border: 1px solid rgba(163, 207, 255, .38);
-  border-radius: 20px;
-  background:
-    radial-gradient(ellipse at 50% 0, rgba(103, 159, 231, .2), transparent 54%),
-    linear-gradient(145deg, rgba(13, 34, 65, .99), rgba(5, 15, 32, .99));
-  box-shadow: 0 28px 90px rgba(0, 0, 0, .55);
+  scrollbar-width: none;
+  padding: 34px clamp(24px, 6vw, 48px) 24px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+  box-shadow: none;
   color: #e8f1fb;
 }
 
-.dialog-close {
-  position: absolute;
-  top: .8rem;
-  right: .8rem;
-  width: 2rem;
-  height: 2rem;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--space-text);
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
-.dialog-close:hover {
-  background: rgba(137, 177, 226, .14);
+.site-info-dialog::-webkit-scrollbar {
+  display: none;
 }
 
 .site-info-dialog .page-heading {
-  padding-right: 2rem;
+  text-align: center;
 }
 
 .page-heading {
@@ -357,7 +338,7 @@ onMounted(() => {
 
 .eyebrow {
   margin: 0 0 .4rem;
-  color: var(--space-gold);
+  color: #96bce7;
   font-size: .72rem;
   font-weight: 700;
   letter-spacing: .16em;
@@ -365,8 +346,11 @@ onMounted(() => {
 }
 
 h2 {
-  margin: 0;
-  font-size: 1.6rem;
+  margin: 8px 0 26px;
+  color: #f4e6bf;
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
 }
 
 .page-heading > p:last-child,
@@ -411,9 +395,29 @@ h2 {
   background: var(--space-panel);
 }
 
+.site-info-dialog .page-list,
+.site-info-dialog .detail-panel,
+.site-info-dialog .suggestion-card {
+  border: 0;
+  background: transparent;
+}
+
+.site-info-dialog .message,
+.site-info-dialog .empty-state {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .page-list {
   padding: 0;
   overflow: hidden;
+}
+
+.site-info-dialog .page-list {
+  display: grid;
+  gap: 8px;
+  overflow: visible;
 }
 
 .page-list-item {
@@ -430,6 +434,10 @@ h2 {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.site-info-dialog .page-list-item {
+  border-bottom: 0;
 }
 
 .page-list-item:last-child {
@@ -571,6 +579,10 @@ button:disabled {
 }
 
 @media (max-width: 560px) {
+  .site-info-overlay {
+    padding: 16px 16px var(--dialog-bottom-reserve, calc(clamp(112px, 13vh, 168px) + 104px));
+  }
+
   .page-list-item {
     grid-template-columns: minmax(0, 1fr) auto 1rem;
     padding-inline: .8rem;

@@ -6,7 +6,7 @@ import ProfileView from '@/views/user/profile/ProfileView.vue'
 import PasswordView from '@/views/user/security/PasswordView.vue'
 import SecuritySettingsView from '@/views/user/security/SecuritySettingsView.vue'
 import UserListView from '@/views/user/users/UserListView.vue'
-import SiteInfoView from '@/views/user/SiteInfoView.vue'
+import SiteInfoDialog from '@/components/dialogs/SiteInfoDialog.vue'
 import GalaxyTestView from '@/views/user/GalaxyTestView.vue'
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -37,7 +37,7 @@ const router = createRouter({
         {
           path: 'site-info',
           name: 'user-site-info',
-          component: SiteInfoView,
+          component: SiteInfoDialog,
           meta: { permissions: ['site.manage'] },
         },
         {

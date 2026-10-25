@@ -5,19 +5,17 @@ import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
-import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
-import GalaxyStarComposerDialog from '@/components/GalaxyStarComposerDialog.vue'
+import TimeFortuneDialog from '@/components/dialogs/TimeFortuneDialog.vue'
+import GalaxyStarComposerDialog from '@/components/dialogs/GalaxyStarComposerDialog.vue'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
+import { GALAXY_STAR_COMMENT_QUEUE_EVENT } from '@/events/galaxy-star'
 import {
-  GALAXY_STAR_COMMENT_QUEUE_EVENT,
-  GALAXY_STAR_COMPOSER_STATE_EVENT,
-} from '@/events/galaxy-star'
-import {
-  TIME_FORTUNE_CLOSE_EVENT,
-  TIME_FORTUNE_DIALOG_STATE_EVENT,
-  TIME_FORTUNE_HISTORY_EVENT,
-  TIME_FORTUNE_TOGGLE_EVENT,
-} from '@/events/time-fortune'
+  DIALOG_STACK_CLOSE_DIALOG_EVENT,
+  DIALOG_STACK_CLOSE_REQUEST_EVENT,
+  DIALOG_STACK_STATE_EVENT,
+  type DialogStackId,
+} from '@/events/dialog-stack'
+import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
 type TagState = 'loading' | 'missing' | 'inactive' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
@@ -37,8 +35,7 @@ const canShowPortalButton = computed(
       (!auth.isLoggedIn && Boolean(activationTag.value))),
 )
 const queuedCommentStarCount = ref(0)
-const fortuneDialogOpen = ref(false)
-const composerDialogOpen = ref(false)
+const dialogStack = ref<DialogStackId[]>([])
 const portalLabel = computed(() =>
   queuedCommentStarCount.value > 0
     ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论；单击打开或关闭每日锦言`
@@ -136,11 +133,27 @@ function handleCameraCenter() {
 
 function handleFortuneActivate() {
   if (!isGalaxyRoute.value) return
-  if (fortuneDialogOpen.value || composerDialogOpen.value) {
-    window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
+  if (dialogStack.value.length) {
+    window.dispatchEvent(new Event(DIALOG_STACK_CLOSE_REQUEST_EVENT))
     return
   }
   window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
+}
+
+function handleDialogStackState(event: Event) {
+  const { id, open } = (event as CustomEvent<{ id: DialogStackId; open: boolean }>).detail
+  if (open) {
+    if (!dialogStack.value.includes(id)) dialogStack.value.push(id)
+    return
+  }
+  dialogStack.value = dialogStack.value.filter((dialogId) => dialogId !== id)
+}
+
+function handleDialogStackCloseRequest() {
+  const topDialog = dialogStack.value[dialogStack.value.length - 1]
+  if (topDialog) {
+    window.dispatchEvent(new CustomEvent(DIALOG_STACK_CLOSE_DIALOG_EVENT, { detail: topDialog }))
+  }
 }
 
 function handleCommentQueueChange(event: Event) {
@@ -148,24 +161,16 @@ function handleCommentQueueChange(event: Event) {
   queuedCommentStarCount.value = Number.isInteger(count) && count > 0 ? count : 0
 }
 
-function handleFortuneDialogState(event: Event) {
-  fortuneDialogOpen.value = (event as CustomEvent<boolean>).detail
-}
-
-function handleComposerDialogState(event: Event) {
-  composerDialogOpen.value = (event as CustomEvent<boolean>).detail
-}
-
 onMounted(() => {
   window.addEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
-  window.addEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
-  window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerDialogState)
+  window.addEventListener(DIALOG_STACK_STATE_EVENT, handleDialogStackState)
+  window.addEventListener(DIALOG_STACK_CLOSE_REQUEST_EVENT, handleDialogStackCloseRequest)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMMENT_QUEUE_EVENT, handleCommentQueueChange)
-  window.removeEventListener(TIME_FORTUNE_DIALOG_STATE_EVENT, handleFortuneDialogState)
-  window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, handleComposerDialogState)
+  window.removeEventListener(DIALOG_STACK_STATE_EVENT, handleDialogStackState)
+  window.removeEventListener(DIALOG_STACK_CLOSE_REQUEST_EVENT, handleDialogStackCloseRequest)
   document.documentElement.classList.remove('galaxy-no-scroll')
   document.body.classList.remove('galaxy-no-scroll')
 })

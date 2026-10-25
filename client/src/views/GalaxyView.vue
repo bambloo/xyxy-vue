@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   announceGalaxyStarCommentQueue,
   GALAXY_STAR_COMMENT_OPEN_EVENT,
+  GALAXY_STAR_NAVIGATE_EVENT,
   GALAXY_STAR_SENT_EVENT,
 } from '@/events/galaxy-star'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
@@ -373,6 +374,23 @@ function handleStarSent(event: Event) {
   void refreshGalaxyAfterStarSent()
 }
 
+async function handleNavigateToStar(event: Event) {
+  if (props.blackHoleView) return
+  const starId = (event as CustomEvent<string>).detail
+  if (typeof starId !== 'string' || !starId) return
+  try {
+    if (!sentStars.value.some((star) => star.id === starId)) await loadGalaxyStars()
+    const star = sentStars.value.find((candidate) => candidate.id === starId)
+    if (!star || !galaxyScene?.navigateToSentStar(starId)) {
+      throw new Error('未能定位到当天寄出的星星')
+    }
+    selectSentStar(star)
+  } catch (error) {
+    console.error('前往当天寄出的星星失败', error)
+    sceneError.value = '前往当天寄出的星星失败，请稍后重试。'
+  }
+}
+
 async function refreshGalaxyAfterStarSent() {
   try {
     const packet = await post('/wpi/user/galaxy-star/list', listLoading, {
@@ -653,6 +671,7 @@ onMounted(() => {
       props.blackHoleView,
     )
     window.addEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+    window.addEventListener(GALAXY_STAR_NAVIGATE_EVENT, handleNavigateToStar)
     window.addEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
     window.addEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
     window.addEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
@@ -669,6 +688,7 @@ onBeforeUnmount(() => {
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
   if (commentNotificationTimer !== undefined) window.clearInterval(commentNotificationTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
+  window.removeEventListener(GALAXY_STAR_NAVIGATE_EVENT, handleNavigateToStar)
   window.removeEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
   window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
   window.removeEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
@@ -754,14 +774,7 @@ onBeforeUnmount(() => {
               发送时间：<time>{{ selectedStar.createdAt }}</time>
             </p>
           </div>
-          <button
-            class="sent-star-close"
-            type="button"
-            aria-label="关闭星星详情"
-            @click="selectedStar = undefined"
-          >
-            ×
-          </button>
+
         </header>
         <div class="sent-star-dialog-scroll">
           <p
@@ -1464,23 +1477,6 @@ onBeforeUnmount(() => {
 .sent-star-comment-form button:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.sent-star-close {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #b7c8dc;
-  cursor: pointer;
-  font-size: 27px;
-}
-
-.sent-star-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
 }
 
 @media (max-width: 600px) {

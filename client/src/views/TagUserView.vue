@@ -224,11 +224,9 @@ onMounted(async () => {
     role="dialog"
     aria-modal="true"
     :aria-label="t('login.title')"
+    @click.self="loginRequired = false"
   >
     <form class="login-dialog" @submit.prevent="submitLogin">
-      <button class="close-button" type="button" aria-label="关闭" @click="loginRequired = false">
-        ×
-      </button>
       <p class="eyebrow">{{ t('login.kicker') }}</p>
       <h1>{{ t('login.title') }}</h1>
       <p class="login-intro">{{ t('login.intro') }}</p>
@@ -362,17 +360,6 @@ onMounted(async () => {
   background: var(--space-panel);
   color: var(--space-text);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
-}
-
-.close-button {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  border: 0;
-  background: transparent;
-  color: var(--space-muted);
-  font-size: 1.5rem;
-  cursor: pointer;
 }
 
 .eyebrow {
