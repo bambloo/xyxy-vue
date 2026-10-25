@@ -32,17 +32,25 @@ export default function handler(params: { [key: string]: unknown }, req: Request
         .catch(() => manager.get({ tag: account })),
     )
     .then((user) => {
-      if (typeof user.passwordHash !== 'string' || !same_hash(passwordHash, user.passwordHash)) {
+      if (
+        user.isActive === false ||
+        typeof user.passwordHash !== 'string' ||
+        !same_hash(passwordHash, user.passwordHash)
+      ) {
         return response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误')
       }
 
-      return daily_session_manager.recordLogin(user.tag).then(() => {
-        const token = issue_session(req, res, user)
-        return response(res, BamblooStatusCode.Success, '登录成功', {
-          ...to_public_user(user),
-          token,
+      return daily_session_manager
+        .recordLogin(user.tag)
+        .then(() => daily_session_manager.getConsecutiveLoginDays(user.tag))
+        .then((loginStreak) => {
+          const token = issue_session(req, res, user)
+          return response(res, BamblooStatusCode.Success, '登录成功', {
+            ...to_public_user(user),
+            loginStreak,
+            token,
+          })
         })
-      })
     })
     .catch(() => response(res, BamblooStatusCode.AuthenticationFail, '账号或密码错误'))
 }

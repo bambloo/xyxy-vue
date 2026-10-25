@@ -22,8 +22,14 @@ const router = useRouter()
 const auth = useAuthStore()
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
 const isPortalRoute = computed(() => isGalaxyRoute.value)
+const activationTag = computed(() =>
+  typeof route.query.activationTag === 'string' ? route.query.activationTag.trim() : '',
+)
 const canShowPortalButton = computed(
-  () => isPortalRoute.value && auth.isSessionValidated && Boolean(auth.currentUser?.tag),
+  () =>
+    isPortalRoute.value &&
+    ((auth.isSessionValidated && Boolean(auth.currentUser?.tag)) ||
+      (!auth.isLoggedIn && Boolean(activationTag.value))),
 )
 const queuedCommentStarCount = ref(0)
 const portalLabel = computed(() =>
@@ -38,6 +44,7 @@ const tag = computed(() => {
 })
 const isLoginRoute = computed(() => route.name === 'login')
 const isTagRoute = computed(() => route.name === 'tag' && Boolean(tag.value))
+const isTagRegistrationRoute = computed(() => route.query.registration === '1')
 const tagState = ref<TagState>('loading')
 const tagLoading = ref(false)
 const appState = ref<AppState>('loading')
@@ -77,13 +84,34 @@ async function loadTagState() {
   try {
     const packet = await post('/wpi/user/tag', tagLoading, { tag: tag.value })
     const isActive = (packet.data as { isActive?: boolean } | undefined)?.isActive === true
+    const loggedInTagMismatch = auth.isLoggedIn && auth.currentUser?.tag !== tag.value
+    if (loggedInTagMismatch || !isActive) {
+      await clearAuthSession()
+    }
+    if (!isActive) {
+      if (!isTagRegistrationRoute.value) {
+        await router.replace({ name: 'galaxy', query: { activationTag: tag.value } })
+        return
+      }
+    }
     tagState.value = isActive ? 'active' : 'inactive'
   } catch {
+    await clearAuthSession()
     await router.replace({ name: 'galaxy' })
   }
 }
 
-watch([isLoginRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, {
+async function clearAuthSession() {
+  try {
+    await post('/wpi/user/logout', tagLoading)
+  } catch (error) {
+    console.error('清除服务端登录 Cookie 失败', error)
+  } finally {
+    auth.clear()
+  }
+}
+
+watch([isLoginRoute, isGalaxyRoute, isTagRoute, isTagRegistrationRoute, tag], loadTagState, {
   immediate: true,
 })
 

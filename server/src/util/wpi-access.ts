@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { BamblooError, BamblooStatusCode } from '../../../common/status'
 import type { User } from '../core/entity/user'
 import { user_manager } from '../core/manager/user'
-import { refresh_session } from './session'
+import { clear_session, refresh_session } from './session'
 import { response } from './secretary'
 
 export type WpiAccess = 'public' | 'protected' | 'private'
@@ -36,6 +36,11 @@ export function authorize_wpi(
       req.auth = session.payload
       return user_manager.instance().then((manager) =>
         manager.get({ tag: session.payload.userTag }).then((user) => {
+          if (user.isActive === false) {
+            clear_session(res)
+            response(res, BamblooStatusCode.Unauthorized, 'Tag 尚未激活')
+            return false
+          }
           req.user = user
           if (config.access !== 'private' || !config.permissions?.length) return true
 

@@ -254,6 +254,8 @@ const messages = {
     timeFortune: {
       title: '星言星语',
       editProfile: '修改个人信息',
+      activate: '前往填写注册信息',
+      activationRequired: '填写注册信息后，即可解锁专属锦言。',
     },
   },
   'en-US': {
@@ -509,6 +511,8 @@ const messages = {
     timeFortune: {
       title: 'Words from the Stars',
       editProfile: 'Edit personal details',
+      activate: 'Complete your registration',
+      activationRequired: 'Complete your registration to unlock your personal fortune.',
     },
   },
 }

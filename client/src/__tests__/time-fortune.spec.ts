@@ -1,7 +1,13 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { timeFortuneOrder, timeFortuneRange } from '@/utils/time-fortune'
-import { hasOpenedTimeFortune, markTimeFortuneOpened } from '@/events/time-fortune'
+import {
+  clearDailyFirstVisitCompleted,
+  hasCompletedDailyFirstVisit,
+  hasOpenedTimeFortune,
+  markDailyFirstVisitCompleted,
+  markTimeFortuneOpened,
+} from '@/events/time-fortune'
 import TimeFortuneHistory from '@/components/TimeFortuneHistory.vue'
 
 describe('time fortune periods', () => {
@@ -28,6 +34,14 @@ describe('time fortune periods', () => {
 
     vi.setSystemTime(new Date(2026, 9, 24, 0, 0))
     expect(hasOpenedTimeFortune('user-a')).toBe(false)
+  })
+
+  it('clears the daily first-visit marker after tag activation', () => {
+    markDailyFirstVisitCompleted('user-a')
+    expect(hasCompletedDailyFirstVisit('user-a')).toBe(true)
+
+    clearDailyFirstVisitCompleted('user-a')
+    expect(hasCompletedDailyFirstVisit('user-a')).toBe(false)
   })
 
   it('splits zi hour into early and late periods', () => {

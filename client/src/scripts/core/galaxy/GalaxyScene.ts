@@ -212,7 +212,7 @@ export class GalaxyScene {
   }
 
   private makeNebulaSky() {
-    const geometry = new THREE.SphereGeometry(1800, 48, 32)
+    const geometry = new THREE.SphereGeometry(1800, 128, 96)
     const material = new THREE.ShaderMaterial({
       uniforms: {
         u_time: { value: 0 },
@@ -226,7 +226,7 @@ export class GalaxyScene {
         }
       `,
       fragmentShader: `
-        precision highp float;
+        precision mediump float;
         varying vec3 v_direction;
         uniform float u_time;
         uniform float u_seed;
@@ -307,10 +307,7 @@ export class GalaxyScene {
     return new THREE.Mesh(geometry, material)
   }
 
-  private createGalaxy(
-    onSentStarClick: (star: SentGalaxyStar) => void,
-    blackHoleView: boolean,
-  ) {
+  private createGalaxy(onSentStarClick: (star: SentGalaxyStar) => void, blackHoleView: boolean) {
     this.scene = new THREE.Scene()
     this.makeStarTexture()
     this.camera = new THREE.PerspectiveCamera(52, 1, 1, 3000)

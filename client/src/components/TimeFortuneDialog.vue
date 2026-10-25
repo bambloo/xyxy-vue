@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import '@/styles/daily-fortune.css'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -29,6 +29,7 @@ import {
   TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT,
   TIME_FORTUNE_HISTORY_EVENT,
   TIME_FORTUNE_TOGGLE_EVENT,
+  type FirstVisitMeteorRequest,
 } from '@/events/time-fortune'
 
 interface TimeFortune {
@@ -53,7 +54,14 @@ interface FortuneDetails {
 
 const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
+const activationTag = computed(() =>
+  typeof route.query.activationTag === 'string' ? route.query.activationTag.trim() : '',
+)
+const isActivationPreview = computed(
+  () => route.name === 'galaxy' && Boolean(activationTag.value) && !auth.isLoggedIn,
+)
 const requestLoading = ref(false)
 const detailsLoading = ref(false)
 const runId = ref(0)
@@ -127,18 +135,19 @@ watch(
   () =>
     [
       route.name,
+      route.query.activationTag,
       auth.currentUser?.tag,
       auth.isSessionValidated,
       auth.isLoggedIn,
       status.value,
     ] as const,
-  ([routeName, userTag, isSessionValidated, isLoggedIn]) => {
+  ([routeName, queryTag, userTag, isSessionValidated, isLoggedIn]) => {
+    const visitTag = userTag || (typeof queryTag === 'string' ? queryTag.trim() : '')
     const shouldRun =
-      !['home', 'galaxy'].includes(String(routeName)) ||
-      !userTag ||
-      !isSessionValidated ||
-      !isLoggedIn ||
-      hasCompletedDailyFirstVisit(userTag)
+      routeName !== 'galaxy' ||
+      !visitTag ||
+      (isLoggedIn && !isSessionValidated) ||
+      (!isActivationPreview.value && hasCompletedDailyFirstVisit(visitTag))
     if (shouldRun) {
       stopFirstVisitSequence()
       return
@@ -152,6 +161,10 @@ async function openFortuneDialog(history: boolean) {
   setDialogOpen(true)
   detailsError.value = ''
   details.value = undefined
+  if (isActivationPreview.value) {
+    details.value = { timeName: '', days: [], history: false }
+    return
+  }
   if (status.value === 'hidden') {
     detailsError.value = '请先登录后查看星言星语。'
     return
@@ -198,18 +211,20 @@ function setDialogOpen(open: boolean) {
 
 function openDailyFortune(automatic = false) {
   stopFirstVisitSequence()
-  const userTag = auth.currentUser?.tag
+  const userTag = auth.currentUser?.tag || activationTag.value
   if (userTag) {
     markTimeFortuneOpened(userTag)
-    if (automatic) markDailyFirstVisitCompleted(userTag)
+    if (automatic && !isActivationPreview.value) markDailyFirstVisitCompleted(userTag)
   }
   void openFortuneDialog(false)
   setPairedDialogView('fortune')
-  window.dispatchEvent(
-    new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
-      detail: { onlyIfAvailable: true, pairedWithFortune: true },
-    }),
-  )
+  if (!automatic && !isActivationPreview.value) {
+    window.dispatchEvent(
+      new CustomEvent<GalaxyStarComposeOptions>(GALAXY_STAR_COMPOSE_EVENT, {
+        detail: { onlyIfAvailable: true, pairedWithFortune: true },
+      }),
+    )
+  }
 }
 
 function setPairedDialogView(view: PairedDialogView) {
@@ -222,37 +237,38 @@ function setPairedDialogView(view: PairedDialogView) {
 async function runFirstVisitSequence() {
   firstVisitSequenceActive = true
   const sequenceId = ++firstVisitSequenceId
-  const userTag = auth.currentUser?.tag
+  const userTag = auth.currentUser?.tag || activationTag.value
   if (!userTag) {
     firstVisitSequenceActive = false
     return
   }
 
   activeFirstVisitMeteorSequenceId = sequenceId
+  const meteorCount = Math.min(7, Math.max(1, auth.currentUser?.loginStreak ?? 1))
+  const request: FirstVisitMeteorRequest = { sequenceId, meteorCount }
   let meteorStarted = false
   const handleMeteorStarted = (event: Event) => {
     if ((event as CustomEvent<number>).detail === sequenceId) meteorStarted = true
   }
   window.addEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT, handleMeteorStarted)
   window.dispatchEvent(
-    new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+    new CustomEvent<FirstVisitMeteorRequest>(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, {
+      detail: request,
+    }),
   )
 
   while (sequenceId === firstVisitSequenceId && !meteorStarted) {
     await wait(250)
     if (!meteorStarted && sequenceId === firstVisitSequenceId) {
       window.dispatchEvent(
-        new CustomEvent(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, { detail: sequenceId }),
+        new CustomEvent<FirstVisitMeteorRequest>(TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT, {
+          detail: request,
+        }),
       )
     }
   }
   window.removeEventListener(TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT, handleMeteorStarted)
   if (sequenceId !== firstVisitSequenceId) return
-
-  while (sequenceId === firstVisitSequenceId && status.value !== 'ready') {
-    await wait(250)
-  }
-  if (sequenceId !== firstVisitSequenceId || status.value !== 'ready') return
 
   const arrived = await flyFirstVisitMeteor(sequenceId)
   if (sequenceId !== firstVisitSequenceId) return
@@ -335,6 +351,16 @@ function handleButtonToggle() {
     return
   }
   openDailyFortune()
+}
+
+function openActivationForm() {
+  if (!activationTag.value) return
+  setDialogOpen(false)
+  void router.push({
+    name: 'tag',
+    params: { tag: activationTag.value },
+    query: { registration: '1' },
+  })
 }
 
 function openSiteInfo() {
@@ -463,30 +489,50 @@ onBeforeUnmount(() => {
           <template v-else-if="details">
             <TimeFortuneHistory v-if="details.history" :days="details.days" />
             <template v-else>
-              <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
-              <section v-for="day in details.days" :key="day.date">
-                <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
-                  <h3>每日锦言</h3>
-                  <p>{{ day.dailyFortune }}</p>
-                </article>
-                <article
-                  v-for="fortune in day.timeFortunes"
-                  :key="fortune.timeName"
-                  :class="[
-                    'fortune-entry',
-                    'time-entry',
-                    { 'current-time-entry': fortune.timeName === details.timeName },
-                  ]"
-                >
-                  <h3>
-                    {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
-                    <span v-if="fortune.timeName === details.timeName" class="current-time-label"
-                      >当前时辰</span
-                    >
-                  </h3>
-                  <p>{{ fortune.message }}</p>
-                </article>
-              </section>
+              <article
+                v-if="isActivationPreview"
+                class="fortune-entry activation-locked-entry"
+                role="button"
+                tabindex="0"
+                :aria-label="t('timeFortune.activate')"
+                @click="openActivationForm"
+                @keydown.enter.prevent="openActivationForm"
+                @keydown.space.prevent="openActivationForm"
+              >
+                <h3>
+                  每日锦言
+                  <span class="fortune-lock-icon" aria-hidden="true">
+                    <ion-icon name="lock-closed-outline" aria-hidden="true"></ion-icon>
+                  </span>
+                </h3>
+                <p>{{ t('timeFortune.activationRequired') }}</p>
+              </article>
+              <template v-else>
+                <p v-if="!details.days.length" class="dialog-status">最近七天暂无星言星语。</p>
+                <section v-for="day in details.days" :key="day.date">
+                  <article v-if="day.dailyFortune" class="fortune-entry daily-fortune-sparkle">
+                    <h3>每日锦言</h3>
+                    <p>{{ day.dailyFortune }}</p>
+                  </article>
+                  <article
+                    v-for="fortune in day.timeFortunes"
+                    :key="fortune.timeName"
+                    :class="[
+                      'fortune-entry',
+                      'time-entry',
+                      { 'current-time-entry': fortune.timeName === details.timeName },
+                    ]"
+                  >
+                    <h3>
+                      {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）· 时辰锦言
+                      <span v-if="fortune.timeName === details.timeName" class="current-time-label"
+                        >当前时辰</span
+                      >
+                    </h3>
+                    <p>{{ fortune.message }}</p>
+                  </article>
+                </section>
+              </template>
             </template>
           </template>
           <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
@@ -662,6 +708,34 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.08em;
+}
+
+.activation-locked-entry {
+  cursor: pointer;
+}
+
+.activation-locked-entry:hover,
+.activation-locked-entry:focus-visible {
+  border-color: rgba(240, 189, 99, 0.72);
+  background: linear-gradient(135deg, rgba(240, 189, 99, 0.16), rgba(137, 177, 226, 0.08));
+  outline: none;
+}
+
+.fortune-lock-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(240, 189, 99, 0.12);
+  color: #f5d58e;
+  vertical-align: middle;
+}
+
+.fortune-lock-icon ion-icon {
+  font-size: 15px;
 }
 
 .fortune-entry p {

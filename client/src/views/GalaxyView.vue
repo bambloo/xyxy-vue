@@ -47,7 +47,7 @@ const selectedCommentId = ref('')
 const selectedBlackHoleEntryKind = ref<GalaxyBlackHoleEntry['kind']>()
 const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
-const commentQueueStarIds = ref<string[]>([])
+const commentNotifications = ref<Array<{ starId: string; commentId: string }>>([])
 const commentNotificationLoading = ref(false)
 const hasSentToday = computed(() => Boolean(todayStarId.value))
 const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValidated)
@@ -130,9 +130,15 @@ function meetsBlackHoleThreshold(likeCount = 0, dislikeCount = 0) {
   return dislikeCount > 8 && dislikeCount > likeCount * 1.5
 }
 
-function updateCommentNotificationQueue(starIds: string[]) {
-  commentQueueStarIds.value = [...new Set(starIds)]
-  announceGalaxyStarCommentQueue(commentQueueStarIds.value.length)
+function isCommentNotification(value: unknown): value is { starId: string; commentId: string } {
+  if (!value || typeof value !== 'object') return false
+  const notification = value as Record<string, unknown>
+  return typeof notification.starId === 'string' && typeof notification.commentId === 'string'
+}
+
+function updateCommentNotificationQueue(notifications: Array<{ starId: string; commentId: string }>) {
+  commentNotifications.value = notifications
+  announceGalaxyStarCommentQueue(commentNotifications.value.length)
 }
 
 async function refreshCommentNotificationQueue() {
@@ -142,11 +148,14 @@ async function refreshCommentNotificationQueue() {
       '/wpi/user/galaxy-star/comment-notifications',
       commentNotificationLoading,
     )
-    const data = packet.data as { starIds?: unknown } | undefined
-    if (!Array.isArray(data?.starIds) || !data.starIds.every((id) => typeof id === 'string')) {
+    const data = packet.data as { notifications?: unknown } | undefined
+    if (
+      !Array.isArray(data?.notifications) ||
+      !data.notifications.every(isCommentNotification)
+    ) {
       throw new Error('评论通知队列格式无效')
     }
-    updateCommentNotificationQueue(data.starIds)
+    updateCommentNotificationQueue(data.notifications)
   } catch (error) {
     console.error('读取星星评论通知失败', error)
   }
@@ -159,12 +168,23 @@ async function openNextCommentedStar() {
       '/wpi/user/galaxy-star/comment-notification-consume',
       commentNotificationLoading,
     )
-    const data = packet.data as { star?: GalaxyStarView; starIds?: unknown } | undefined
-    if (!Array.isArray(data?.starIds) || !data.starIds.every((id) => typeof id === 'string')) {
+    const data = packet.data as {
+      star?: GalaxyStarView
+      selectedCommentId?: unknown
+      notifications?: unknown
+    } | undefined
+    if (
+      !Array.isArray(data?.notifications) ||
+      !data.notifications.every(isCommentNotification) ||
+      (data.star && typeof data.selectedCommentId !== 'string')
+    ) {
       throw new Error('评论通知队列格式无效')
     }
-    updateCommentNotificationQueue(data.starIds)
+    updateCommentNotificationQueue(data.notifications)
     if (!data.star) return
+    if (typeof data.selectedCommentId !== 'string') {
+      throw new Error('评论通知目标无效')
+    }
     sentStars.value = sentStars.value.map((star) => (star.id === data.star?.id ? data.star : star))
     if (!sentStars.value.some((star) => star.id === data.star?.id)) {
       sentStars.value = [...sentStars.value, data.star]
@@ -172,9 +192,13 @@ async function openNextCommentedStar() {
     galaxyScene?.setSentStars(sentStars.value)
     galaxyScene?.navigateToSentStar(data.star.id)
     selectedStar.value = data.star
-    selectedCommentId.value = ''
+    selectedCommentId.value = data.selectedCommentId
     selectedBlackHoleEntryKind.value = undefined
     voteError.value = ''
+    await nextTick()
+    document
+      .getElementById(`sent-star-comment-${selectedCommentId.value}`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   } catch (error) {
     console.error('打开新评论星星失败', error)
     sceneError.value = '打开新评论星星失败，请稍后重试。'
@@ -577,7 +601,7 @@ watch(
 
 watch(canViewStarDetails, (canView, previousCanView) => {
   if (canView === previousCanView) return
-  commentQueueStarIds.value = []
+  commentNotifications.value = []
   announceGalaxyStarCommentQueue(0)
   selectedStar.value = undefined
   todayStarId.value = ''

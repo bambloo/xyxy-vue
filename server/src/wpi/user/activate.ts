@@ -5,6 +5,7 @@ import {
 } from '../../../../common/entity/user'
 import { BamblooStatusCode } from '../../../../common/status'
 import { user_manager } from '../../core/manager/user'
+import { daily_session_manager } from '../../core/manager/daily-session'
 import { response } from '../../util/secretary'
 import { mongo_helper } from '../../util/mongo-helper'
 import { issue_session } from '../../util/session'
@@ -59,11 +60,17 @@ export default function handler(params: { [key: string]: unknown }, req: Request
         .instance()
         .then((manager) => manager.get({ tag }))
         .then((user) => {
-          const token = issue_session(req, res, user)
-          return response(res, BamblooStatusCode.Success, 'Tag 激活成功', {
-            ...to_public_user(user),
-            token,
-          })
+          return daily_session_manager
+            .recordLogin(user.tag)
+            .then(() => daily_session_manager.getConsecutiveLoginDays(user.tag))
+            .then((loginStreak) => {
+              const token = issue_session(req, res, user)
+              return response(res, BamblooStatusCode.Success, 'Tag 激活成功', {
+                ...to_public_user(user),
+                loginStreak,
+                token,
+              })
+            })
         })
     })
     .catch(() => response(res, BamblooStatusCode.EntityNonexist, 'Tag 不存在或已激活'))

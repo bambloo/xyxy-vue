@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { hash_password } from '../../../common/util/crypto'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
+import { clearDailyFirstVisitCompleted } from '@/events/time-fortune'
 import { validateAccount, validatePassword } from '../utils/login-validator'
 import { MAX_USER_HOBBIES_LENGTH, type UserPublicProfile } from '../../../common/entity/user'
 import {
@@ -72,6 +73,7 @@ function submitLogin() {
       return router.replace({ name: 'galaxy' })
     })
     .catch((error: unknown) => {
+      auth.clear()
       const result = error as { msg?: string; message?: string }
       loginError.value = result.msg || result.message || t('login.invalid')
     })
@@ -134,6 +136,7 @@ async function activate() {
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
     if (!data?.token || !data.account || !data.tag) throw new Error(t('tag.activateError'))
     const { token, ...profile } = data
+    clearDailyFirstVisitCompleted(profile.tag)
     auth.login(token, profile)
     await router.replace({ name: 'galaxy' })
   } catch (error: unknown) {
@@ -200,10 +203,10 @@ onMounted(async () => {
         ><span>{{ t('profile.birthday') }}</span
         ><input v-model="user.birthday" type="date" required
       /></label>
-      <label class="full-width"
-        ><span>{{ t('profile.hobbies') }}</span
-        ><HobbiesPicker v-model="user.hobbies"
-      /></label>
+      <div class="full-width activation-hobbies-field">
+        <span>{{ t('profile.hobbies') }}</span>
+        <HobbiesPicker v-model="user.hobbies" />
+      </div>
       <label class="full-width"
         ><span>{{ t('tag.avatar') }}</span
         ><input v-model="user.avatar" type="url"
@@ -282,6 +285,13 @@ onMounted(async () => {
 }
 
 .activation-form label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--space-text);
+  font-size: 0.85rem;
+}
+
+.activation-hobbies-field {
   display: grid;
   gap: 0.45rem;
   color: var(--space-text);

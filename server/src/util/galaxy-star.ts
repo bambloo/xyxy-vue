@@ -31,6 +31,11 @@ type GalaxyStarCommentRecord = GalaxyStarComment & {
   }[]
 }
 
+type GalaxyStarCommentNotification = {
+  userTag: string
+  commentId: string
+}
+
 export interface GalaxyStarRecord extends SentGalaxyStar {
   _id: string
   userTag: string
@@ -45,6 +50,7 @@ export interface GalaxyStarRecord extends SentGalaxyStar {
   dislikeCount?: number
   comments?: GalaxyStarCommentRecord[]
   links?: { sourceStarId: string; createdAt: string }[]
+  unreadCommentNotifications?: GalaxyStarCommentNotification[]
   unreadCommentIds?: string[]
   unreadCommentAt?: string
 }
@@ -478,18 +484,20 @@ export function commentOnGalaxyStar(
     if (!target) {
       throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
     }
+    let parentCommentUserTag: string | undefined
     const verifyParent = parentCommentId
-      ? collection
-          .findOne({ _id: target._id }, { projection: { comments: 1 } })
-          .then((targetWithComments) => {
-            const parentComment = targetWithComments?.comments?.find(
-              (entry) => entry.id === parentCommentId,
-            )
-            if (!parentComment) {
-              throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
-            }
-          })
-      : Promise.resolve()
+        ? collection
+            .findOne({ _id: target._id }, { projection: { comments: 1 } })
+            .then((targetWithComments) => {
+              const parentComment = targetWithComments?.comments?.find(
+                (entry) => entry.id === parentCommentId,
+              )
+              if (!parentComment) {
+                throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
+              }
+              parentCommentUserTag = parentComment.userTag
+            })
+        : Promise.resolve()
 
     return verifyParent.then(() => {
       const createdAt = format_timestamp(now)
@@ -506,17 +514,32 @@ export function commentOnGalaxyStar(
           : { anonymousDay: day }),
         ...(parentCommentId ? { parentCommentId } : {}),
       }
+      const notificationRecipients = new Set(
+        [target.userTag, parentCommentUserTag].filter(
+          (recipientTag): recipientTag is string => Boolean(recipientTag && recipientTag !== user.tag),
+        ),
+      )
+      const notifications = [...notificationRecipients].map((recipientTag) => ({
+        userTag: recipientTag,
+        commentId: comment.id,
+      }))
+      const shouldCreateLink = sourceStar && sourceStar.id !== target.id
       const pushOperations = {
         comments: comment,
-        ...(sourceStar ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
-        ...(target.userTag !== user.tag ? { unreadCommentIds: { $each: [comment.id] } } : {}),
+        ...(shouldCreateLink ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
+        ...(target.userTag !== user.tag ? { unreadCommentIds: comment.id } : {}),
+        ...(notifications.length
+          ? { unreadCommentNotifications: { $each: notifications } }
+          : {}),
       }
       return collection
         .updateOne(
           { _id: target._id },
           {
             $push: pushOperations,
-            ...(target.userTag !== user.tag ? { $min: { unreadCommentAt: createdAt } } : {}),
+            ...(notificationRecipients.has(target.userTag)
+              ? { $min: { unreadCommentAt: createdAt } }
+              : {}),
           },
         )
         .then((updated) => {
@@ -536,14 +559,28 @@ export function getGalaxyStarCommentNotifications(
 ) {
   return collection
     .find(
-      { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
-      { projection: { id: 1, createdAt: 1 } },
+      {
+        $or: [
+          { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+          { unreadCommentNotifications: { $elemMatch: { userTag: user.tag } } },
+        ],
+      },
+      {
+        projection: {
+          id: 1,
+          createdAt: 1,
+          userTag: 1,
+          comments: 1,
+          unreadCommentIds: 1,
+          unreadCommentNotifications: 1,
+        },
+      },
     )
     .sort({ unreadCommentAt: 1, createdAt: 1 })
     .toArray()
     .then((records) =>
       response(res, BamblooStatusCode.Success, undefined, {
-        starIds: records.map(({ id }) => id),
+        notifications: getUnreadCommentNotifications(records, user.tag),
       }),
     )
 }
@@ -554,52 +591,112 @@ export function consumeGalaxyStarCommentNotification(
   res: Response,
 ) {
   let consumedStar: GalaxyStarView | undefined
+  let consumedCommentId: string | undefined
   const consumeNext = (attempt: number): Promise<void> => {
-    if (attempt >= 3 || consumedStar) return Promise.resolve()
+    if (attempt >= 10 || consumedStar) return Promise.resolve()
     return collection
-      .find({ userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } })
+      .find({
+        $or: [
+          { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+          { unreadCommentNotifications: { $elemMatch: { userTag: user.tag } } },
+        ],
+      })
       .sort({ unreadCommentAt: 1, createdAt: 1 })
-      .limit(1)
-      .next()
-      .then((record) => {
-        if (!record) return
-        const unreadCommentIds = record.unreadCommentIds ?? []
+      .toArray()
+      .then((records) => {
+        const record = records
+          .map((candidate) => ({
+            record: candidate,
+            commentId: getUnreadCommentNotifications([candidate], user.tag)[0]?.commentId,
+          }))
+          .find((candidate) => candidate.commentId)
+        if (!record?.commentId) return
         return collection
           .updateOne(
             {
-              _id: record._id,
-              userTag: user.tag,
-              unreadCommentIds: { $in: unreadCommentIds },
+              _id: record.record._id,
+              $or: [
+                { userTag: user.tag, unreadCommentIds: record.commentId },
+                {
+                  unreadCommentNotifications: {
+                    $elemMatch: { userTag: user.tag, commentId: record.commentId },
+                  },
+                },
+              ],
             },
-            { $pullAll: { unreadCommentIds } },
+            {
+              $pull: {
+                unreadCommentIds: record.commentId,
+                unreadCommentNotifications: {
+                  userTag: user.tag,
+                  commentId: record.commentId,
+                },
+              },
+            },
           )
           .then((updated) => {
             if (updated.modifiedCount !== 1) return consumeNext(attempt + 1)
-            return collection
-              .updateOne(
-                { _id: record._id, userTag: user.tag, unreadCommentIds: { $size: 0 } },
-                { $unset: { unreadCommentAt: '' } },
-              )
-              .then(() => {
-                consumedStar = mapGalaxyStarRecord(record, user.tag)
-              })
+            consumedStar = mapGalaxyStarRecord(record.record, user.tag)
+            consumedCommentId = record.commentId
           })
       })
   }
   return consumeNext(0).then(() =>
     collection
       .find(
-        { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
-        { projection: { id: 1, createdAt: 1 } },
+        {
+          $or: [
+            { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+            { unreadCommentNotifications: { $elemMatch: { userTag: user.tag } } },
+          ],
+        },
+        {
+          projection: {
+            id: 1,
+            createdAt: 1,
+            userTag: 1,
+            comments: 1,
+            unreadCommentIds: 1,
+            unreadCommentNotifications: 1,
+          },
+        },
       )
       .sort({ unreadCommentAt: 1, createdAt: 1 })
       .toArray(),
   ).then((remainingRecords) =>
     response(res, BamblooStatusCode.Success, undefined, {
       star: consumedStar,
-      starIds: remainingRecords.map(({ id }) => id),
+      selectedCommentId: consumedCommentId,
+      notifications: getUnreadCommentNotifications(remainingRecords, user.tag),
     }),
   )
+}
+
+function getUnreadCommentNotifications(
+  records: Pick<
+    GalaxyStarRecord,
+    'id' | 'userTag' | 'comments' | 'unreadCommentIds' | 'unreadCommentNotifications'
+  >[],
+  userTag: string,
+) {
+  const notifications = records.flatMap((record) => {
+    const commentIds = new Set([
+      ...(record.userTag === userTag ? (record.unreadCommentIds ?? []) : []),
+      ...(record.unreadCommentNotifications ?? [])
+        .filter((notification) => notification.userTag === userTag)
+        .map((notification) => notification.commentId),
+    ])
+    const commentsById = new Map((record.comments ?? []).map((comment) => [comment.id, comment]))
+    return [...commentIds]
+      .map((commentId) => ({
+        commentId,
+        createdAt: commentsById.get(commentId)?.createdAt ?? '',
+      }))
+      .filter(({ createdAt }) => Boolean(createdAt))
+      .map(({ commentId, createdAt }) => ({ starId: record.id, commentId, createdAt }))
+  })
+  notifications.sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+  return notifications.map(({ starId, commentId }) => ({ starId, commentId }))
 }
 
 export function seedGalaxyBlackHoleStars(
@@ -804,12 +901,13 @@ function listStars(
     .sort({ createdAt: 1 })
     .toArray()
     .then((records) => {
-  const pairCounts = new Map<string, number>()
-  records.forEach((record) => {
-    record.links?.forEach(({ sourceStarId }) => {
-      const pairKey = `${sourceStarId}:${record.id}`
-      pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
-    })
+    const pairCounts = new Map<string, number>()
+    records.forEach((record) => {
+      record.links?.forEach(({ sourceStarId }) => {
+        if (sourceStarId === record.id) return
+        const pairKey = `${sourceStarId}:${record.id}`
+        pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
+      })
   })
   const allConnections: GalaxyStarConnection[] = [...pairCounts].map(([key, count]) => {
     const [sourceStarId = '', targetStarId = ''] = key.split(':')
@@ -845,6 +943,7 @@ function listStars(
       day: _day,
       unreadCommentAt: _unreadCommentAt,
       unreadCommentIds: _unreadCommentIds,
+      unreadCommentNotifications: _unreadCommentNotifications,
       votes = [],
       links: _links,
       likeCount = 0,
@@ -922,6 +1021,7 @@ function mapGalaxyStarRecord(record: GalaxyStarRecord, userTag: string): GalaxyS
     day: _day,
     unreadCommentAt: _unreadCommentAt,
     unreadCommentIds: _unreadCommentIds,
+    unreadCommentNotifications: _unreadCommentNotifications,
     votes = [],
     links: _links,
     likeCount = 0,

@@ -5,10 +5,19 @@ import {
   TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_READY_EVENT,
   TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT,
+  type FirstVisitMeteorRequest,
 } from '@/events/time-fortune'
 
 type ActiveMeteor = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
+  head: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  companions: Array<{
+    mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
+    head: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+    progressOffset: number
+    lateralOffset: number
+    size: number
+  }>
   destination: DestinationStar
   end: THREE.Vector3
   start: THREE.Vector3
@@ -67,10 +76,25 @@ const meteorFragmentShader = `
     float bodyFade = 1.0 - smoothstep(0.84, 0.98, vUv.x);
     float haze = exp(-center * 3.0) * alongFade * bodyFade * 0.48;
     float core = exp(-center * 16.0) * alongFade * bodyFade * 0.72;
-    vec2 headPoint = vec2((1.0 - vUv.x) * 42.0, center * 1.5);
-    float head = exp(-dot(headPoint, headPoint) * 2.5);
-    float alpha = (haze + core + head) * u_opacity;
+    float alpha = (haze + core) * u_opacity;
     vec3 color = mix(vec3(0.72, 0.82, 0.94), vec3(1.0), pow(vUv.x, 12.0));
+    gl_FragColor = vec4(color, alpha);
+  }
+`
+
+const meteorHeadFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform float u_opacity;
+
+  void main() {
+    vec2 point = (vUv - 0.5) * 2.0;
+    float radius = length(point);
+    float halo = exp(-radius * 3.2) * 1.05;
+    float glow = exp(-radius * 9.0) * 1.2;
+    float core = exp(-radius * 30.0) * 2.4;
+    float alpha = clamp((halo + glow + core) * u_opacity * 1.25, 0.0, 1.0);
+    vec3 color = mix(vec3(0.62, 0.78, 1.0), vec3(1.0), clamp(core, 0.0, 1.0));
     gl_FragColor = vec4(color, alpha);
   }
 `
@@ -139,12 +163,17 @@ export class GalaxyMeteorEffect {
   private readonly ringGeometry = new THREE.PlaneGeometry(1, 1)
   private readonly starMaterial: THREE.ShaderMaterial
   private readonly ringMaterial: THREE.ShaderMaterial
+  private readonly firstVisitMeteorCounts = new Map<number, number>()
 
   private pointerStart?: THREE.Vector2
   private enabled = true
   private readonly readyFirstVisitSequences = new Set<number>()
   private readonly handleFirstVisitMeteor = (event: Event) => {
-    const sequenceId = (event as CustomEvent<number>).detail
+    const { sequenceId, meteorCount } = (event as CustomEvent<FirstVisitMeteorRequest>).detail
+    const count = Number.isFinite(meteorCount)
+      ? THREE.MathUtils.clamp(Math.floor(meteorCount), 1, 7)
+      : 1
+    this.firstVisitMeteorCounts.set(sequenceId, count)
     const destination = this.destinations.find((item) => item.revealsPortal)
     if (!destination || !this.enabled) {
       this.notifyFirstVisitMeteor(sequenceId, false)
@@ -184,6 +213,7 @@ export class GalaxyMeteorEffect {
   private readonly handleFirstVisitMeteorCancel = (event: Event) => {
     const sequenceId = (event as CustomEvent<number>).detail
     this.readyFirstVisitSequences.delete(sequenceId)
+    this.firstVisitMeteorCounts.delete(sequenceId)
     const meteor = this.activeMeteors.find((item) => item.firstVisitSequenceId === sequenceId)
     if (!meteor) return
     this.removeMeteor(meteor)
@@ -205,6 +235,7 @@ export class GalaxyMeteorEffect {
       sequenceId,
       ready,
       start,
+      this.firstVisitMeteorCounts.get(sequenceId) ?? 1,
     )
     const meteor = this.activeMeteors.find((item) => item.firstVisitSequenceId === sequenceId)
     if (!meteor) return
@@ -237,10 +268,21 @@ export class GalaxyMeteorEffect {
   private removeMeteor(meteor: ActiveMeteor) {
     const index = this.activeMeteors.indexOf(meteor)
     if (index < 0) return
-    this.scene.remove(meteor.mesh)
+    this.disposeMeteor(meteor)
+    this.activeMeteors.splice(index, 1)
+  }
+
+  private disposeMeteor(meteor: ActiveMeteor) {
+    this.scene.remove(meteor.mesh, meteor.head)
     meteor.mesh.geometry.dispose()
     meteor.mesh.material.dispose()
-    this.activeMeteors.splice(index, 1)
+    meteor.head.material.dispose()
+    meteor.companions.forEach(({ mesh, head }) => {
+      this.scene.remove(mesh, head)
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+      head.material.dispose()
+    })
   }
 
   private notifyFirstVisitMeteor(sequenceId: number, arrived: boolean) {
@@ -329,12 +371,11 @@ export class GalaxyMeteorEffect {
         }
       })
       this.activeMeteors.forEach((meteor) => {
-        this.scene.remove(meteor.mesh)
-        meteor.mesh.geometry.dispose()
-        meteor.mesh.material.dispose()
+        this.disposeMeteor(meteor)
       })
       this.activeMeteors.length = 0
       this.readyFirstVisitSequences.clear()
+      this.firstVisitMeteorCounts.clear()
       this.destinations.forEach((destination) => {
         destination.group.visible = false
         destination.ring.visible = false
@@ -350,11 +391,7 @@ export class GalaxyMeteorEffect {
       } else {
         this.spawnMeteor(
           destination,
-          this.destinationFromScreen(
-            destination.screenX,
-            destination.screenY,
-            METEOR_END_DEPTH,
-          ),
+          this.destinationFromScreen(destination.screenX, destination.screenY, METEOR_END_DEPTH),
           0.42,
           now,
           1800,
@@ -416,9 +453,7 @@ export class GalaxyMeteorEffect {
       if (nowMs < meteor.startTime) continue
       if (meteor.firstVisitSequenceId !== undefined) {
         const target = this.mainStarBelowPosition()
-        meteor.end.copy(
-          this.destinationFromScreen(target.x, target.y, METEOR_END_DEPTH),
-        )
+        meteor.end.copy(this.destinationFromScreen(target.x, target.y, METEOR_END_DEPTH))
         if (meteor.firstVisitTurnControl2) {
           meteor.firstVisitTurnControl2.copy(
             this.firstVisitEndControl(meteor.start, meteor.end, target),
@@ -429,17 +464,16 @@ export class GalaxyMeteorEffect {
           meteor.firstVisitProgress = progress
           this.updateTrail(meteor, progress)
           meteor.mesh.material.uniforms.u_opacity!.value = 0.9
+          this.updateMeteorHead(meteor, progress, 0.9)
+          this.updateMeteorCompanions(meteor, progress, 0.9)
           continue
         }
       } else if (meteor.landsAtDestination) {
-        const target =
-          {
-            x: meteor.destination.screenX,
-            y: meteor.destination.screenY + meteor.destinationOffsetY,
-          }
-        meteor.end.copy(
-          this.destinationFromScreen(target.x, target.y, METEOR_END_DEPTH),
-        )
+        const target = {
+          x: meteor.destination.screenX,
+          y: meteor.destination.screenY + meteor.destinationOffsetY,
+        }
+        meteor.end.copy(this.destinationFromScreen(target.x, target.y, METEOR_END_DEPTH))
       }
       let progress: number
       if (meteor.firstVisitSequenceId !== undefined) {
@@ -461,14 +495,13 @@ export class GalaxyMeteorEffect {
         progress = (nowMs - meteor.startTime) / meteor.duration
       }
       if (progress >= 1) {
-        this.scene.remove(meteor.mesh)
-        meteor.mesh.geometry.dispose()
-        meteor.mesh.material.dispose()
+        this.disposeMeteor(meteor)
         meteor.destination.group.visible = !meteor.destination.revealsPortal
         meteor.destination.group.quaternion.copy(this.camera.quaternion)
         this.activeMeteors.splice(index, 1)
         if (meteor.firstVisitSequenceId !== undefined) {
           this.readyFirstVisitSequences.delete(meteor.firstVisitSequenceId)
+          this.firstVisitMeteorCounts.delete(meteor.firstVisitSequenceId)
           this.notifyFirstVisitMeteor(meteor.firstVisitSequenceId, true)
         }
         continue
@@ -479,10 +512,13 @@ export class GalaxyMeteorEffect {
           ? progress
           : THREE.MathUtils.smoothstep(progress, 0, 1)
       this.updateTrail(meteor, headProgress)
-      meteor.mesh.material.uniforms.u_opacity!.value =
+      const opacity =
         meteor.firstVisitSequenceId !== undefined
           ? 0.9
           : Math.pow(Math.sin(progress * Math.PI), 0.8)
+      meteor.mesh.material.uniforms.u_opacity!.value = opacity
+      this.updateMeteorHead(meteor, headProgress, opacity)
+      this.updateMeteorCompanions(meteor, headProgress, opacity)
     }
   }
 
@@ -497,12 +533,11 @@ export class GalaxyMeteorEffect {
       this.handleFirstVisitMeteorCancel,
     )
     this.activeMeteors.forEach((meteor) => {
-      this.scene.remove(meteor.mesh)
-      meteor.mesh.geometry.dispose()
-      meteor.mesh.material.dispose()
+      this.disposeMeteor(meteor)
     })
     this.activeMeteors.length = 0
     this.readyFirstVisitSequences.clear()
+    this.firstVisitMeteorCounts.clear()
     this.destinations.forEach((destination) => this.scene.remove(destination.group))
     this.destinations.length = 0
     this.starGeometry.dispose()
@@ -548,6 +583,7 @@ export class GalaxyMeteorEffect {
     firstVisitSequenceId?: number,
     firstVisitReady = false,
     startPosition?: THREE.Vector3,
+    meteorCount = 1,
   ) {
     const segments = METEOR_TRAIL_SEGMENTS
     const positions = new Float32Array((segments + 1) * 2 * 3)
@@ -583,8 +619,64 @@ export class GalaxyMeteorEffect {
     mesh.frustumCulled = false
     mesh.renderOrder = 10
     this.scene.add(mesh)
+    const head = new THREE.Mesh(
+      this.starGeometry,
+      new THREE.ShaderMaterial({
+        vertexShader: meteorVertexShader,
+        fragmentShader: meteorHeadFragmentShader,
+        uniforms: { u_opacity: { value: 0 } },
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    )
+    head.frustumCulled = false
+    head.renderOrder = 11
+    this.scene.add(head)
+    const companionSettings: Array<{
+      progressOffset: number
+      lateralOffset: number
+      size: number
+    }> = []
+    let progressOffset = 0
+    for (let index = 0; index < meteorCount - 1; index++) {
+      progressOffset += 0.018 + Math.random() * 0.032
+      let lateralOffset = 0
+      for (let attempt = 0; attempt < 12; attempt++) {
+        lateralOffset = (Math.random() * 2 - 1) * 36
+        if (companionSettings.every((item) => Math.abs(item.lateralOffset - lateralOffset) >= 8)) {
+          break
+        }
+      }
+      companionSettings.push({
+        progressOffset,
+        lateralOffset,
+        size: 8 + Math.random() * 10,
+      })
+    }
+    const companions = companionSettings.slice(0, meteorCount - 1).map((companion, index) => {
+      const companionGeometry = geometry.clone()
+      const companionMaterial = material.clone()
+      companionMaterial.uniforms.u_opacity!.value = 0
+      const companionMesh = new THREE.Mesh(companionGeometry, companionMaterial)
+      companionMesh.frustumCulled = false
+      companionMesh.renderOrder = 9 + index
+      this.scene.add(companionMesh)
+
+      const companionHeadMaterial = head.material.clone()
+      companionHeadMaterial.uniforms.u_opacity!.value = 0
+      const companionHead = new THREE.Mesh(this.starGeometry, companionHeadMaterial)
+      companionHead.frustumCulled = false
+      companionHead.renderOrder = 11 + index
+      this.scene.add(companionHead)
+      return { ...companion, mesh: companionMesh, head: companionHead }
+    })
     this.activeMeteors.push({
       mesh,
+      head,
+      companions,
       destination,
       end,
       start: startPosition ?? this.randomMeteorStart(end),
@@ -601,10 +693,67 @@ export class GalaxyMeteorEffect {
     })
   }
 
-  private updateTrail(meteor: ActiveMeteor, progress: number) {
+  private updateMeteorHead(
+    meteor: ActiveMeteor,
+    progress: number,
+    opacity: number,
+    head: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> = meteor.head,
+    size = 32,
+    lateralOffset = 0,
+  ) {
+    const position = this.meteorPathPosition(meteor, progress)
+    const before = this.meteorPathPosition(meteor, progress - 0.002)
+    const after = this.meteorPathPosition(meteor, progress + 0.002)
+    const tangent = after.sub(before).normalize()
+    const viewDirection = position.clone().sub(this.camera.position).normalize()
+    const side = new THREE.Vector3().crossVectors(tangent, viewDirection).normalize()
+    const cameraPosition = this.camera.worldToLocal(position.clone())
+    const depth = Math.max(this.camera.near, -cameraPosition.z)
+    const viewHeight = 2 * depth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
+    const worldUnitsPerPixel = viewHeight / Math.max(1, this.host.clientHeight)
+    position.addScaledVector(side, worldUnitsPerPixel * lateralOffset)
+    const diameter = worldUnitsPerPixel * size
+    head.position.copy(position)
+    head.quaternion.copy(this.camera.quaternion)
+    head.scale.set(diameter, diameter, 1)
+    head.material.uniforms.u_opacity!.value = opacity
+  }
+
+  private updateMeteorCompanions(meteor: ActiveMeteor, progress: number, opacity: number) {
+    meteor.companions.forEach((companion) => {
+      const companionProgress = Math.max(0, progress - companion.progressOffset)
+      const companionOpacity = opacity * 0.78
+      this.updateTrail(
+        meteor,
+        companionProgress,
+        0.038,
+        0.55,
+        companion.lateralOffset,
+        companion.mesh,
+      )
+      companion.mesh.material.uniforms.u_opacity!.value = companionOpacity
+      this.updateMeteorHead(
+        meteor,
+        companionProgress,
+        companionOpacity,
+        companion.head,
+        companion.size,
+        companion.lateralOffset,
+      )
+    })
+  }
+
+  private updateTrail(
+    meteor: ActiveMeteor,
+    progress: number,
+    trailLength = 0.12,
+    widthScale = 1,
+    lateralOffset = 0,
+    mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> = meteor.mesh,
+  ) {
     const segments = METEOR_TRAIL_SEGMENTS
-    const trailStart = progress - 0.12
-    const positionAttribute = meteor.mesh.geometry.getAttribute('position') as THREE.BufferAttribute
+    const trailStart = progress - trailLength
+    const positionAttribute = mesh.geometry.getAttribute('position') as THREE.BufferAttribute
     const positions = positionAttribute.array as Float32Array
     for (let segment = 0; segment <= segments; segment++) {
       const along = segment / segments
@@ -620,7 +769,8 @@ export class GalaxyMeteorEffect {
       const depth = Math.max(this.camera.near, -cameraCenter.z)
       const viewHeight = 2 * depth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
       const worldUnitsPerPixel = viewHeight / Math.max(1, this.host.clientHeight)
-      const halfWidth = worldUnitsPerPixel * (1.4 + along * 1.2)
+      center.addScaledVector(side, worldUnitsPerPixel * lateralOffset)
+      const halfWidth = worldUnitsPerPixel * (1.4 + along * 1.2) * widthScale
       const offset = segment * 6
       positions[offset] = center.x + side.x * halfWidth
       positions[offset + 1] = center.y + side.y * halfWidth
@@ -630,7 +780,7 @@ export class GalaxyMeteorEffect {
       positions[offset + 5] = center.z - side.z * halfWidth
     }
     positionAttribute.needsUpdate = true
-    meteor.mesh.geometry.computeBoundingSphere()
+    mesh.geometry.computeBoundingSphere()
   }
 
   private destinationFromScreen(x: number, y: number, depth = 900) {
@@ -699,8 +849,7 @@ export class GalaxyMeteorEffect {
       FIRST_VISIT_METEOR_WAITING_CREEP * elapsed
     return progress >= FIRST_VISIT_METEOR_WAITING_LIMIT
       ? 0
-      : (FIRST_VISIT_METEOR_WAITING_LIMIT / easingTime) *
-          Math.exp(-elapsed / easingTime) +
+      : (FIRST_VISIT_METEOR_WAITING_LIMIT / easingTime) * Math.exp(-elapsed / easingTime) +
           FIRST_VISIT_METEOR_WAITING_CREEP
   }
 
@@ -714,11 +863,7 @@ export class GalaxyMeteorEffect {
       cameraEnd.y / (endDepth * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)))
     const offsetX = (Math.random() * 2 - 1) * 0.28
     const offsetY = (Math.random() * 2 - 1) * 0.28
-    return this.destinationFromScreen(
-      screenX + offsetX,
-      screenY + offsetY,
-      METEOR_START_DEPTH,
-    )
+    return this.destinationFromScreen(screenX + offsetX, screenY + offsetY, METEOR_START_DEPTH)
   }
 
   private cameraBounds() {

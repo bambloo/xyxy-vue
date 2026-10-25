@@ -5,6 +5,10 @@ export const TIME_FORTUNE_CLOSE_EVENT = 'time-fortune:close'
 export const TIME_FORTUNE_PAIRED_DIALOG_VIEW_EVENT = 'time-fortune:paired-dialog-view'
 export type PairedDialogView = 'fortune' | 'composer'
 export const TIME_FORTUNE_FIRST_VISIT_METEOR_EVENT = 'time-fortune:first-visit-meteor'
+export interface FirstVisitMeteorRequest {
+  sequenceId: number
+  meteorCount: number
+}
 export const TIME_FORTUNE_FIRST_VISIT_METEOR_STARTED_EVENT =
   'time-fortune:first-visit-meteor-started'
 export const TIME_FORTUNE_FIRST_VISIT_METEOR_READY_EVENT = 'time-fortune:first-visit-meteor-ready'
@@ -43,4 +47,8 @@ export function hasCompletedDailyFirstVisit(userTag: string) {
 
 export function markDailyFirstVisitCompleted(userTag: string) {
   localStorage.setItem(dailyFirstVisitStorageKey(userTag), 'true')
+}
+
+export function clearDailyFirstVisitCompleted(userTag: string) {
+  localStorage.removeItem(dailyFirstVisitStorageKey(userTag))
 }

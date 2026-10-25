@@ -215,7 +215,7 @@ export class GalaxyBlackHole {
           );
 
           vec3 bh = vec3(0.0);
-          float bhr = 0.1;
+          float bhr = 0.15;
           float bhmass = 0.005;
           vec3 p = ro;
           vec3 pv = rd;
@@ -235,7 +235,7 @@ export class GalaxyBlackHole {
             noncaptured = smoothstep(0.0, 0.666, sdSphere(p - bh, bhr));
             holeAlpha = max(
               holeAlpha,
-              1.0 - smoothstep(bhr * 0.85, bhr * 1.25, length(p - bh))
+              (1.0 - smoothstep(bhr * 0.85, bhr * 1.25, length(p - bh)))
             );
 
             float dr = length(bhv.xz);
@@ -253,7 +253,7 @@ export class GalaxyBlackHole {
             float discMask = smoothstep(
               0.0,
               1.0,
-              -sdTorus((p * vec3(1.0, 25.0, 1.0)) - bh, vec2(0.8, 0.99))
+              -sdTorus((p * vec3(1.0, 25.0, 1.0)) - bh, vec2(0.7, 0.8))
             );
             col += max(vec3(0.0), dcol * 4.8 * discMask * noncaptured);
           }
@@ -264,9 +264,12 @@ export class GalaxyBlackHole {
           );
           float edgeFade = smoothstep(0.0, 0.12, edgeDistance);
           float diskBrightness = max(col.r, max(col.g, col.b));
-          float diskAlpha = smoothstep(0.015, 0.12, diskBrightness);
+          float diskAlpha = smoothstep(0.00, 0.24, diskBrightness);
           col *= 1.0 - holeAlpha;
-          fragColor = vec4(col, max(diskAlpha, holeAlpha) * edgeFade);
+          // float alpha = holeAlpha + diskAlpha * (1.0 - holeAlpha);
+          float alpha = holeAlpha + diskAlpha * diskAlpha * diskAlpha;
+          // float alpha = holeAlpha;
+          fragColor = vec4(col, alpha * edgeFade);
         }
 
         void main() {
