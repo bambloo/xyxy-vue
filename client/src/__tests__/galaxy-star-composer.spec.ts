@@ -9,6 +9,7 @@ import {
 import {
   DIALOG_STACK_CLOSE_DIALOG_EVENT,
   DIALOG_STACK_CLOSE_REQUEST_EVENT,
+  DIALOG_STACK_STATE_EVENT,
 } from '../events/dialog-stack'
 import { TIME_FORTUNE_DIALOG_STATE_EVENT } from '../events/time-fortune'
 import { post } from '../scripts/request'
@@ -80,11 +81,18 @@ describe('paired galaxy star tab', () => {
 
   it('announces the composer again when reopening it from the fortune tab', async () => {
     const composerStates: boolean[] = []
+    const stackedComposerStates: boolean[] = []
     const recordComposerState = (event: Event) => {
       composerStates.push((event as CustomEvent<boolean>).detail)
     }
+    const recordStackState = (event: Event) => {
+      const { id, open } = (event as CustomEvent<{ id: string; open: boolean }>).detail
+      if (id === 'composer' && open) stackedComposerStates.push(open)
+    }
     window.addEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, recordComposerState)
+    window.addEventListener(DIALOG_STACK_STATE_EVENT, recordStackState)
     await openPairedComposer({ canSend: true })
+    expect(stackedComposerStates).toEqual([])
 
     window.dispatchEvent(
       new CustomEvent(DIALOG_STACK_CLOSE_DIALOG_EVENT, { detail: 'composer' }),
@@ -94,8 +102,10 @@ describe('paired galaxy star tab', () => {
 
     document.body.querySelector<HTMLButtonElement>('.dialog-edge-tab-star')?.click()
     expect(composerStates).toEqual([true, false, true])
+    expect(stackedComposerStates).toEqual([true])
 
     window.removeEventListener(GALAXY_STAR_COMPOSER_STATE_EVENT, recordComposerState)
+    window.removeEventListener(DIALOG_STACK_STATE_EVENT, recordStackState)
   })
 
   it('leaves outside clicks for the fortune overlay to handle while its view is active', async () => {

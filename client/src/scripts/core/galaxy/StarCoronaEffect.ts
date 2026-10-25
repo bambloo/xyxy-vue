@@ -4,7 +4,7 @@ const SYNODIC_MONTH_MS = 29.53058867 * 24 * 60 * 60 * 1000
 const BASE_NEW_MOON = Date.UTC(2000, 0, 6, 18, 14)
 
 export function getMoonPhase(date = new Date()) {
-  const elapsed = (date.getTime() - BASE_NEW_MOON + 24 * 60 * 60 * 1000 * 6) % SYNODIC_MONTH_MS
+  const elapsed = (date.getTime() - BASE_NEW_MOON) % SYNODIC_MONTH_MS
   return ((elapsed + SYNODIC_MONTH_MS) % SYNODIC_MONTH_MS) / SYNODIC_MONTH_MS
 }
 

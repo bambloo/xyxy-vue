@@ -5,14 +5,19 @@ const MAX_PULL_DISTANCE = 150
 // const STAR_RECOVERY_RATE = 5
 const GALAXY_RADIUS = 980
 const BLACK_HOLE_ORBIT_RADIUS = GALAXY_RADIUS * 0.3
-const BLACK_HOLE_SHADER_COORDINATE_SCALE = 0.7
-const BLACK_HOLE_VIEW_DIAMETER = 0.9
-const BLACK_HOLE_PAGE_CORE_RADIUS = 0.56
-const BLACK_HOLE_HORIZON_DIAMETER_RATIO =
-  BLACK_HOLE_SHADER_COORDINATE_SCALE * BLACK_HOLE_PAGE_CORE_RADIUS
+const BLACK_HOLE_ANIMATION_SPEED = 0.35
+const BLACK_HOLE_RAY_ORIGIN_DISTANCE = 2
+const BLACK_HOLE_CAMERA_FOCAL_LENGTH = 1.5
+const BLACK_HOLE_HORIZON_RADIUS = 0.15
+const BLACK_HOLE_RAYMARCH_STEPS = 160
+const BLACK_HOLE_RAYMARCH_STEP_SIZE = 0.025
 const GALAXY_BLACK_HOLE_VIEW_SCALE = 1.55
 const GALAXY_BLACK_HOLE_HIT_RADIUS = 1.45
 const BLACK_HOLE_PAGE_HIT_RADIUS = 1.42
+
+function shaderFloat(value: number) {
+  return Number.isInteger(value) ? `${value}.0` : String(value)
+}
 
 function smoothRandom(time: number, seed: number) {
   const segment = Math.floor(time)
@@ -79,8 +84,12 @@ function createAccretionTexture() {
 export class GalaxyBlackHole {
   private readonly group = new THREE.Group()
   private readonly position = new THREE.Vector3()
+  private readonly worldPosition = new THREE.Vector3()
   private readonly viewDirection = new THREE.Vector3()
   private readonly cameraPosition = new THREE.Vector3()
+  private readonly cameraDirection = new THREE.Vector3()
+  private readonly galaxyQuaternion = new THREE.Quaternion()
+  private readonly cameraQuaternion = new THREE.Quaternion()
   private readonly reducedMotion: boolean
   private readonly geometries: THREE.BufferGeometry[] = []
   private readonly materials: THREE.Material[] = []
@@ -144,54 +153,20 @@ export class GalaxyBlackHole {
           return length(q) - t.y;
         }
 
-        void renderOriginalBlackHole(out vec4 color, vec2 p) {
-          float i = 0.2;
-          float a;
-          vec2 d = vec2(-1.0, 1.0);
-          vec2 b = p - i * d;
-          vec2 c = p * mat2(1.0, 1.0, d / (0.1 + i / dot(b, b)));
-          vec2 v;
-          a = max(dot(c, c), 0.0001);
-          v = c * mat2(cos(0.5 * log(a) + iTime * i + vec4(0.0, 33.0, 11.0, 0.0))) / i;
-          vec2 w = vec2(0.0);
-          for (; i++ < 9.0; w += 1.0 + sin(v)) {
-            v += 0.7 * sin(v.yx * i + iTime) / i + 0.5;
-          }
-          i = length(sin(v / 0.3) * 0.4 + c * (3.0 + d));
-          color = 1.0 - exp(
-            -exp(c.x * vec4(0.6, -0.4, -1.0, 0.0))
-            / w.xyyx
-            / (2.0 + i * i / 4.0 - i)
-            / (0.5 + 1.0 / a)
-            / (0.03 + abs(length(p) - 0.7))
-          );
-          float radius = length(p);
-          float holeMask = 1.0 - smoothstep(${BLACK_HOLE_PAGE_CORE_RADIUS}, 0.72, radius);
-          color.rgb *= 1.0 - holeMask;
-          float photonRing = exp(-pow((radius - 0.68) / 0.065, 2.0));
-          color.rgb += vec3(0.72, 0.84, 1.0) * photonRing * 0.22;
-          color.a = holeMask + color.a * (1.0 - holeMask);
-          color.a *= 1.0 - smoothstep(1.0, 1.42, radius);
-        }
-
         void mainImage(out vec4 fragColor, in vec2 fragCoord) {
           vec2 pp = fragCoord.xy / iResolution.xy;
           pp = -1.0 + 2.0 * pp;
           pp.x *= iResolution.x / iResolution.y;
 
-          if (iBlackHoleView > 0.5) {
-            vec2 p = pp / ${BLACK_HOLE_SHADER_COORDINATE_SCALE};
-            renderOriginalBlackHole(fragColor, p);
-            return;
-          }
-
-          pp *= ${GALAXY_BLACK_HOLE_VIEW_SCALE};
-          vec3 ro = normalize(iViewDirection) * 2.0;
+          pp *= ${shaderFloat(GALAXY_BLACK_HOLE_VIEW_SCALE)};
+          vec3 ro = normalize(iViewDirection) * ${shaderFloat(BLACK_HOLE_RAY_ORIGIN_DISTANCE)};
           vec3 front = -normalize(iViewDirection);
           vec3 worldUp = abs(front.y) > 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
           vec3 right = normalize(cross(front, worldUp));
           vec3 up = normalize(cross(right, front));
-          vec3 rd = normalize(front * 1.5 + right * pp.x + up * pp.y);
+          vec3 rd = normalize(
+            front * ${shaderFloat(BLACK_HOLE_CAMERA_FOCAL_LENGTH)} + right * pp.x + up * pp.y
+          );
 
           vec3 diskNormal = normalize(iDiskNormal);
           vec3 diskReference = abs(diskNormal.y) < 0.95
@@ -214,20 +189,25 @@ export class GalaxyBlackHole {
             dot(rd, rotatedDiskForward)
           );
 
+          float closestApproach = length(ro + rd * max(0.0, dot(-ro, rd)));
+          if (closestApproach > 1.5) {
+            fragColor = vec4(0.0);
+            return;
+          }
+
           vec3 bh = vec3(0.0);
-          float bhr = 0.15;
+          float bhr = ${shaderFloat(BLACK_HOLE_HORIZON_RADIUS)};
           float bhmass = 0.005;
           vec3 p = ro;
           vec3 pv = rd;
-          float dt = 0.02;
           vec3 col = vec3(0.0);
           float noncaptured = 1.0;
           float holeAlpha = 0.0;
           vec3 c1 = vec3(0.5, 0.46, 0.4);
           vec3 c2 = vec3(1.0, 0.8, 0.6);
 
-          for (float t = 0.0; t < 1.0; t += 0.005) {
-            p += pv * dt * noncaptured;
+          for (int step = 0; step < ${BLACK_HOLE_RAYMARCH_STEPS}; step++) {
+            p += pv * ${shaderFloat(BLACK_HOLE_RAYMARCH_STEP_SIZE)} * noncaptured;
 
             vec3 bhv = bh - p;
             float r = max(dot(bhv, bhv), 0.0001);
@@ -237,25 +217,31 @@ export class GalaxyBlackHole {
               holeAlpha,
               (1.0 - smoothstep(bhr * 0.85, bhr * 1.25, length(p - bh)))
             );
-
-            float dr = length(bhv.xz);
-            float da = atan(bhv.x, bhv.z);
-            float angleTurns = da / (2.0 * pi);
-            float textureAngle = angleTurns * 2.0 + dr * (0.03 + max(dr - bhr, 0.0) * 0.006) + iTime * 0.005;
-            vec2 ra = vec2(dr, textureAngle);
-
-            float distanceToHole = length(bhv);
-            vec3 dcol =
-              mix(c2, c1, pow(max(distanceToHole - bhr, 0.0), 2.0)) *
-              max(0.0, texture2D(iChannel1, ra).r + 0.05) *
-              (4.0 / (0.001 + (distanceToHole - bhr) * 50.0));
+            if (noncaptured < 0.001) break;
+            if (r > 2.25 && dot(p, pv) > 0.0) break;
 
             float discMask = smoothstep(
               0.0,
               1.0,
               -sdTorus((p * vec3(1.0, 25.0, 1.0)) - bh, vec2(0.7, 0.8))
             );
-            col += max(vec3(0.0), dcol * 4.8 * discMask * noncaptured);
+            if (discMask > 0.0) {
+              float dr = length(bhv.xz);
+              float da = atan(bhv.x, bhv.z);
+              float angleTurns = da / (2.0 * pi);
+              float textureAngle =
+                angleTurns * 2.0 + dr * (0.03 + max(dr - bhr, 0.0) * 0.006) + iTime * 0.005;
+              vec2 ra = vec2(dr, textureAngle);
+              float distanceToHole = length(bhv);
+              vec3 dcol =
+                mix(c2, c1, pow(max(distanceToHole - bhr, 0.0), 2.0)) *
+                max(0.0, texture2D(iChannel1, ra).r + 0.05) *
+                (4.0 / (0.001 + (distanceToHole - bhr) * 50.0));
+              col += max(
+                vec3(0.0),
+                dcol * 4.8 * mix(1.0, 1.4, iBlackHoleView) * discMask * noncaptured
+              );
+            }
           }
 
           float edgeDistance = min(
@@ -300,25 +286,27 @@ export class GalaxyBlackHole {
 
   update(time: number) {
     const seconds = time * 0.001
-    const phase = this.reducedMotion ? 0 : seconds
+    const animationTime = this.reducedMotion ? 0 : seconds * BLACK_HOLE_ANIMATION_SPEED
+    const parent = this.group.parent
+    parent?.updateMatrixWorld(true)
     if (this.blackHoleView) {
-      const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3())
-      const cameraDirection = this.camera.getWorldDirection(new THREE.Vector3())
-      const worldPosition = cameraPosition.addScaledVector(cameraDirection, 230)
-      this.group.parent?.updateMatrixWorld(true)
-      this.position.copy(this.group.parent?.worldToLocal(worldPosition) ?? worldPosition)
-    } else {
-      this.position.set(
-        Math.sin(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
-        0,
-        Math.cos(phase * 0.018) * BLACK_HOLE_ORBIT_RADIUS,
+      this.camera.getWorldPosition(this.cameraPosition)
+      this.camera.getWorldDirection(this.cameraDirection)
+      this.worldPosition.copy(
+        this.cameraPosition.addScaledVector(this.cameraDirection, BLACK_HOLE_ORBIT_RADIUS),
       )
+    } else {
+      this.worldPosition.set(0, 0, BLACK_HOLE_ORBIT_RADIUS)
     }
+    this.position.copy(this.worldPosition)
+    parent?.worldToLocal(this.position)
     this.group.position.copy(this.position)
-    const galaxyQuaternion = this.group.parent?.getWorldQuaternion(new THREE.Quaternion())
-    const cameraQuaternion = this.camera.getWorldQuaternion(new THREE.Quaternion())
+    const galaxyQuaternion = this.group.parent?.getWorldQuaternion(this.galaxyQuaternion)
+    const cameraQuaternion = this.camera.getWorldQuaternion(this.cameraQuaternion)
     this.group.quaternion.copy(
-      galaxyQuaternion ? galaxyQuaternion.invert().multiply(cameraQuaternion) : cameraQuaternion,
+      galaxyQuaternion
+        ? galaxyQuaternion.invert().multiply(cameraQuaternion)
+        : cameraQuaternion,
     )
     this.camera.getWorldPosition(this.cameraPosition)
     this.group.parent?.updateMatrixWorld(true)
@@ -327,15 +315,19 @@ export class GalaxyBlackHole {
       .sub(this.position)
       .normalize()
     this.blackHoleMaterial.uniforms['iViewDirection']!.value.copy(this.viewDirection)
-    const rotationTime = this.reducedMotion ? 0 : seconds
+    const rotationTime = animationTime
     const diskNormal = this.blackHoleMaterial.uniforms['iDiskNormal']!.value as THREE.Vector3
-    diskNormal
-      .set(
-        this.viewDirection.x * 0.35 + smoothRandom(rotationTime / 6.2, 2) * 0.45,
-        1 + this.viewDirection.y * 0.35 + smoothRandom(rotationTime / 8.1, 5) * 0.35,
-        this.viewDirection.z * 0.35 + smoothRandom(rotationTime / 7.3, 9) * 0.45,
-      )
-      .normalize()
+    if (this.blackHoleView) {
+      diskNormal.copy(this.viewDirection)
+    } else {
+      diskNormal
+        .set(
+          this.viewDirection.x * 0.35 + smoothRandom(rotationTime / 6.2, 2) * 0.45,
+          1 + this.viewDirection.y * 0.35 + smoothRandom(rotationTime / 8.1, 5) * 0.35,
+          this.viewDirection.z * 0.35 + smoothRandom(rotationTime / 7.3, 9) * 0.45,
+        )
+        .normalize()
+    }
     this.blackHoleMaterial.uniforms['iDiskRotation']!.value =
       smoothRandom(rotationTime / 5.4, 13) * Math.PI
     if (this.blackHoleView) {
@@ -343,7 +335,7 @@ export class GalaxyBlackHole {
     } else {
       this.singularity.scale.set(1, 1, 1)
     }
-    this.blackHoleMaterial.uniforms['iTime']!.value = this.reducedMotion ? 0 : seconds
+    this.blackHoleMaterial.uniforms['iTime']!.value = animationTime
     this.updateStarPositions()
   }
 
@@ -369,9 +361,7 @@ export class GalaxyBlackHole {
       this.blackHoleMaterial.uniforms['iResolution']!.value.y
     return raycaster.intersectObject(this.singularity, false).some(({ uv }) => {
       if (!uv) return false
-      const shaderScale = this.blackHoleView
-        ? 1 / BLACK_HOLE_SHADER_COORDINATE_SCALE
-        : GALAXY_BLACK_HOLE_VIEW_SCALE
+      const shaderScale = GALAXY_BLACK_HOLE_VIEW_SCALE
       const shaderX = (uv.x * 2 - 1) * aspect * shaderScale
       const shaderY = (uv.y * 2 - 1) * shaderScale
       const hitRadius = this.blackHoleView
@@ -411,14 +401,14 @@ export class GalaxyBlackHole {
     const holePosition = this.singularity.getWorldPosition(new THREE.Vector3())
     const distance = cameraPosition.distanceTo(holePosition)
     const viewportHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
-    const targetDiameter = viewportHeight * Math.min(1, aspect) * BLACK_HOLE_VIEW_DIAMETER
-    const planeHeight = targetDiameter / BLACK_HOLE_HORIZON_DIAMETER_RATIO
+    const planeHeight = viewportHeight
     const planeWidth = planeHeight * aspect
     this.singularity.scale.set(planeWidth / 112, planeHeight / 112, 1)
     this.blackHoleMaterial.uniforms['iResolution']!.value.set(256 * aspect, 256, 1)
   }
 
   private updateStarPositions() {
+    if (this.blackHoleView) return
     this.affectedStarFields.forEach(({ points, originalPositions }) => {
       const attribute = points.geometry.getAttribute('position')
       const starCount = originalPositions.length / 3
@@ -432,12 +422,13 @@ export class GalaxyBlackHole {
         const deltaY = this.position.y - originalY
         const deltaZ = this.position.z - originalZ
 
-        const distance = Math.hypot(deltaX, deltaY, deltaZ)
-        if (distance > MAX_PULL_DISTANCE) {
+        const distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+        if (distanceSquared > MAX_PULL_DISTANCE * MAX_PULL_DISTANCE) {
           attribute.setXYZ(index, originalX, originalY, originalZ)
           continue
         }
 
+        const distance = Math.sqrt(distanceSquared)
         const distanceRatio = distance / MAX_PULL_DISTANCE
         const pullStrength = (1 - distanceRatio) ** 0.2
         const pullX = deltaX * pullStrength
@@ -446,7 +437,6 @@ export class GalaxyBlackHole {
 
         attribute.setXYZ(index, originalX + pullX, originalY + pullY, originalZ + pullZ)
       }
-      attribute.needsUpdate = true
       attribute.needsUpdate = true
     })
   }

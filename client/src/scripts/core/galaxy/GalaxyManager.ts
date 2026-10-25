@@ -28,6 +28,8 @@ const GALAXY_CAMERA_BOUNDARY = 900
 const IDLE_WANDER_BOUNDARY = GALAXY_CAMERA_BOUNDARY * 0.6
 const GALAXY_CAMERA_CENTER_LIMIT = 40
 const CAMERA_PITCH_LIMIT = Math.PI / 2 - 0.04
+const DEFAULT_BLACK_HOLE_SCREEN_X = 0.68
+const DEFAULT_BLACK_HOLE_SCREEN_Y = 0.62
 const CAMERA_LOOK_SENSITIVITY = 0.0005
 const IDLE_WANDER_DELAY = 8000
 const IDLE_WANDER_SPEED = 1
@@ -102,18 +104,18 @@ export class GalaxyManager {
   private rollVelocity = 0
   private targetRollVelocity = 0
   private cameraTargetPosition?: THREE.Vector3
+  private isDefaultView = true
+  private isReturningToDefaultView = false
 
   constructor(options: GalaxyManagerOptions) {
     this.options = options
-    const initialDirection = options.camera.getWorldDirection(new THREE.Vector3())
-    this.targetYaw = Math.atan2(-initialDirection.x, -initialDirection.z)
-    this.targetPitch = THREE.MathUtils.clamp(
-      Math.asin(initialDirection.y),
-      -CAMERA_PITCH_LIMIT,
-      CAMERA_PITCH_LIMIT,
-    )
     options.camera.rotation.order = 'YXZ'
-    options.camera.rotation.set(this.targetPitch, this.targetYaw, 0)
+    this.applyDefaultViewRotation()
+    options.camera.rotation.set(this.targetPitch, this.targetYaw, 0, 'YXZ')
+  }
+
+  updateDefaultViewForResize() {
+    if (this.isDefaultView) this.applyDefaultViewRotation()
   }
 
   pointerDown(event: PointerEvent) {
@@ -219,6 +221,15 @@ export class GalaxyManager {
   resetView() {
     this.recordInteraction()
     this.cameraTargetPosition = new THREE.Vector3(0, 0, 0)
+    this.isDefaultView = true
+    this.isReturningToDefaultView = true
+    this.applyDefaultViewRotation()
+    this.targetRollVelocity = 0
+  }
+
+  centerView() {
+    this.recordInteraction()
+    this.cameraTargetPosition = new THREE.Vector3(0, 0, 0)
     this.targetYaw = 0
     this.targetPitch = 0
     this.targetRollVelocity = 0
@@ -290,6 +301,7 @@ export class GalaxyManager {
     const deltaSeconds = Math.min(0.05, Math.max(0, (time - this.lastUpdateTime) / 1000))
     this.lastUpdateTime = time
     const isIdleWandering = time - this.lastInteractionTime >= IDLE_WANDER_DELAY
+    if (isIdleWandering) this.isDefaultView = false
     if (this.touchPointers.size < 2) {
       this.targetRollVelocity = isIdleWandering ? IDLE_WANDER_ROLL_SPEED : 0
     }
@@ -333,6 +345,8 @@ export class GalaxyManager {
   }
 
   private recordInteraction() {
+    this.isDefaultView = false
+    this.isReturningToDefaultView = false
     this.lastInteractionTime = performance.now()
     this.wanderTarget = undefined
     this.wanderVelocity.set(0, 0, 0)
@@ -343,11 +357,24 @@ export class GalaxyManager {
     this.targetRollVelocity = 0
   }
 
+  private applyDefaultViewRotation() {
+    const { camera, host } = this.options
+    const aspect = Math.max(1, host.clientWidth) / Math.max(1, host.clientHeight)
+    const halfFovTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
+    const verticalOffset = DEFAULT_BLACK_HOLE_SCREEN_Y * halfFovTangent
+    this.targetPitch = -Math.atan(verticalOffset)
+    this.targetYaw =
+      Math.PI +
+      Math.atan(
+        DEFAULT_BLACK_HOLE_SCREEN_X * aspect * halfFovTangent * Math.cos(this.targetPitch),
+      )
+  }
+
   private updateCameraLook(deltaSeconds: number, isIdleWandering: boolean) {
     if (this.isDragging) return
 
     const camera = this.options.camera
-    const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : 10
+    const turnSpeed = isIdleWandering ? IDLE_WANDER_TURN_SPEED : this.isReturningToDefaultView ? 2.4 : 10
     const yawDifference =
       THREE.MathUtils.euclideanModulo(this.targetYaw - camera.rotation.y + Math.PI, Math.PI * 2) -
       Math.PI
@@ -361,6 +388,13 @@ export class GalaxyManager {
       maxRollVelocityChange,
     )
     camera.rotation.z += this.rollVelocity * deltaSeconds
+    if (
+      this.isReturningToDefaultView &&
+      Math.abs(yawDifference) < 0.002 &&
+      Math.abs(this.targetPitch - camera.rotation.x) < 0.002
+    ) {
+      this.isReturningToDefaultView = false
+    }
   }
 
   private rotateCameraLook(deltaX: number, deltaY: number) {

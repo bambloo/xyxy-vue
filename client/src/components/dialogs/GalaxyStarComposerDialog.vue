@@ -65,7 +65,7 @@ async function openComposer(event?: Event) {
       return
     }
     isOpen.value = true
-    announceGalaxyStarComposerState(true)
+    announceGalaxyStarComposerState(true, !isFortunePairedComposer)
     announceGalaxyStarSendStatus(result.canSend)
   } catch (cause) {
     console.error('读取每日星星发送状态失败', cause)
@@ -74,7 +74,7 @@ async function openComposer(event?: Event) {
       return
     }
     isOpen.value = true
-    announceGalaxyStarComposerState(true)
+    announceGalaxyStarComposerState(true, !isFortunePairedComposer)
     error.value =
       (cause as { msg?: string; message?: string }).msg ||
       (cause as { message?: string }).message ||

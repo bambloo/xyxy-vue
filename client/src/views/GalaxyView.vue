@@ -15,9 +15,14 @@ import {
   announceGalaxyStarCommentQueue,
   GALAXY_STAR_COMMENT_OPEN_EVENT,
   GALAXY_STAR_NAVIGATE_EVENT,
+  GALAXY_STAR_NAVIGATE_RANDOM_EVENT,
   GALAXY_STAR_SENT_EVENT,
 } from '@/events/galaxy-star'
-import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
+import {
+  GALAXY_CAMERA_CENTER_EVENT,
+  GALAXY_CAMERA_DEFAULT_EVENT,
+  GALAXY_CAMERA_ZOOM_OUT_EVENT,
+} from '@/events/galaxy-camera'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 
 const props = withDefaults(defineProps<{ blackHoleView?: boolean }>(), {
@@ -73,8 +78,8 @@ const blackHoleEntryStyles = computed(() => {
       }
       const distance = placed.length
         ? Math.min(
-            ...placed.map((other) => Math.hypot(candidate.x - other.x, candidate.y - other.y)),
-          )
+          ...placed.map((other) => Math.hypot(candidate.x - other.x, candidate.y - other.y)),
+        )
         : Number.POSITIVE_INFINITY
 
       if (distance > bestDistance) {
@@ -104,15 +109,15 @@ function currentListViewParams(preserveBlackHoleWave = false) {
     view: props.blackHoleView ? 'blackhole' : 'normal',
     ...(props.blackHoleView
       ? {
-          limit: blackHoleWaveSize,
-          ...(preserveBlackHoleWave
-            ? {
-                includeIds: props.blackHoleView
-                  ? blackHoleEntries.value.map((entry) => entry.id)
-                  : sentStars.value.map((star) => star.id),
-              }
-            : {}),
-        }
+        limit: blackHoleWaveSize,
+        ...(preserveBlackHoleWave
+          ? {
+            includeIds: props.blackHoleView
+              ? blackHoleEntries.value.map((entry) => entry.id)
+              : sentStars.value.map((star) => star.id),
+          }
+          : {}),
+      }
       : {}),
   }
 }
@@ -405,6 +410,7 @@ function animateSentStarIntoGalaxy(star: SentGalaxyStar) {
     height: '100vh',
     overflow: 'visible',
     pointerEvents: 'none',
+    filter: `drop-shadow(0 0 5px ${star.color})`,
   })
   const trailPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   trailPath.setAttribute(
@@ -412,12 +418,15 @@ function animateSentStarIntoGalaxy(star: SentGalaxyStar) {
     `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`,
   )
   trailPath.setAttribute('fill', 'none')
-  trailPath.setAttribute('stroke', star.color)
-  trailPath.setAttribute('stroke-width', '3')
-  trailPath.setAttribute('stroke-linecap', 'round')
-  trailPath.setAttribute('opacity', '0.72')
-  trailPath.style.filter = `drop-shadow(0 0 5px ${star.color})`
+  trailPath.setAttribute('visibility', 'hidden')
   trail.append(trailPath)
+  const tailSegments = Array.from({ length: 12 }, () => {
+    const segment = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+    segment.setAttribute('stroke', star.color)
+    segment.setAttribute('stroke-linecap', 'round')
+    trail.append(segment)
+    return segment
+  })
   document.body.append(trail)
 
   const flight = document.createElement('span')
@@ -436,18 +445,33 @@ function animateSentStarIntoGalaxy(star: SentGalaxyStar) {
   })
   document.body.append(flight)
   const pathLength = trailPath.getTotalLength()
-  const tailLength = Math.min(48, pathLength * 0.22)
-  trailPath.setAttribute('stroke-dasharray', `${tailLength} ${pathLength}`)
+  const tailLength = Math.min(64, pathLength * 0.18)
   const startTime = performance.now()
   const duration = 1400
   const animate = (now: number) => {
     const progress = Math.min(1, (now - startTime) / duration)
     const easedProgress = 1 - Math.pow(1 - progress, 2.4)
-    const point = trailPath.getPointAtLength(pathLength * easedProgress)
-    trailPath.setAttribute('stroke-dashoffset', `${-pathLength * easedProgress}`)
+    const currentDistance = pathLength * easedProgress
+    const point = trailPath.getPointAtLength(currentDistance)
+    const visibleTailLength = Math.min(tailLength, currentDistance)
+    const tailFade = 1 - Math.max(0, progress - 0.82) / 0.18
+    tailSegments.forEach((segment, index) => {
+      const headProgress = 1 - index / tailSegments.length
+      const segmentEnd = currentDistance - (visibleTailLength * index) / tailSegments.length
+      const segmentStart =
+        currentDistance - (visibleTailLength * (index + 1)) / tailSegments.length
+      const from = trailPath.getPointAtLength(Math.max(0, segmentStart))
+      const to = trailPath.getPointAtLength(Math.max(0, segmentEnd))
+      segment.setAttribute('x1', String(from.x))
+      segment.setAttribute('y1', String(from.y))
+      segment.setAttribute('x2', String(to.x))
+      segment.setAttribute('y2', String(to.y))
+      segment.setAttribute('stroke-width', String(0.5 + headProgress * 2.5))
+      segment.setAttribute('opacity', String(headProgress * 0.72 * tailFade))
+    })
     flight.style.left = `${point.x}px`
     flight.style.top = `${point.y}px`
-    flight.style.opacity = String(Math.min(1, progress * 7) * (1 - Math.max(0, progress - 0.82) / 0.18))
+    flight.style.opacity = String(Math.min(1, progress * 7) * tailFade)
     const scale = 0.55 + Math.min(1, progress * 7) * 0.45 - easedProgress * 0.65
     flight.style.transform = `translate(-50%, -50%) scale(${scale})`
     if (progress < 1) {
@@ -476,6 +500,28 @@ async function handleNavigateToStar(event: Event) {
     if (requestId !== starNavigationRequestId) return
     console.error('前往当天寄出的星星失败', error)
     sceneError.value = '前往当天寄出的星星失败，请稍后重试。'
+  }
+}
+
+async function handleNavigateToRandomStar() {
+  if (props.blackHoleView) return
+  const requestId = ++starNavigationRequestId
+  try {
+    if (!sentStars.value.length) await loadGalaxyStars()
+    if (requestId !== starNavigationRequestId) return
+    if (!sentStars.value.length) {
+      sceneError.value = '当前没有可定位的寄出星星。'
+      return
+    }
+    const index = Math.floor(Math.random() * sentStars.value.length)
+    const star = sentStars.value[index]
+    if (!star || !galaxyScene?.navigateToSentStar(star.id)) {
+      throw new Error('未能定位到随机寄出的星星')
+    }
+  } catch (error) {
+    if (requestId !== starNavigationRequestId) return
+    console.error('前往随机寄出的星星失败', error)
+    sceneError.value = '前往随机寄出的星星失败，请稍后重试。'
   }
 }
 
@@ -679,10 +725,10 @@ const selectedCommentThreads = computed(() =>
 const visibleCommentThreads = computed(() =>
   props.blackHoleView
     ? selectedCommentThreads.value.filter(
-        (comment) =>
-          !meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount) ||
-          comment.id === selectedCommentId.value,
-      )
+      (comment) =>
+        !meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount) ||
+        comment.id === selectedCommentId.value,
+    )
     : selectedCommentThreads.value,
 )
 
@@ -752,6 +798,10 @@ function handleCameraZoomOut() {
 }
 
 function handleCameraCenter() {
+  galaxyScene?.centerView()
+}
+
+function handleCameraDefault() {
   galaxyScene?.resetView()
 }
 
@@ -765,9 +815,11 @@ onMounted(() => {
     )
     window.addEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
     window.addEventListener(GALAXY_STAR_NAVIGATE_EVENT, handleNavigateToStar)
+    window.addEventListener(GALAXY_STAR_NAVIGATE_RANDOM_EVENT, handleNavigateToRandomStar)
     window.addEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
     window.addEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
     window.addEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
+    window.addEventListener(GALAXY_CAMERA_DEFAULT_EVENT, handleCameraDefault)
     document.addEventListener('pointerdown', handleUserInteraction)
     document.addEventListener('wheel', handleUserInteraction)
     document.addEventListener('keydown', handleUserInteraction)
@@ -785,9 +837,11 @@ onBeforeUnmount(() => {
   if (commentNotificationTimer !== undefined) window.clearInterval(commentNotificationTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
   window.removeEventListener(GALAXY_STAR_NAVIGATE_EVENT, handleNavigateToStar)
+  window.removeEventListener(GALAXY_STAR_NAVIGATE_RANDOM_EVENT, handleNavigateToRandomStar)
   window.removeEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
   window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
   window.removeEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
+  window.removeEventListener(GALAXY_CAMERA_DEFAULT_EVENT, handleCameraDefault)
   document.removeEventListener('pointerdown', handleUserInteraction)
   document.removeEventListener('wheel', handleUserInteraction)
   document.removeEventListener('keydown', handleUserInteraction)
@@ -797,26 +851,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main
-    class="galaxy-demo"
-    :class="{ 'black-hole-view': props.blackHoleView }"
-    :aria-label="props.blackHoleView ? '黑洞星域' : '旋转星空 Demo'"
-  >
-    <header v-if="props.blackHoleView" class="black-hole-page-header">
-      <button type="button" @click="router.push({ name: 'galaxy' })">返回星空</button>
-      <div>
-        <h1>黑洞星域</h1>
-        <p>踩数 > 赞数 × 1.5 且踩数 > 8</p>
-      </div>
-    </header>
-    <section
-      v-if="props.blackHoleView"
-      class="black-hole-list"
-      aria-label="被踩内容"
-      @pointerdown="handleBlackHolePointerDown"
-      @pointerup="handleBlackHolePointerUp"
-      @pointercancel="handleBlackHolePointerUp"
-    >
+  <main class="galaxy-demo" :class="{ 'black-hole-view': props.blackHoleView }"
+    :aria-label="props.blackHoleView ? '黑洞星域' : '旋转星空 Demo'">
+    <section v-if="props.blackHoleView" class="black-hole-list" aria-label="被踩内容"
+      @pointerdown="handleBlackHolePointerDown" @pointerup="handleBlackHolePointerUp"
+      @pointercancel="handleBlackHolePointerUp">
       <p v-if="listLoading && !blackHoleListLoaded" class="black-hole-empty">
         正在搜寻被引力捕获的内容…
       </p>
@@ -824,18 +863,11 @@ onBeforeUnmount(() => {
       <template v-else>
         <Transition name="black-hole-wave">
           <div :key="blackHoleWaveKey" class="black-hole-content-list">
-            <div
-              v-for="(entry, index) in blackHoleWave"
-              :key="entry.id"
-              class="black-hole-content-entry"
-              :style="blackHoleEntryStyles[index]"
-            >
-              <button
-                class="black-hole-content-text"
-                type="button"
+            <div v-for="(entry, index) in blackHoleWave" :key="entry.id" class="black-hole-content-entry"
+              :style="blackHoleEntryStyles[index]">
+              <button class="black-hole-content-text" type="button"
                 :aria-label="`打开被踩${entry.kind === 'comment' ? '评论' : '星体内容'}，被踩 ${entry.dislikeCount} 次`"
-                @click="openBlackHoleEntry(entry)"
-              >
+                @click="openBlackHoleEntry(entry)">
                 {{ entry.content }}
               </button>
             </div>
@@ -843,28 +875,12 @@ onBeforeUnmount(() => {
         </Transition>
       </template>
     </section>
-    <section
-      ref="canvasHost"
-      class="galaxy-canvas"
-      @pointerdown="handlePointerDown"
-      @pointermove="handlePointerMove"
-      @pointerup="handlePointerUp"
-      @pointercancel="handlePointerUp"
-      @wheel.prevent="handleWheel"
-    ></section>
+    <section ref="canvasHost" class="galaxy-canvas" @pointerdown="handlePointerDown" @pointermove="handlePointerMove"
+      @pointerup="handlePointerUp" @pointercancel="handlePointerUp" @wheel.prevent="handleWheel"></section>
     <p v-if="sceneError" class="galaxy-scene-error" role="alert">{{ sceneError }}</p>
-    <div
-      v-if="selectedStar"
-      class="sent-star-dialog-overlay"
-      :style="{ '--star-color': selectedStar.color }"
-      @click.self="selectedStar = undefined"
-    >
-      <section
-        class="sent-star-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sent-star-dialog-title"
-      >
+    <div v-if="selectedStar" class="sent-star-dialog-overlay" :style="{ '--star-color': selectedStar.color }"
+      @click.self="selectedStar = undefined">
+      <section class="sent-star-dialog" role="dialog" aria-modal="true" aria-labelledby="sent-star-dialog-title">
         <header class="sent-star-dialog-header">
           <div>
             <span class="sent-star-dialog-eyebrow">星际回响</span>
@@ -876,46 +892,29 @@ onBeforeUnmount(() => {
 
         </header>
         <div class="sent-star-dialog-scroll">
-          <p
-            v-if="!props.blackHoleView || selectedBlackHoleEntryKind === 'star'"
-            id="sent-star-black-hole-content"
-            class="sent-star-content"
-            :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }"
-          >
-            <template
-              v-if="
-                !props.blackHoleView &&
-                meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
-              "
-            >
+          <p v-if="!props.blackHoleView || selectedBlackHoleEntryKind === 'star'" id="sent-star-black-hole-content"
+            class="sent-star-content" :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }">
+            <template v-if="
+              !props.blackHoleView &&
+              meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
+            ">
               该内容因被踩过多已隐藏，可在黑洞星域查看。
             </template>
             <template v-else>{{ selectedStar.content }}</template>
           </p>
-          <div
-            v-if="
-              props.blackHoleView
-                ? selectedBlackHoleEntryKind === 'star'
-                : !meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
-            "
-            class="sent-star-votes"
-          >
-            <button
-              type="button"
-              :class="{ selected: selectedStar.myVote === 'like' }"
-              :aria-pressed="selectedStar.myVote === 'like'"
-              :disabled="voteLoading"
-              @click="voteForStar(selectedStar, 'like')"
-            >
+          <div v-if="
+            props.blackHoleView
+              ? selectedBlackHoleEntryKind === 'star'
+              : !meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
+          " class="sent-star-votes">
+            <button type="button" :class="{ selected: selectedStar.myVote === 'like' }"
+              :aria-pressed="selectedStar.myVote === 'like'" :disabled="voteLoading"
+              @click="voteForStar(selectedStar, 'like')">
               赞 <strong>{{ selectedStar.likeCount }}</strong>
             </button>
-            <button
-              type="button"
-              :class="{ selected: selectedStar.myVote === 'dislike' }"
-              :aria-pressed="selectedStar.myVote === 'dislike'"
-              :disabled="voteLoading"
-              @click="voteForStar(selectedStar, 'dislike')"
-            >
+            <button type="button" :class="{ selected: selectedStar.myVote === 'dislike' }"
+              :aria-pressed="selectedStar.myVote === 'dislike'" :disabled="voteLoading"
+              @click="voteForStar(selectedStar, 'dislike')">
               踩 <strong>{{ selectedStar.dislikeCount }}</strong>
             </button>
             <span v-if="!props.blackHoleView" class="sent-star-comment-count">
@@ -934,14 +933,9 @@ onBeforeUnmount(() => {
               {{ props.blackHoleView ? '没有其他正常评论。' : '还没有评论，来留下第一条回响吧。' }}
             </p>
             <ul v-else class="sent-star-comments">
-              <li
-                v-for="comment in visibleCommentThreads"
-                :key="comment.id"
-                class="sent-star-comment"
+              <li v-for="comment in visibleCommentThreads" :key="comment.id" class="sent-star-comment"
                 :class="{ 'selected-comment': comment.id === selectedCommentId }"
-                :style="{ '--thread-depth': Math.min(comment.depth, 5) }"
-                :id="`sent-star-comment-${comment.id}`"
-              >
+                :style="{ '--thread-depth': Math.min(comment.depth, 5) }" :id="`sent-star-comment-${comment.id}`">
                 <div class="sent-star-comment-author">
                   <strong>{{ comment.sourceStarTitle || '匿名用户' }}</strong>
                   <time>{{ comment.createdAt }}</time>
@@ -950,93 +944,53 @@ onBeforeUnmount(() => {
                   回复 {{ comment.replyToTitle }}
                 </p>
                 <p class="sent-star-comment-content">
-                  <template
-                    v-if="
-                      !props.blackHoleView &&
-                      meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount)
-                    "
-                  >
+                  <template v-if="
+                    !props.blackHoleView &&
+                    meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount)
+                  ">
                     该评论因被踩过多已隐藏，可在黑洞星域查看。
                   </template>
                   <template v-else>{{ comment.content }}</template>
                 </p>
                 <div class="sent-star-comment-actions">
                   <div class="sent-star-comment-votes">
-                    <button
-                      type="button"
-                      :class="{ selected: comment.myVote === 'like' }"
-                      :aria-pressed="comment.myVote === 'like'"
-                      :disabled="voteLoading"
-                      @click="voteForComment(selectedStar, comment, 'like')"
-                    >
+                    <button type="button" :class="{ selected: comment.myVote === 'like' }"
+                      :aria-pressed="comment.myVote === 'like'" :disabled="voteLoading"
+                      @click="voteForComment(selectedStar, comment, 'like')">
                       赞 {{ comment.likeCount ?? 0 }}
                     </button>
-                    <button
-                      type="button"
-                      :class="{ selected: comment.myVote === 'dislike' }"
-                      :aria-pressed="comment.myVote === 'dislike'"
-                      :disabled="voteLoading"
-                      @click="voteForComment(selectedStar, comment, 'dislike')"
-                    >
+                    <button type="button" :class="{ selected: comment.myVote === 'dislike' }"
+                      :aria-pressed="comment.myVote === 'dislike'" :disabled="voteLoading"
+                      @click="voteForComment(selectedStar, comment, 'dislike')">
                       踩 {{ comment.dislikeCount ?? 0 }}
                     </button>
                   </div>
-                  <button
-                    class="sent-star-reply-toggle"
-                    type="button"
-                    @click="toggleCommentReply(comment)"
-                  >
+                  <button class="sent-star-reply-toggle" type="button" @click="toggleCommentReply(comment)">
                     {{ replyingToCommentId === comment.id ? '取消回复' : '回复' }}
                   </button>
                 </div>
-                <form
-                  v-if="replyingToCommentId === comment.id"
-                  class="sent-star-comment-form sent-star-reply-form"
-                  @submit.prevent="commentOnStar(selectedStar, comment.id)"
-                >
-                  <textarea
-                    v-model="commentText"
-                    maxlength="500"
-                    rows="2"
-                    :aria-label="`回复${comment.sourceStarTitle}`"
-                    placeholder="写下回复…"
-                    :disabled="commentLoading"
-                  ></textarea>
+                <form v-if="replyingToCommentId === comment.id" class="sent-star-comment-form sent-star-reply-form"
+                  @submit.prevent="commentOnStar(selectedStar, comment.id)">
+                  <textarea v-model="commentText" maxlength="500" rows="2" :aria-label="`回复${comment.sourceStarTitle}`"
+                    placeholder="写下回复…" :disabled="commentLoading"></textarea>
                   <button type="submit" :disabled="commentLoading || !commentText.trim()">
                     {{ commentLoading ? '发送中…' : '发送回复' }}
                   </button>
                 </form>
-                <p
-                  v-if="replyingToCommentId === comment.id && commentError"
-                  class="sent-star-vote-error"
-                  role="alert"
-                >
+                <p v-if="replyingToCommentId === comment.id && commentError" class="sent-star-vote-error" role="alert">
                   {{ commentError }}
                 </p>
               </li>
             </ul>
-            <p
-              v-if="commentError && !replyingToCommentId"
-              class="sent-star-vote-error"
-              role="alert"
-            >
+            <p v-if="commentError && !replyingToCommentId" class="sent-star-vote-error" role="alert">
               {{ commentError }}
             </p>
           </section>
         </div>
-        <form
-          v-if="!replyingToCommentId"
-          class="sent-star-comment-form sent-star-main-comment-form"
-          @submit.prevent="commentOnStar(selectedStar)"
-        >
-          <textarea
-            v-model="commentText"
-            maxlength="500"
-            rows="2"
-            aria-label="评论内容"
-            placeholder="参与讨论…"
-            :disabled="commentLoading"
-          ></textarea>
+        <form v-if="!replyingToCommentId" class="sent-star-comment-form sent-star-main-comment-form"
+          @submit.prevent="commentOnStar(selectedStar)">
+          <textarea v-model="commentText" maxlength="500" rows="2" aria-label="评论内容" placeholder="参与讨论…"
+            :disabled="commentLoading"></textarea>
           <button type="submit" :disabled="commentLoading || !commentText.trim()">
             {{ commentLoading ? '发送中…' : '发送评论' }}
           </button>
@@ -1066,21 +1020,11 @@ onBeforeUnmount(() => {
   z-index: 3;
   display: flex;
   align-items: center;
-  gap: 18px;
   padding: 12px 18px;
   border: 1px solid rgba(150, 184, 232, 0.22);
   border-radius: 16px;
   background: rgba(5, 11, 27, 0.74);
   backdrop-filter: blur(12px);
-}
-
-.black-hole-page-header button {
-  padding: 8px 13px;
-  border: 1px solid rgba(174, 203, 239, 0.32);
-  border-radius: 999px;
-  background: rgba(86, 121, 168, 0.2);
-  color: #e8f1fb;
-  cursor: pointer;
 }
 
 .black-hole-page-header h1 {
@@ -1142,8 +1086,7 @@ onBeforeUnmount(() => {
   width: 14%;
   padding: 4px;
   transform: translate(-50%, -50%) rotate(var(--entry-angle));
-  animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite
-    alternate;
+  animation: black-hole-drift var(--drift-duration) ease-in-out var(--drift-delay) infinite alternate;
   border: 0;
   background: transparent;
   color: rgba(229, 234, 250, var(--entry-opacity));
@@ -1170,28 +1113,23 @@ onBeforeUnmount(() => {
   }
 
   17% {
-    transform: translate3d(calc(-50% + var(--drift-x-1)), calc(-50% + var(--drift-y-1)), 0)
-      rotate(var(--entry-angle-27));
+    transform: translate3d(calc(-50% + var(--drift-x-1)), calc(-50% + var(--drift-y-1)), 0) rotate(var(--entry-angle-27));
   }
 
   39% {
-    transform: translate3d(calc(-50% + var(--drift-x-2)), calc(-50% + var(--drift-y-2)), 0)
-      rotate(var(--entry-angle-61));
+    transform: translate3d(calc(-50% + var(--drift-x-2)), calc(-50% + var(--drift-y-2)), 0) rotate(var(--entry-angle-61));
   }
 
   57% {
-    transform: translate3d(calc(-50% + var(--drift-x-3)), calc(-50% + var(--drift-y-3)), 0)
-      rotate(var(--entry-angle-27));
+    transform: translate3d(calc(-50% + var(--drift-x-3)), calc(-50% + var(--drift-y-3)), 0) rotate(var(--entry-angle-27));
   }
 
   78% {
-    transform: translate3d(calc(-50% + var(--drift-x-4)), calc(-50% + var(--drift-y-4)), 0)
-      rotate(var(--entry-angle-61));
+    transform: translate3d(calc(-50% + var(--drift-x-4)), calc(-50% + var(--drift-y-4)), 0) rotate(var(--entry-angle-61));
   }
 
   94% {
-    transform: translate3d(calc(-50% + var(--drift-x-5)), calc(-50% + var(--drift-y-5)), 0)
-      rotate(var(--entry-angle-100));
+    transform: translate3d(calc(-50% + var(--drift-x-5)), calc(-50% + var(--drift-y-5)), 0) rotate(var(--entry-angle-100));
   }
 
   100% {
@@ -1279,8 +1217,7 @@ onBeforeUnmount(() => {
   z-index: 30;
   display: grid;
   place-items: center;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgba(1, 5, 14, 0.72);
   backdrop-filter: blur(12px);
 }

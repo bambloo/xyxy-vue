@@ -7,8 +7,11 @@ import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/dialogs/TimeFortuneDialog.vue'
 import GalaxyStarComposerDialog from '@/components/dialogs/GalaxyStarComposerDialog.vue'
-import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
-import { GALAXY_STAR_COMMENT_QUEUE_EVENT } from '@/events/galaxy-star'
+import { GALAXY_CAMERA_DEFAULT_EVENT } from '@/events/galaxy-camera'
+import {
+  GALAXY_STAR_COMMENT_QUEUE_EVENT,
+  GALAXY_STAR_NAVIGATE_RANDOM_EVENT,
+} from '@/events/galaxy-star'
 import {
   DIALOG_STACK_CLOSE_DIALOG_EVENT,
   DIALOG_STACK_CLOSE_REQUEST_EVENT,
@@ -24,22 +27,25 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const isGalaxyRoute = computed(() => route.name === 'galaxy')
+const isBlackHoleRoute = computed(() => route.name === 'blackhole')
 const isPortalRoute = computed(() => isGalaxyRoute.value)
 const activationTag = computed(() =>
   typeof route.query.activationTag === 'string' ? route.query.activationTag.trim() : '',
 )
 const canShowPortalButton = computed(
   () =>
-    isPortalRoute.value &&
+    (isPortalRoute.value || isBlackHoleRoute.value) &&
     ((auth.isSessionValidated && Boolean(auth.currentUser?.tag)) ||
       (!auth.isLoggedIn && Boolean(activationTag.value))),
 )
 const queuedCommentStarCount = ref(0)
 const dialogStack = ref<DialogStackId[]>([])
 const portalLabel = computed(() =>
-  queuedCommentStarCount.value > 0
+  isBlackHoleRoute.value
+    ? '单击返回星空'
+    : queuedCommentStarCount.value > 0
     ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论；单击打开或关闭每日锦言`
-    : '单击打开或关闭每日锦言；上划回到星系中心，下划拉远镜头',
+    : '单击打开或关闭每日锦言；上划前往随机寄出星星，下划回到默认视角',
 )
 const tag = computed(() => {
   const routeTag = route.params.tag
@@ -123,15 +129,19 @@ function handleFortuneSwipe() {
   if (isGalaxyRoute.value) window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
 }
 
-function handleCameraZoomOut() {
-  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_CAMERA_ZOOM_OUT_EVENT))
+function handleRandomStarNavigate() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_STAR_NAVIGATE_RANDOM_EVENT))
 }
 
-function handleCameraCenter() {
-  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_CAMERA_CENTER_EVENT))
+function handleCameraDefault() {
+  if (isGalaxyRoute.value) window.dispatchEvent(new Event(GALAXY_CAMERA_DEFAULT_EVENT))
 }
 
 function handleFortuneActivate() {
+  if (isBlackHoleRoute.value) {
+    void router.push({ name: 'galaxy' })
+    return
+  }
   if (!isGalaxyRoute.value) return
   if (dialogStack.value.length) {
     window.dispatchEvent(new Event(DIALOG_STACK_CLOSE_REQUEST_EVENT))
@@ -202,8 +212,8 @@ onBeforeUnmount(() => {
         :label="portalLabel"
         :title="portalLabel"
         :notification="queuedCommentStarCount > 0"
-        @swipe-up="handleCameraCenter"
-        @swipe-down="handleCameraZoomOut"
+        @swipe-up="handleRandomStarNavigate"
+        @swipe-down="handleCameraDefault"
         @swipe-left="handleFortuneSwipe"
         @swipe-right="handleFortuneSwipe"
         @activate="handleFortuneActivate"

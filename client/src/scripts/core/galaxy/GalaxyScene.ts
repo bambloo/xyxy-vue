@@ -5,6 +5,7 @@ import type {
   SentGalaxyStar,
 } from '../../../../../common/entity/galaxy-star'
 import { GalaxyBlackHole } from './GalaxyBlackHole'
+import { GalaxyBlackHolePageEffect } from './GalaxyBlackHolePageEffect'
 import { GalaxyMeteorEffect } from './GalaxyMeteorEffect'
 import { GalaxyManager } from './GalaxyManager'
 import type { StarDistribution } from './distribution/StarDistribution'
@@ -28,6 +29,7 @@ export class GalaxyScene {
   private blackHoleView = false
   private manager?: GalaxyManager
   private blackHole?: GalaxyBlackHole
+  private blackHolePageEffect?: GalaxyBlackHolePageEffect
   private geometries: THREE.BufferGeometry[] = []
   private materials: THREE.Material[] = []
   private starTexture?: THREE.CanvasTexture
@@ -59,6 +61,7 @@ export class GalaxyScene {
     this.blackHoleView = enabled
     this.manager?.setBlackHoleView(enabled)
     this.blackHole?.setBlackHoleView(enabled)
+    this.blackHolePageEffect?.setEnabled(enabled)
     this.meteorEffect?.setEnabled(!enabled)
     this.starFields.forEach((field) => {
       field.visible = !enabled
@@ -118,6 +121,10 @@ export class GalaxyScene {
     this.manager?.resetView()
   }
 
+  centerView() {
+    this.manager?.centerView()
+  }
+
   zoomOut() {
     this.manager?.zoomOut()
   }
@@ -139,6 +146,7 @@ export class GalaxyScene {
     this.resizeObserver?.disconnect()
     this.manager?.destroy()
     if (this.blackHole && this.galaxy) this.blackHole.destroy(this.galaxy)
+    if (this.blackHolePageEffect && this.scene) this.blackHolePageEffect.destroy(this.scene)
     this.meteorEffect?.destroy()
     this.geometries.forEach((geometry) => geometry.dispose())
     this.materials.forEach((material) => material.dispose())
@@ -151,6 +159,7 @@ export class GalaxyScene {
     this.pointerStartPositions.clear()
     this.manager = undefined
     this.blackHole = undefined
+    this.blackHolePageEffect = undefined
     this.nebulaSky = undefined
     this.starFields = []
     this.renderer = undefined
@@ -344,7 +353,16 @@ export class GalaxyScene {
     })
     this.galaxy.add(distantStars, spiralStars, innerStars)
     this.scene.add(this.galaxy)
-    this.blackHole = new GalaxyBlackHole(this.galaxy, starFields, this.reducedMotion, this.camera)
+    if (blackHoleView) {
+      this.blackHolePageEffect = new GalaxyBlackHolePageEffect(
+        this.scene,
+        this.camera,
+        this.host,
+        this.reducedMotion,
+      )
+    } else {
+      this.blackHole = new GalaxyBlackHole(this.galaxy, starFields, this.reducedMotion, this.camera)
+    }
     this.meteorEffect = new GalaxyMeteorEffect(
       this.host,
       this.scene,
@@ -364,13 +382,14 @@ export class GalaxyScene {
       onSentStarClick,
     })
     this.manager.setBlackHoleView(blackHoleView)
-    this.blackHole.setBlackHoleView(blackHoleView)
+    this.blackHole?.setBlackHoleView(blackHoleView)
 
     const resize = () => {
       if (!this.camera || !this.renderer) return
       this.camera.aspect = this.host.clientWidth / this.host.clientHeight
       this.camera.updateProjectionMatrix()
       this.renderer.setSize(this.host.clientWidth, this.host.clientHeight)
+      this.manager?.updateDefaultViewForResize()
     }
     this.resizeObserver = new ResizeObserver(resize)
     this.resizeObserver.observe(this.host)
@@ -383,6 +402,7 @@ export class GalaxyScene {
       this.meteorEffect?.update(timestamp)
       this.manager.update(performance.now())
       this.blackHole?.update(timestamp)
+      this.blackHolePageEffect?.update(timestamp)
       this.renderer.render(this.scene, this.camera)
       this.animationFrame = requestAnimationFrame(animate)
     }
