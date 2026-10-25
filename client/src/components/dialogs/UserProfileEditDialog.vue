@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useAuthStore, type AuthUser } from '@/stores/auth'
-import { requestTopDialogClose } from '@/events/dialog-stack'
+import { clearDailyFirstVisitCompleted } from '@/events/time-fortune'
 import { post } from '@/scripts/request'
-import { MAX_USER_HOBBIES_LENGTH } from '../../../../common/entity/user'
+import { hash_password } from '../../../../common/util/crypto'
+import { MAX_USER_HOBBIES_LENGTH, type UserPublicProfile } from '../../../../common/entity/user'
+import { validatePassword } from '@/utils/login-validator'
 import {
   is_at_least_five_years_old,
   is_valid_email,
   is_valid_name,
   is_valid_phone,
+  is_valid_url,
 } from '@/utils/user-validator'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{ open: boolean; activationTag?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const auth = useAuthStore()
+const router = useRouter()
 const { t } = useI18n()
+const isActivation = computed(() => Boolean(props.activationTag))
 const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 const loading = ref(false)
 const statusMessage = ref('')
@@ -29,20 +35,26 @@ const form = reactive({
   birthday: '',
   hobbies: '',
   city: '',
+  avatar: '',
+  password: '',
+  confirmPassword: '',
 })
 
 watch(
   () => props.open,
   (open) => {
     const currentUser = auth.currentUser
-    if (!open || !currentUser) return
-    form.name = currentUser.name
-    form.phone = currentUser.phone || ''
-    form.email = currentUser.email || ''
-    form.birthday = currentUser.birthday || ''
-    form.hobbies = currentUser.hobbies || ''
+    if (!open) return
+    form.name = currentUser?.name || ''
+    form.phone = currentUser?.phone || ''
+    form.email = currentUser?.email || ''
+    form.birthday = currentUser?.birthday || ''
+    form.hobbies = currentUser?.hobbies || ''
     form.city =
-      currentUser.location?.city || currentUser.location?.custom || currentUser.city || ''
+      currentUser?.location?.city || currentUser?.location?.custom || currentUser?.city || ''
+    form.avatar = ''
+    form.password = ''
+    form.confirmPassword = ''
     statusMessage.value = ''
     saveSuccessVisible.value = false
     if (saveSuccessTimer !== undefined) {
@@ -50,6 +62,7 @@ watch(
       saveSuccessTimer = undefined
     }
   },
+  { immediate: true },
 )
 
 function showSaveSuccessMessage() {
@@ -82,6 +95,22 @@ async function saveProfile() {
     statusMessage.value = t('profile.hobbiesTooLong')
     return
   }
+  if (isActivation.value) {
+    if (!is_valid_url(form.avatar)) {
+      statusMessage.value = t('profile.avatarFormat')
+      return
+    }
+    if (validatePassword(form.password)) {
+      statusMessage.value = t('validation.passwordFormat')
+      return
+    }
+    if (form.password !== form.confirmPassword) {
+      statusMessage.value = t('password.mismatch')
+      return
+    }
+    await activateTag()
+    return
+  }
   statusMessage.value = ''
   try {
     const packet = await post('/wpi/user/profile', loading, {
@@ -102,6 +131,33 @@ async function saveProfile() {
   }
 }
 
+async function activateTag() {
+  statusMessage.value = ''
+  try {
+    const passwordHash = await hash_password(form.password)
+    const packet = await post('/wpi/user/activate', loading, {
+      tag: props.activationTag,
+      name: form.name,
+      phone: form.phone,
+      email: form.email,
+      birthday: form.birthday,
+      hobbies: form.hobbies,
+      avatar: form.avatar,
+      passwordHash,
+    })
+    const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
+    if (!data?.token || !data.account || !data.tag) throw new Error(t('tag.activateError'))
+    const { token, ...profile } = data
+    clearDailyFirstVisitCompleted(profile.tag)
+    auth.login(token, profile)
+    await router.replace({ name: 'galaxy' })
+    emit('close')
+  } catch (error) {
+    const result = error as { msg?: string; message?: string }
+    statusMessage.value = result.msg || result.message || t('tag.activateError')
+  }
+}
+
 onBeforeUnmount(() => {
   if (saveSuccessTimer !== undefined) window.clearTimeout(saveSuccessTimer)
 })
@@ -110,11 +166,20 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="profile-editor">
-      <div v-if="open" class="profile-editor-overlay" @click.self="requestTopDialogClose">
+      <div v-if="open" class="profile-editor-overlay" @click.self="emit('close')">
         <section class="profile-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
-          <h2 id="profile-editor-title">{{ t('profile.title') }}</h2>
+          <button class="profile-editor-close" type="button" :aria-label="t('common.close')" @click="emit('close')">
+            <ion-icon name="close-outline" aria-hidden="true"></ion-icon>
+          </button>
+          <h2 id="profile-editor-title">
+            {{ isActivation ? t('tag.activateTitle') : t('profile.title') }}
+          </h2>
           <form @submit.prevent="saveProfile">
             <div class="profile-editor-fields">
+              <label v-if="isActivation" class="profile-editor-row profile-editor-full-width">
+                <span>{{ t('tag.tagLabel') }}</span>
+                <input :value="activationTag" type="text" readonly aria-readonly="true" />
+              </label>
               <label class="profile-editor-row">
                 <span>{{ t('profile.username') }}</span>
                 <input v-model="form.name" type="text" autocomplete="name" required />
@@ -131,10 +196,26 @@ onBeforeUnmount(() => {
                 <span>{{ t('profile.birthday') }}</span>
                 <input v-model="form.birthday" type="date" required />
               </label>
-              <label class="profile-editor-row profile-editor-full-width">
+              <label v-if="!isActivation" class="profile-editor-row profile-editor-full-width">
                 <span>{{ t('profile.city') }}</span>
                 <input v-model="form.city" type="text" maxlength="500" />
               </label>
+              <template v-if="isActivation">
+                <label class="profile-editor-row">
+                  <span>{{ t('login.passwordLabel') }}</span>
+                  <input v-model="form.password" type="password" autocomplete="new-password"
+                    :placeholder="t('login.passwordPlaceholder')" required />
+                </label>
+                <label class="profile-editor-row">
+                  <span>{{ t('password.confirm') }}</span>
+                  <input v-model="form.confirmPassword" type="password" autocomplete="new-password"
+                    :placeholder="t('password.confirmPlaceholder')" required />
+                </label>
+                <label class="profile-editor-row profile-editor-full-width">
+                  <span>{{ t('tag.avatar') }}</span>
+                  <input v-model="form.avatar" type="url" />
+                </label>
+              </template>
               <label class="profile-editor-full-width">
                 <span>{{ t('profile.hobbies') }}</span>
                 <HobbiesPicker v-model="form.hobbies" />
@@ -151,7 +232,7 @@ onBeforeUnmount(() => {
                 </p>
               </Transition>
               <button type="submit" class="profile-editor-primary" :disabled="loading">
-                {{ loading ? t('common.loading') : t('profile.save') }}
+                {{ loading ? t('common.loading') : isActivation ? t('tag.activateButton') : t('profile.save') }}
               </button>
             </div>
           </form>
@@ -214,6 +295,22 @@ onBeforeUnmount(() => {
   background: transparent;
   box-shadow: none;
   color: #e8f1fb;
+}
+
+.profile-editor-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(166, 202, 239, .22);
+  border-radius: 50%;
+  background: rgba(13, 38, 67, .72);
+  color: #e8f1fb;
+  font-size: 20px;
+  cursor: pointer;
 }
 
 .profile-editor-dialog::-webkit-scrollbar {

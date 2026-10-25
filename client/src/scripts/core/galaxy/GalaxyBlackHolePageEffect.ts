@@ -18,6 +18,7 @@ const fragmentShader = `
   varying vec2 vUv;
   uniform vec3 iResolution;
   uniform float iTime;
+  uniform vec3 uStarColor;
   uniform sampler2D iChannel0;
   uniform sampler2D iChannel1;
   uniform vec3 iChannelResolution[2];
@@ -89,12 +90,14 @@ const fragmentShader = `
     float noiseStars = texture2D(iChannel0, textureRatio * uv + 0.5).r;
     float stars = pow(1.0 - (1.0 - starsTexture) * (1.0 - noiseStars), 5.0);
 
+    vec3 galaxyColor = mix(GALAXY_COL, uStarColor * 10.0, 0.72);
+    vec3 bulbColor = mix(BULB_COL, uStarColor, 0.45);
     vec3 color = mix(
       SKY_COL,
-      gasTransparency * (1.7 * GALAXY_COL) + 1.2 * stars,
+      gasTransparency * (1.7 * galaxyColor) + 1.2 * stars,
       density
     );
-    color = mix(color, 2.0 * BULB_COL, 1.2 * bulb);
+    color = mix(color, 2.0 * bulbColor, 1.2 * bulb);
     color = mix(color, vec3(0.0), 2.0 * blackBulb);
 
     gl_FragColor = vec4(color, 1.0);
@@ -180,6 +183,7 @@ export class GalaxyBlackHolePageEffect {
       uniforms: {
         iResolution: { value: new THREE.Vector3(1, 1, 1) },
         iTime: { value: 0 },
+        uStarColor: { value: new THREE.Color('#ffd27d') },
         iChannel0: { value: noiseTexture },
         iChannel1: { value: starTexture },
         iChannelResolution: {
@@ -221,6 +225,12 @@ export class GalaxyBlackHolePageEffect {
 
   setEnabled(enabled: boolean) {
     this.plane.visible = enabled
+  }
+
+  setStarColor(color: string | undefined) {
+    if (!color || !/^#[\da-f]{6}$/i.test(color)) return
+    const starColor = this.material.uniforms['uStarColor']!.value as THREE.Color
+    starColor.set(color)
   }
 
   destroy(scene: THREE.Scene) {

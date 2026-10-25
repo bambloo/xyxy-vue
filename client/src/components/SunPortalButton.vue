@@ -144,22 +144,6 @@ onBeforeUnmount(() => effect?.destroy())
   animation: sun-portal-notification-glow 1.25s ease-in-out infinite;
 }
 
-.sun-portal-button.has-notification::before {
-  position: absolute;
-  z-index: 0;
-  inset: -34%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse,
-      rgba(255, 235, 174, 0.78) 0%,
-      rgba(255, 205, 91, 0.46) 34%,
-      rgba(255, 173, 52, 0.18) 54%,
-      transparent 72%);
-  filter: blur(8px);
-  content: '';
-  pointer-events: none;
-  animation: sun-portal-notification-halo 1.25s ease-in-out infinite;
-}
-
 @keyframes sun-portal-notification-glow {
 
   0%,
@@ -172,28 +156,15 @@ onBeforeUnmount(() => effect?.destroy())
   }
 }
 
-@keyframes sun-portal-notification-halo {
-
-  0%,
-  100% {
-    opacity: 0.62;
-    transform: scale(0.72);
-  }
-
-  50% {
-    opacity: 0.82;
-    transform: scale(0.92);
-  }
-}
-
 .sun-portal-button:hover:not(:disabled) {
   filter: drop-shadow(var(--glow-x) var(--glow-y) 16px rgba(255, 235, 174, 0.96));
 }
 
 .sun-portal-button:focus,
 .sun-portal-button:focus-visible {
-  outline: 0;
-  box-shadow: none;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 .sun-portal-button:active:not(:disabled) {
@@ -224,11 +195,6 @@ onBeforeUnmount(() => effect?.destroy())
 
   .sun-portal-button.has-notification {
     filter: drop-shadow(0 0 15px rgba(255, 217, 112, 0.9)) drop-shadow(0 0 30px rgba(255, 173, 52, 0.72));
-  }
-
-  .sun-portal-button.has-notification::before {
-    opacity: 0.9;
-    animation: none;
   }
 }
 </style>

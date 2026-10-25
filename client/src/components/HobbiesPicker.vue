@@ -145,11 +145,17 @@ function updateCustomHobbies(value: string) {
 input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--space-line);
-  border-radius: 10px;
-  padding: 0.8rem 0.85rem;
-  background: rgba(13, 38, 67, .72);
+  border: 0;
+  border-bottom: 1px solid rgba(195, 213, 231, 0.42);
+  border-radius: 0;
+  padding: 8px 0;
+  background: transparent;
   color: var(--space-text);
   font: inherit;
+  text-align: right;
+}
+
+input:focus {
+  outline: none;
 }
 </style>

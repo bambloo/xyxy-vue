@@ -53,6 +53,10 @@ export class GalaxyScene {
     this.manager?.setSentStars(stars)
   }
 
+  setBlackHoleAccretionColor(color: string | undefined) {
+    this.blackHolePageEffect?.setStarColor(color)
+  }
+
   setDownvotedStarIds(ids: string[]) {
     this.manager?.setDownvotedStarIds(ids)
   }
@@ -76,13 +80,6 @@ export class GalaxyScene {
     this.pointerStartPositions.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY))
     if (event.pointerType === 'touch') {
       this.activeTouchPointers.add(event.pointerId)
-      if (this.activeTouchPointers.size === 1) {
-        this.meteorEffect?.pointerDown(event)
-      } else {
-        this.meteorEffect?.cancelPointer()
-      }
-    } else {
-      this.meteorEffect?.pointerDown(event)
     }
     this.manager?.pointerDown(event)
   }
@@ -105,11 +102,7 @@ export class GalaxyScene {
         ? (this.blackHole?.hitTest(event, this.camera, this.host) ?? false)
         : false
     if (event.pointerType === 'touch') this.activeTouchPointers.delete(event.pointerId)
-    const hitDestination =
-      isMultiTouch || hitBlackHole
-        ? (this.meteorEffect?.cancelPointer(), false)
-        : (this.meteorEffect?.pointerUp(event) ?? false)
-    this.manager?.pointerUp(event, hitDestination || isMultiTouch || hitBlackHole)
+    this.manager?.pointerUp(event, isMultiTouch || hitBlackHole)
     if (hitBlackHole) this.onBlackHoleClick()
   }
 
@@ -363,12 +356,7 @@ export class GalaxyScene {
     } else {
       this.blackHole = new GalaxyBlackHole(this.galaxy, starFields, this.reducedMotion, this.camera)
     }
-    this.meteorEffect = new GalaxyMeteorEffect(
-      this.host,
-      this.scene,
-      this.camera,
-      this.reducedMotion,
-    )
+    this.meteorEffect = new GalaxyMeteorEffect(this.host, this.scene, this.camera)
     this.meteorEffect.setEnabled(!blackHoleView)
     this.manager = new GalaxyManager({
       host: this.host,

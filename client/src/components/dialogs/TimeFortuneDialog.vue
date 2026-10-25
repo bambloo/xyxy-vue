@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -58,7 +58,6 @@ interface FortuneDetails {
 
 const auth = useAuthStore()
 const route = useRoute()
-const router = useRouter()
 const { t } = useI18n()
 const activationTag = computed(() =>
   typeof route.query.activationTag === 'string' ? route.query.activationTag.trim() : '',
@@ -68,6 +67,7 @@ const isActivationPreview = computed(
 )
 const requestLoading = ref(false)
 const detailsLoading = ref(false)
+const firstVisitFortuneObtained = ref(false)
 const runId = ref(0)
 const status = ref<'hidden' | 'generating' | 'arriving' | 'ready'>('hidden')
 const dialogOpen = ref(false)
@@ -75,6 +75,7 @@ const composerOpen = ref(false)
 const pairedDialogView = ref<PairedDialogView>('fortune')
 const centeredAfterComposer = ref(false)
 const profileDialogOpen = ref(false)
+const activationDialogOpen = ref(false)
 const siteInfoOpen = ref(false)
 const detailsError = ref('')
 const details = ref<FortuneDetails>()
@@ -104,6 +105,7 @@ let pairedLayoutFrame: number | undefined
 let composerResizeObserver: ResizeObserver | undefined
 
 watch(profileDialogOpen, (open) => announceDialogStackState('profile', open))
+watch(activationDialogOpen, (open) => announceDialogStackState('activation', open))
 watch(siteInfoOpen, (open) => announceDialogStackState('site-info', open))
 watch(
   [composerOpen, pairedDialogView, detailsLoading, detailsError, details],
@@ -156,6 +158,7 @@ watch(
   () => [auth.currentUser?.tag, auth.isSessionValidated] as const,
   async ([userTag, isSessionValidated]) => {
     const currentRun = ++runId.value
+    firstVisitFortuneObtained.value = false
     if (!auth.isLoggedIn) {
       status.value = 'hidden'
       setDialogOpen(false)
@@ -179,6 +182,23 @@ watch(
         shouldTrigger = false
         if (currentRun !== runId.value) return
         if (responseData(packet)?.ready) {
+          const detailsPacket = await post('/wpi/user/time-fortune', detailsLoading, {
+            details: true,
+          })
+          if (currentRun !== runId.value) return
+          const fortune = responseData(detailsPacket)
+          const hasCurrentTimeFortune = Boolean(
+            fortune?.ready &&
+            fortune.timeName &&
+            fortune.timeFortunes?.some(
+              (entry) => entry.timeName === fortune.timeName && entry.message.trim(),
+            ),
+          )
+          if (!hasCurrentTimeFortune) {
+            await wait(2000)
+            continue
+          }
+          firstVisitFortuneObtained.value = true
           status.value = 'arriving'
           await wait(1500)
           if (currentRun !== runId.value) return
@@ -204,13 +224,16 @@ watch(
       auth.isSessionValidated,
       auth.isLoggedIn,
       status.value,
+      firstVisitFortuneObtained.value,
     ] as const,
-  ([routeName, queryTag, userTag, isSessionValidated, isLoggedIn]) => {
+  ([routeName, queryTag, userTag, isSessionValidated, isLoggedIn, fortuneObtained]) => {
     const visitTag = userTag || (typeof queryTag === 'string' ? queryTag.trim() : '')
     const shouldRun =
       routeName !== 'galaxy' ||
       !visitTag ||
       (isLoggedIn && !isSessionValidated) ||
+      status.value !== 'ready' ||
+      !fortuneObtained ||
       (!isActivationPreview.value && hasCompletedDailyFirstVisit(visitTag))
     if (shouldRun) {
       stopFirstVisitSequence()
@@ -438,6 +461,7 @@ function handleOverlayClick() {
 function handleDialogStackClose(event: Event) {
   if ((event as CustomEvent<string>).detail === 'fortune') handleClose()
   if ((event as CustomEvent<string>).detail === 'profile') profileDialogOpen.value = false
+  if ((event as CustomEvent<string>).detail === 'activation') activationDialogOpen.value = false
   if ((event as CustomEvent<string>).detail === 'site-info') siteInfoOpen.value = false
 }
 
@@ -451,12 +475,7 @@ function handleButtonToggle() {
 
 function openActivationForm() {
   if (!activationTag.value) return
-  setDialogOpen(false)
-  void router.push({
-    name: 'tag',
-    params: { tag: activationTag.value },
-    query: { registration: '1' },
-  })
+  activationDialogOpen.value = true
 }
 
 function openSiteInfo() {
@@ -535,11 +554,12 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="fortune-dialog">
-      <div v-if="dialogOpen && !profileDialogOpen && !siteInfoOpen" class="fortune-overlay" :class="{
-        'fortune-overlay-centered': centeredAfterComposer,
-        'fortune-overlay-paired': composerOpen,
-        'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'composer',
-      }" :style="{
+      <div v-if="dialogOpen && !profileDialogOpen && !activationDialogOpen && !siteInfoOpen" class="fortune-overlay"
+        :class="{
+          'fortune-overlay-centered': centeredAfterComposer,
+          'fortune-overlay-paired': composerOpen,
+          'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'composer',
+        }" :style="{
         '--paired-fortune-top': pairedFortuneTop === undefined ? '50%' : `${pairedFortuneTop}px`,
         '--paired-fortune-max-height':
           pairedFortuneMaxHeight === undefined ? '48vh' : `${pairedFortuneMaxHeight}px`,
@@ -603,6 +623,8 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
     <UserProfileEditDialog :open="profileDialogOpen" @close="profileDialogOpen = false" />
+    <UserProfileEditDialog :open="activationDialogOpen" :activation-tag="activationTag"
+      @close="activationDialogOpen = false" />
     <SiteInfoDialog v-if="siteInfoOpen" dialog @close="siteInfoOpen = false" />
   </Teleport>
 </template>

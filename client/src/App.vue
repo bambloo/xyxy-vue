@@ -9,6 +9,7 @@ import TimeFortuneDialog from '@/components/dialogs/TimeFortuneDialog.vue'
 import GalaxyStarComposerDialog from '@/components/dialogs/GalaxyStarComposerDialog.vue'
 import { GALAXY_CAMERA_DEFAULT_EVENT } from '@/events/galaxy-camera'
 import {
+  GALAXY_STAR_COMMENT_OPEN_EVENT,
   GALAXY_STAR_COMMENT_QUEUE_EVENT,
   GALAXY_STAR_NAVIGATE_RANDOM_EVENT,
 } from '@/events/galaxy-star'
@@ -20,7 +21,7 @@ import {
 } from '@/events/dialog-stack'
 import { TIME_FORTUNE_HISTORY_EVENT, TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 
-type TagState = 'loading' | 'missing' | 'inactive' | 'active'
+type TagState = 'loading' | 'missing' | 'active'
 type AppState = 'loading' | 'ready' | 'empty'
 
 const route = useRoute()
@@ -44,7 +45,7 @@ const portalLabel = computed(() =>
   isBlackHoleRoute.value
     ? '单击返回星空'
     : queuedCommentStarCount.value > 0
-    ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论；单击打开或关闭每日锦言`
+    ? `有 ${queuedCommentStarCount.value} 颗星星收到新评论；单击查看新评论`
     : '单击打开或关闭每日锦言；上划前往随机寄出星星，下划回到默认视角',
 )
 const tag = computed(() => {
@@ -54,7 +55,6 @@ const tag = computed(() => {
 })
 const isLoginRoute = computed(() => route.name === 'login')
 const isTagRoute = computed(() => route.name === 'tag' && Boolean(tag.value))
-const isTagRegistrationRoute = computed(() => route.query.registration === '1')
 const tagState = ref<TagState>('loading')
 const tagLoading = ref(false)
 const appState = ref<AppState>('loading')
@@ -99,12 +99,10 @@ async function loadTagState() {
       await clearAuthSession()
     }
     if (!isActive) {
-      if (!isTagRegistrationRoute.value) {
-        await router.replace({ name: 'galaxy', query: { activationTag: tag.value } })
-        return
-      }
+      await router.replace({ name: 'galaxy', query: { activationTag: tag.value } })
+      return
     }
-    tagState.value = isActive ? 'active' : 'inactive'
+    tagState.value = 'active'
   } catch {
     await clearAuthSession()
     await router.replace({ name: 'galaxy' })
@@ -121,7 +119,7 @@ async function clearAuthSession() {
   }
 }
 
-watch([isLoginRoute, isGalaxyRoute, isTagRoute, isTagRegistrationRoute, tag], loadTagState, {
+watch([isLoginRoute, isGalaxyRoute, isTagRoute, tag], loadTagState, {
   immediate: true,
 })
 
@@ -145,6 +143,10 @@ function handleFortuneActivate() {
   if (!isGalaxyRoute.value) return
   if (dialogStack.value.length) {
     window.dispatchEvent(new Event(DIALOG_STACK_CLOSE_REQUEST_EVENT))
+    return
+  }
+  if (queuedCommentStarCount.value > 0) {
+    window.dispatchEvent(new Event(GALAXY_STAR_COMMENT_OPEN_EVENT))
     return
   }
   window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
@@ -189,12 +191,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <template v-if="isTagRoute">
-      <TagUserView
-        v-if="tagState === 'inactive' || tagState === 'active'"
-        :key="`${tag}-${tagState}`"
-        :tag="tag!"
-        :active="tagState === 'active'"
-      />
+      <TagUserView v-if="tagState === 'active'" :key="tag" :tag="tag!" />
       <div v-else class="empty-page" aria-hidden="true"></div>
     </template>
     <RouterView v-else-if="appState === 'ready'" v-slot="{ Component }">
@@ -292,6 +289,13 @@ body {
   left: 50%;
   bottom: var(--portal-control-bottom);
   transform: translateX(-50%);
+}
+
+.sun-portal-control:focus,
+.sun-portal-control:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 body.star-dialog-open .sun-portal-control {

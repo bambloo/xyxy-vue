@@ -23,6 +23,7 @@ import {
   GALAXY_CAMERA_DEFAULT_EVENT,
   GALAXY_CAMERA_ZOOM_OUT_EVENT,
 } from '@/events/galaxy-camera'
+import { TIME_FORTUNE_TOGGLE_EVENT } from '@/events/time-fortune'
 import { GalaxyScene } from '../scripts/core/galaxy/GalaxyScene.ts'
 
 const props = withDefaults(defineProps<{ blackHoleView?: boolean }>(), {
@@ -315,11 +316,19 @@ async function loadGalaxyStars() {
     const [listPacket, statusPacket] = await Promise.all([listRequest, statusRequest])
     const listData = listPacket.data as Partial<GalaxyStarListResponse> | undefined
     const statusData = statusPacket?.data as
-      { hasSentToday?: boolean; todayStarId?: string; resetsAt?: string } | undefined
+      {
+        hasSentToday?: boolean
+        todayStarId?: string
+        lastStarColor?: string
+        resetsAt?: string
+      } | undefined
     if (!listData) {
       throw new Error('星星数据格式无效')
     }
     applyGalaxyData(listData)
+    if (props.blackHoleView) {
+      galaxyScene?.setBlackHoleAccretionColor(statusData?.lastStarColor)
+    }
     if (
       canViewStarDetails.value &&
       statusData &&
@@ -543,7 +552,14 @@ async function refreshGalaxyAfterStarSent() {
 }
 
 function selectSentStar(star: SentGalaxyStar) {
-  if (blackHoleSwipeHandled.value || !canViewStarDetails.value) return
+  if (blackHoleSwipeHandled.value) return
+  if (!canViewStarDetails.value) {
+    const listedStar = sentStars.value.find((candidate) => candidate.id === star.id)
+    if (listedStar && !listedStar.isOwn) {
+      window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
+    }
+    return
+  }
   selectedStar.value = sentStars.value.find((candidate) => candidate.id === star.id)
   selectedCommentId.value = ''
   selectedBlackHoleEntryKind.value = undefined
@@ -765,7 +781,6 @@ watch(canViewStarDetails, (canView, previousCanView) => {
   if (!canView) {
     sentStars.value = sentStars.value.map((star) => ({
       ...star,
-      title: '',
       content: '',
       comments: [],
       isOwn: false,

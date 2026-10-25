@@ -215,7 +215,7 @@ export class GalaxyBlackHole {
             noncaptured = smoothstep(0.0, 0.666, sdSphere(p - bh, bhr));
             holeAlpha = max(
               holeAlpha,
-              (1.0 - smoothstep(bhr * 0.85, bhr * 1.25, length(p - bh)))
+              (1.0 - smoothstep(bhr * 1.5, bhr * 1.6, length(p - bh)))
             );
             if (noncaptured < 0.001) break;
             if (r > 2.25 && dot(p, pv) > 0.0) break;
@@ -251,7 +251,7 @@ export class GalaxyBlackHole {
           float edgeFade = smoothstep(0.0, 0.12, edgeDistance);
           float diskBrightness = max(col.r, max(col.g, col.b));
           float diskAlpha = smoothstep(0.00, 0.24, diskBrightness);
-          col *= 1.0 - holeAlpha;
+          // col *= 1.0 - holeAlpha;
           // float alpha = holeAlpha + diskAlpha * (1.0 - holeAlpha);
           float alpha = holeAlpha + diskAlpha * diskAlpha * diskAlpha;
           // float alpha = holeAlpha;
@@ -304,9 +304,7 @@ export class GalaxyBlackHole {
     const galaxyQuaternion = this.group.parent?.getWorldQuaternion(this.galaxyQuaternion)
     const cameraQuaternion = this.camera.getWorldQuaternion(this.cameraQuaternion)
     this.group.quaternion.copy(
-      galaxyQuaternion
-        ? galaxyQuaternion.invert().multiply(cameraQuaternion)
-        : cameraQuaternion,
+      galaxyQuaternion ? galaxyQuaternion.invert().multiply(cameraQuaternion) : cameraQuaternion,
     )
     this.camera.getWorldPosition(this.cameraPosition)
     this.group.parent?.updateMatrixWorld(true)

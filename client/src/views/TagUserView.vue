@@ -1,27 +1,18 @@
 <script setup lang="ts">
-import { defineAsyncComponent, reactive, ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { hash_password } from '../../../common/util/crypto'
 import { post } from '@/scripts/request'
 import { useAuthStore } from '@/stores/auth'
-import { clearDailyFirstVisitCompleted } from '@/events/time-fortune'
 import { validateAccount, validatePassword } from '../utils/login-validator'
-import { MAX_USER_HOBBIES_LENGTH, type UserPublicProfile } from '../../../common/entity/user'
-import {
-  is_at_least_five_years_old,
-  is_valid_email,
-  is_valid_name,
-  is_valid_phone,
-  is_valid_url,
-} from '../utils/user-validator'
+import type { UserPublicProfile } from '../../../common/entity/user'
 
-const props = defineProps<{ tag: string; active: boolean }>()
+const props = defineProps<{ tag: string }>()
 const router = useRouter()
 const auth = useAuthStore()
 const { t } = useI18n()
-const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
-const loginRequired = ref(props.active)
+const loginRequired = ref(true)
 const password = ref('')
 const loginLoading = ref(false)
 const sessionLoading = ref(false)
@@ -29,18 +20,6 @@ const loginError = ref('')
 const accountError = ref('')
 const passwordError = ref('')
 const account = ref(props.tag)
-const activationLoading = ref(false)
-const activationMessage = ref('')
-const user = reactive({
-  name: '',
-  password: '',
-  confirmPassword: '',
-  phone: '',
-  email: '',
-  birthday: '',
-  hobbies: '',
-  avatar: '',
-})
 
 function translateValidation(message: string) {
   const messages: Record<string, string> = {
@@ -79,75 +58,7 @@ function submitLogin() {
     })
 }
 
-async function activate() {
-  activationMessage.value = ''
-  if (!is_valid_name(user.name)) {
-    activationMessage.value = t('profile.nameRequired')
-    return
-  }
-
-  if (!is_valid_phone(user.phone)) {
-    activationMessage.value = t('profile.phoneFormat')
-    return
-  }
-
-  if (!is_valid_email(user.email)) {
-    activationMessage.value = t('profile.emailFormat')
-    return
-  }
-
-  if (!is_valid_url(user.avatar)) {
-    activationMessage.value = t('profile.avatarFormat')
-    return
-  }
-
-  if (!is_at_least_five_years_old(user.birthday)) {
-    activationMessage.value = t('profile.birthdayFormat')
-    return
-  }
-
-  if (validatePassword(user.password)) {
-    activationMessage.value = t('validation.passwordFormat')
-    return
-  }
-
-  if (user.hobbies.length > MAX_USER_HOBBIES_LENGTH) {
-    activationMessage.value = t('profile.hobbiesTooLong')
-    return
-  }
-
-  if (user.password !== user.confirmPassword) {
-    activationMessage.value = t('password.mismatch')
-    return
-  }
-
-  try {
-    const passwordHash = await hash_password(user.password)
-    const packet = await post('/wpi/user/activate', activationLoading, {
-      tag: props.tag,
-      name: user.name,
-      phone: user.phone,
-      email: user.email,
-      birthday: user.birthday,
-      hobbies: user.hobbies,
-      avatar: user.avatar,
-      passwordHash,
-    })
-    const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
-    if (!data?.token || !data.account || !data.tag) throw new Error(t('tag.activateError'))
-    const { token, ...profile } = data
-    clearDailyFirstVisitCompleted(profile.tag)
-    auth.login(token, profile)
-    await router.replace({ name: 'galaxy' })
-  } catch (error: unknown) {
-    const result = error as { msg?: string; message?: string }
-    activationMessage.value = result.msg || result.message || t('tag.activateError')
-  }
-}
-
 onMounted(async () => {
-  if (!props.active) return
-
   try {
     const packet = await post('/wpi/user/check', sessionLoading, { tag: props.tag })
     const data = packet.data as (UserPublicProfile & { token?: string }) | undefined
@@ -160,36 +71,9 @@ onMounted(async () => {
   }
 })
 </script>
-<template>
-  <section v-if="!active" class="activation-panel">
-    <p class="eyebrow">{{ t('tag.activateEyebrow') }}</p>
-    <h1>{{ t('tag.activateTitle') }}</h1>
-    <form class="activation-form" @submit.prevent="activate">
-      <label class="full-width"><span>{{ t('tag.tagLabel') }}</span><input :value="tag" type="text" readonly
-          aria-readonly="true" /></label>
-      <label><span>{{ t('common.name') }}</span><input v-model="user.name" required type="text"
-          maxlength="100" /></label>
-      <label><span>{{ t('common.phone') }}</span><input v-model="user.phone" type="tel" inputmode="numeric"
-          maxlength="11" required /></label>
-      <label><span>{{ t('login.passwordLabel') }}</span><input v-model="user.password" required type="password"
-          autocomplete="new-password" :placeholder="t('login.passwordPlaceholder')" /></label>
-      <label><span>{{ t('password.confirm') }}</span><input v-model="user.confirmPassword" required type="password"
-          autocomplete="new-password" :placeholder="t('password.confirmPlaceholder')" /></label>
-      <label><span>{{ t('profile.email') }}</span><input v-model="user.email" type="email" /></label>
-      <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" required /></label>
-      <div class="full-width activation-hobbies-field">
-        <span>{{ t('profile.hobbies') }}</span>
-        <HobbiesPicker v-model="user.hobbies" />
-      </div>
-      <label class="full-width"><span>{{ t('tag.avatar') }}</span><input v-model="user.avatar" type="url" /></label>
-      <p v-if="activationMessage" class="error-message" role="alert">{{ activationMessage }}</p>
-      <button class="full-width" type="submit" :disabled="activationLoading">
-        {{ activationLoading ? t('tag.activating') : t('tag.activateButton') }}
-      </button>
-    </form>
-  </section>
 
-  <div v-else-if="loginRequired" class="login-modal" role="dialog" aria-modal="true" :aria-label="t('login.title')"
+<template>
+  <div v-if="loginRequired" class="login-modal" role="dialog" aria-modal="true" :aria-label="t('login.title')"
     @click.self="loginRequired = false">
     <form class="login-dialog" @submit.prevent="submitLogin">
       <p class="eyebrow">{{ t('login.kicker') }}</p>
@@ -207,7 +91,7 @@ onMounted(async () => {
       <p v-if="passwordError" class="field-error" role="alert">{{ passwordError }}</p>
 
       <p v-if="loginError" class="error-message" role="alert">{{ loginError }}</p>
-      <button class="submit-button" type="submit" :disabled="loginLoading">
+      <button class="submit-button" type="submit" :disabled="loginLoading || sessionLoading">
         {{ loginLoading ? t('login.entering') : t('login.enter') }}
       </button>
     </form>
@@ -215,84 +99,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.activation-panel {
-  width: min(680px, calc(100% - 2rem));
-  margin: 4rem auto;
-  padding: 2rem;
-  box-sizing: border-box;
-  border: 1px solid var(--space-line);
-  border-radius: 16px;
-  background: var(--space-panel);
-  backdrop-filter: blur(16px);
-}
-
-.activation-panel h1 {
-  margin: 0;
-}
-
-.activation-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.activation-form label {
-  display: grid;
-  gap: 0.45rem;
-  color: var(--space-text);
-  font-size: 0.85rem;
-}
-
-.activation-hobbies-field {
-  display: grid;
-  gap: 0.45rem;
-  color: var(--space-text);
-  font-size: 0.85rem;
-}
-
-.activation-form input,
-.activation-form textarea {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--space-line);
-  border-radius: 8px;
-  background: rgba(13, 38, 67, 0.72);
-  color: var(--space-text);
-  font: inherit;
-}
-
-.activation-form input[readonly] {
-  background: rgba(5, 18, 36, 0.62);
-  color: var(--space-muted);
-  cursor: not-allowed;
-}
-
-.full-width {
-  grid-column: 1 / -1;
-}
-
-.activation-form button {
-  padding: 0.8rem 1rem;
-  border: 0;
-  border-radius: 8px;
-  background: var(--space-gold);
-  color: #091728;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.activation-form button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.error-message {
-  margin: 0;
-  color: #ffb4a8;
-}
-
 .login-modal {
   position: fixed;
   inset: 0;
@@ -366,11 +172,5 @@ onMounted(async () => {
 .submit-button:disabled {
   cursor: wait;
   opacity: 0.6;
-}
-
-@media (max-width: 620px) {
-  .activation-form {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

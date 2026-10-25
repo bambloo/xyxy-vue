@@ -123,22 +123,28 @@ export function getGalaxyStarStatus(
   now = new Date(),
 ) {
   const day = getGalaxyStarDay(now)
-  return collection
-    .findOne(
+  return Promise.all([
+    collection.findOne(
       { _id: `${user.tag}:${day}` },
       { projection: { _id: 1, id: 1, color: 1 } },
-    )
-    .then((sentToday) => {
-      const tomorrow = new Date(now)
-      tomorrow.setHours(24, 0, 0, 0)
-      return response(res, BamblooStatusCode.Success, undefined, {
-        canSend: !sentToday,
-        hasSentToday: Boolean(sentToday),
-        todayStarId: sentToday?.id,
-        todayStarColor: sentToday?.color,
-        resetsAt: tomorrow.toISOString(),
-      })
+    ),
+    collection
+      .find({ userTag: user.tag }, { projection: { _id: 0, color: 1 } })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .next(),
+  ]).then(([sentToday, lastSentStar]) => {
+    const tomorrow = new Date(now)
+    tomorrow.setHours(24, 0, 0, 0)
+    return response(res, BamblooStatusCode.Success, undefined, {
+      canSend: !sentToday,
+      hasSentToday: Boolean(sentToday),
+      todayStarId: sentToday?.id,
+      todayStarColor: sentToday?.color,
+      lastStarColor: lastSentStar?.color,
+      resetsAt: tomorrow.toISOString(),
     })
+  })
 }
 
 export function sendGalaxyStar(
@@ -956,7 +962,7 @@ function listStars(
       ...star
     }) => ({
       ...star,
-      ...(!userTag ? { title: '', content: '' } : {}),
+      ...(!userTag ? { content: '' } : {}),
       likeCount,
       dislikeCount,
       connectionCount: connectionCounts.get(star.id) ?? 0,
