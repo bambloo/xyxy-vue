@@ -45,6 +45,7 @@ export interface GalaxyStarComment {
   id: string
   sourceStarId?: string
   sourceStarTitle?: string
+  sourceStarColor?: string
   content: string
   createdAt: string
   parentCommentId?: string

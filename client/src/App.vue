@@ -298,10 +298,6 @@ body {
   box-shadow: none !important;
 }
 
-body.star-dialog-open .sun-portal-control {
-  pointer-events: none;
-}
-
 .portal-route-enter-active,
 .portal-route-leave-active {
   position: absolute;

@@ -124,10 +124,7 @@ export function getGalaxyStarStatus(
 ) {
   const day = getGalaxyStarDay(now)
   return Promise.all([
-    collection.findOne(
-      { _id: `${user.tag}:${day}` },
-      { projection: { _id: 1, id: 1, color: 1 } },
-    ),
+    collection.findOne({ _id: `${user.tag}:${day}` }, { projection: { _id: 1, id: 1, color: 1 } }),
     collection
       .find({ userTag: user.tag }, { projection: { _id: 0, color: 1 } })
       .sort({ createdAt: -1 })
@@ -198,15 +195,15 @@ export function sendGalaxyStar(
         .toArray(),
     )
     .then((commentRecords) =>
-      commentRecords.reduce<Promise<void>>(
-        (chain, commentRecord) => {
-          const anonymousComments =
-            commentRecord.comments?.filter(
-              (comment) => comment.userTag === user.tag && comment.anonymousDay === day,
-            ) ?? []
-          if (anonymousComments.length === 0) return chain
-          return chain.then(() =>
-            collection.updateOne(
+      commentRecords.reduce<Promise<void>>((chain, commentRecord) => {
+        const anonymousComments =
+          commentRecord.comments?.filter(
+            (comment) => comment.userTag === user.tag && comment.anonymousDay === day,
+          ) ?? []
+        if (anonymousComments.length === 0) return chain
+        return chain.then(() =>
+          collection
+            .updateOne(
               {
                 _id: commentRecord._id,
                 comments: { $elemMatch: { userTag: user.tag, anonymousDay: day } },
@@ -231,11 +228,10 @@ export function sendGalaxyStar(
                   { 'anonymousComment.userTag': user.tag, 'anonymousComment.anonymousDay': day },
                 ],
               },
-            ).then(() => undefined),
-          )
-        },
-        Promise.resolve(),
-      ),
+            )
+            .then(() => undefined),
+        )
+      }, Promise.resolve()),
     )
     .then(() => response(res, BamblooStatusCode.Success, undefined, { star }))
 }
@@ -266,70 +262,73 @@ export function voteForGalaxyStar(
     const updated = existingVote
       ? existingVote.vote === vote
         ? collection.updateOne(
+            {
+              _id: target._id,
+              votes: { $elemMatch: { userTag: user.tag, vote } },
+            },
+            {
+              $pull: {
+                votes: { userTag: user.tag },
+                ...(existingVote.sourceStarId && existingVote.createdAt
+                  ? {
+                      links: {
+                        sourceStarId: existingVote.sourceStarId,
+                        createdAt: existingVote.createdAt,
+                      },
+                    }
+                  : {}),
+              },
+              $inc: { [voteCountField]: -1 },
+            },
+          )
+        : collection.updateOne(
+            {
+              _id: target._id,
+              votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
+            },
+            {
+              $set: { 'votes.$[voter].vote': vote },
+              $inc: {
+                [existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount']: -1,
+                [voteCountField]: 1,
+              },
+            },
+            { arrayFilters: [{ 'voter.userTag': user.tag, 'voter.vote': existingVote.vote }] },
+          )
+      : collection.updateOne(
           {
             _id: target._id,
-            votes: { $elemMatch: { userTag: user.tag, vote } },
+            votes: { $not: { $elemMatch: { userTag: user.tag } } },
           },
           {
-            $pull: {
-              votes: { userTag: user.tag },
-              ...(existingVote.sourceStarId && existingVote.createdAt
-                ? {
-                    links: {
-                      sourceStarId: existingVote.sourceStarId,
-                      createdAt: existingVote.createdAt,
-                    },
-                  }
+            $push: {
+              votes: {
+                userTag: user.tag,
+                vote,
+                ...(sourceStarId ? { sourceStarId } : {}),
+                createdAt: format_timestamp(now),
+              },
+              ...(sourceStarId
+                ? { links: { sourceStarId: sourceStarId, createdAt: format_timestamp(now) } }
                 : {}),
             },
-            $inc: { [voteCountField]: -1 },
+            $inc: { [voteCountField]: 1 },
           },
         )
-        : collection.updateOne(
-          {
-            _id: target._id,
-            votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
-          },
-          {
-            $set: { 'votes.$[voter].vote': vote },
-            $inc: {
-              [existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount']: -1,
-              [voteCountField]: 1,
-            },
-          },
-          { arrayFilters: [{ 'voter.userTag': user.tag, 'voter.vote': existingVote.vote }] },
+    return updated
+      .then((result) => {
+        if (result.modifiedCount !== 1) {
+          throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
+        }
+        return collection.findOne({ _id: target._id })
+      })
+      .then((updatedStar) => {
+        if (!updatedStar) return undefined
+        return getGalaxyBlackHoleCollection().then((blackHoleCollection) =>
+          syncBlackHoleEntriesForStar(updatedStar, blackHoleCollection),
         )
-      : collection.updateOne(
-        {
-          _id: target._id,
-          votes: { $not: { $elemMatch: { userTag: user.tag } } },
-        },
-        {
-          $push: {
-            votes: {
-              userTag: user.tag,
-              vote,
-              ...(sourceStarId ? { sourceStarId } : {}),
-              createdAt: format_timestamp(now),
-            },
-            ...(sourceStarId
-              ? { links: { sourceStarId: sourceStarId, createdAt: format_timestamp(now) } }
-              : {}),
-          },
-          $inc: { [voteCountField]: 1 },
-        },
-      )
-    return updated.then((result) => {
-      if (result.modifiedCount !== 1) {
-        throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
-      }
-      return collection.findOne({ _id: target._id })
-    }).then((updatedStar) => {
-      if (!updatedStar) return undefined
-      return getGalaxyBlackHoleCollection().then((blackHoleCollection) =>
-        syncBlackHoleEntriesForStar(updatedStar, blackHoleCollection),
-      )
-    }).then(() => listGalaxyStars(params, collection, user.tag, res))
+      })
+      .then(() => listGalaxyStars(params, collection, user.tag, res))
   })
 }
 
@@ -364,107 +363,111 @@ export function voteForGalaxyStarComment(
     const updated = existingVote
       ? existingVote.vote === vote
         ? collection.updateOne(
-          {
-            _id: target._id,
-            comments: {
-              $elemMatch: {
-                id: commentId,
-                votes: { $elemMatch: { userTag: user.tag, vote } },
+            {
+              _id: target._id,
+              comments: {
+                $elemMatch: {
+                  id: commentId,
+                  votes: { $elemMatch: { userTag: user.tag, vote } },
+                },
               },
             },
-          },
-          {
-            $pull: {
-              'comments.$[targetComment].votes': { userTag: user.tag },
-              ...(existingVote.sourceStarId && existingVote.createdAt
-                ? {
-                    links: {
-                      sourceStarId: existingVote.sourceStarId,
-                      createdAt: existingVote.createdAt,
-                    },
-                  }
-                : {}),
+            {
+              $pull: {
+                'comments.$[targetComment].votes': { userTag: user.tag },
+                ...(existingVote.sourceStarId && existingVote.createdAt
+                  ? {
+                      links: {
+                        sourceStarId: existingVote.sourceStarId,
+                        createdAt: existingVote.createdAt,
+                      },
+                    }
+                  : {}),
+              },
+              $inc: {
+                [`comments.$[targetComment].${voteCountField}`]: -1,
+              },
             },
-            $inc: {
-              [`comments.$[targetComment].${voteCountField}`]: -1,
-            },
-          },
-          { arrayFilters: [{ 'targetComment.id': commentId }] },
-        )
+            { arrayFilters: [{ 'targetComment.id': commentId }] },
+          )
         : collection.updateOne(
+            {
+              _id: target._id,
+              comments: {
+                $elemMatch: {
+                  id: commentId,
+                  votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
+                },
+              },
+            },
+            {
+              $set: { 'comments.$[targetComment].votes.$[voter].vote': vote },
+              $inc: {
+                [`comments.$[targetComment].${existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount'}`]:
+                  -1,
+                [`comments.$[targetComment].${voteCountField}`]: 1,
+              },
+            },
+            {
+              arrayFilters: [
+                { 'targetComment.id': commentId },
+                { 'voter.userTag': user.tag, 'voter.vote': existingVote.vote },
+              ],
+            },
+          )
+      : collection.updateOne(
           {
             _id: target._id,
             comments: {
               $elemMatch: {
                 id: commentId,
-                votes: { $elemMatch: { userTag: user.tag, vote: existingVote.vote } },
+                'votes.userTag': { $ne: user.tag },
               },
             },
           },
           {
-            $set: { 'comments.$[targetComment].votes.$[voter].vote': vote },
+            $push: {
+              'comments.$[targetComment].votes': {
+                userTag: user.tag,
+                vote,
+                ...(sourceStar ? { sourceStarId: sourceStar.id, createdAt } : {}),
+              },
+              ...(sourceStar ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
+            },
             $inc: {
-              [`comments.$[targetComment].${existingVote.vote === 'like' ? 'likeCount' : 'dislikeCount'}`]:
-                -1,
               [`comments.$[targetComment].${voteCountField}`]: 1,
             },
           },
           {
             arrayFilters: [
-              { 'targetComment.id': commentId },
-              { 'voter.userTag': user.tag, 'voter.vote': existingVote.vote },
+              {
+                'targetComment.id': commentId,
+                'targetComment.votes.userTag': { $ne: user.tag },
+              },
             ],
           },
         )
-      : collection.updateOne(
-        {
-          _id: target._id,
-          comments: {
-            $elemMatch: {
-              id: commentId,
-              'votes.userTag': { $ne: user.tag },
-            },
-          },
-        },
-        {
-          $push: {
-            'comments.$[targetComment].votes': {
-              userTag: user.tag,
-              vote,
-              ...(sourceStar ? { sourceStarId: sourceStar.id, createdAt } : {}),
-            },
-            ...(sourceStar ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
-          },
-          $inc: {
-            [`comments.$[targetComment].${voteCountField}`]: 1,
-          },
-        },
-        {
-          arrayFilters: [
-            {
-              'targetComment.id': commentId,
-              'targetComment.votes.userTag': { $ne: user.tag },
-            },
-          ],
-        },
-      )
-    return updated.then((result) => {
-      if (result.modifiedCount !== 1) {
-        throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
-      }
-      return collection.findOne({ _id: target._id })
-    }).then((updatedStar) => {
-      if (!updatedStar) {
-        throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
-      }
-      return getGalaxyBlackHoleCollection()
-        .then((blackHoleCollection) => syncBlackHoleEntriesForStar(updatedStar, blackHoleCollection))
-        .then(() =>
-          response(res, BamblooStatusCode.Success, undefined, {
-            star: mapGalaxyStarRecord(updatedStar, user.tag),
-          }),
-        )
-    })
+    return updated
+      .then((result) => {
+        if (result.modifiedCount !== 1) {
+          throw new BamblooError(BamblooStatusCode.BadRequest, '评价状态已变化，请重试')
+        }
+        return collection.findOne({ _id: target._id })
+      })
+      .then((updatedStar) => {
+        if (!updatedStar) {
+          throw new BamblooError(BamblooStatusCode.EntityNonexist, '星星不存在')
+        }
+        return getGalaxyBlackHoleCollection()
+          .then((blackHoleCollection) =>
+            syncBlackHoleEntriesForStar(updatedStar, blackHoleCollection),
+          )
+          .then(() =>
+            response(res, BamblooStatusCode.Success, undefined, {
+              star: mapGalaxyStarRecord(updatedStar, user.tag),
+            }),
+          )
+      })
   })
 }
 
@@ -496,18 +499,18 @@ export function commentOnGalaxyStar(
     }
     let parentCommentUserTag: string | undefined
     const verifyParent = parentCommentId
-        ? collection
-            .findOne({ _id: target._id }, { projection: { comments: 1 } })
-            .then((targetWithComments) => {
-              const parentComment = targetWithComments?.comments?.find(
-                (entry) => entry.id === parentCommentId,
-              )
-              if (!parentComment) {
-                throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
-              }
-              parentCommentUserTag = parentComment.userTag
-            })
-        : Promise.resolve()
+      ? collection
+          .findOne({ _id: target._id }, { projection: { comments: 1 } })
+          .then((targetWithComments) => {
+            const parentComment = targetWithComments?.comments?.find(
+              (entry) => entry.id === parentCommentId,
+            )
+            if (!parentComment) {
+              throw new BamblooError(BamblooStatusCode.EntityNonexist, '评论不存在')
+            }
+            parentCommentUserTag = parentComment.userTag
+          })
+      : Promise.resolve()
 
     return verifyParent.then(() => {
       const createdAt = format_timestamp(now)
@@ -520,13 +523,16 @@ export function commentOnGalaxyStar(
         dislikeCount: 0,
         votes: [],
         ...(sourceStar
-          ? { sourceStarId: sourceStar.id, sourceStarTitle: sourceStar.title }
+          ? {
+              sourceStarId: sourceStar.id,
+              sourceStarTitle: sourceStar.title,
+            }
           : { anonymousDay: day }),
         ...(parentCommentId ? { parentCommentId } : {}),
       }
       const notificationRecipients = new Set(
-        [target.userTag, parentCommentUserTag].filter(
-          (recipientTag): recipientTag is string => Boolean(recipientTag && recipientTag !== user.tag),
+        [target.userTag, parentCommentUserTag].filter((recipientTag): recipientTag is string =>
+          Boolean(recipientTag && recipientTag !== user.tag),
         ),
       )
       const notifications = [...notificationRecipients].map((recipientTag) => ({
@@ -538,9 +544,7 @@ export function commentOnGalaxyStar(
         comments: comment,
         ...(shouldCreateLink ? { links: { sourceStarId: sourceStar.id, createdAt } } : {}),
         ...(target.userTag !== user.tag ? { unreadCommentIds: comment.id } : {}),
-        ...(notifications.length
-          ? { unreadCommentNotifications: { $each: notifications } }
-          : {}),
+        ...(notifications.length ? { unreadCommentNotifications: { $each: notifications } } : {}),
       }
       return collection
         .updateOne(
@@ -651,35 +655,37 @@ export function consumeGalaxyStarCommentNotification(
           })
       })
   }
-  return consumeNext(0).then(() =>
-    collection
-      .find(
-        {
-          $or: [
-            { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
-            { unreadCommentNotifications: { $elemMatch: { userTag: user.tag } } },
-          ],
-        },
-        {
-          projection: {
-            id: 1,
-            createdAt: 1,
-            userTag: 1,
-            comments: 1,
-            unreadCommentIds: 1,
-            unreadCommentNotifications: 1,
+  return consumeNext(0)
+    .then(() =>
+      collection
+        .find(
+          {
+            $or: [
+              { userTag: user.tag, unreadCommentIds: { $exists: true, $ne: [] } },
+              { unreadCommentNotifications: { $elemMatch: { userTag: user.tag } } },
+            ],
           },
-        },
-      )
-      .sort({ unreadCommentAt: 1, createdAt: 1 })
-      .toArray(),
-  ).then((remainingRecords) =>
-    response(res, BamblooStatusCode.Success, undefined, {
-      star: consumedStar,
-      selectedCommentId: consumedCommentId,
-      notifications: getUnreadCommentNotifications(remainingRecords, user.tag),
-    }),
-  )
+          {
+            projection: {
+              id: 1,
+              createdAt: 1,
+              userTag: 1,
+              comments: 1,
+              unreadCommentIds: 1,
+              unreadCommentNotifications: 1,
+            },
+          },
+        )
+        .sort({ unreadCommentAt: 1, createdAt: 1 })
+        .toArray(),
+    )
+    .then((remainingRecords) =>
+      response(res, BamblooStatusCode.Success, undefined, {
+        star: consumedStar,
+        selectedCommentId: consumedCommentId,
+        notifications: getUnreadCommentNotifications(remainingRecords, user.tag),
+      }),
+    )
 }
 
 function getUnreadCommentNotifications(
@@ -765,15 +771,15 @@ export function seedGalaxyBlackHoleStars(
     .then((result) =>
       getGalaxyBlackHoleCollection().then((blackHoleCollection) =>
         seedRecords
-        .reduce<Promise<void>>(
+          .reduce<Promise<void>>(
             (chain, record) =>
               chain.then(() =>
                 collection.findOne({ _id: record._id }).then((savedRecord) => {
                   if (!savedRecord) return
-                return syncBlackHoleEntriesForStar(savedRecord, blackHoleCollection).then(
-                  () => undefined,
-                )
-              }),
+                  return syncBlackHoleEntriesForStar(savedRecord, blackHoleCollection).then(
+                    () => undefined,
+                  )
+                }),
               ),
             Promise.resolve(),
           )
@@ -881,10 +887,7 @@ export function getGalaxyBlackHoleContent(
           .then(() => blackHoleCollection.findOne({ _id: entryId }))
           .then((currentEntry) => {
             if (!currentEntry) {
-              throw new BamblooError(
-                BamblooStatusCode.EntityNonexist,
-                '该内容已不再符合黑洞条件',
-              )
+              throw new BamblooError(BamblooStatusCode.EntityNonexist, '该内容已不再符合黑洞条件')
             }
             return response(res, BamblooStatusCode.Success, undefined, {
               star: mapGalaxyStarRecord(record, userTag),
@@ -911,91 +914,91 @@ function listStars(
     .sort({ createdAt: 1 })
     .toArray()
     .then((records) => {
-    const pairCounts = new Map<string, number>()
-    records.forEach((record) => {
-      record.links?.forEach(({ sourceStarId }) => {
-        if (sourceStarId === record.id) return
-        const pairKey = `${sourceStarId}:${record.id}`
-        pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
+      const pairCounts = new Map<string, number>()
+      records.forEach((record) => {
+        record.links?.forEach(({ sourceStarId }) => {
+          if (sourceStarId === record.id) return
+          const pairKey = `${sourceStarId}:${record.id}`
+          pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
+        })
       })
-  })
-  const allConnections: GalaxyStarConnection[] = [...pairCounts].map(([key, count]) => {
-    const [sourceStarId = '', targetStarId = ''] = key.split(':')
-    return { sourceStarId, targetStarId, count }
-  })
-  const visibleConnections = allConnections
-  const connectionCounts = new Map<string, number>()
-  visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
-    connectionCounts.set(sourceStarId, (connectionCounts.get(sourceStarId) ?? 0) + count)
-    connectionCounts.set(targetStarId, (connectionCounts.get(targetStarId) ?? 0) + count)
-  })
-  const selectedRecords = records
-  const totalCount = selectedRecords.length
-  let batchRecords = selectedRecords
-  if (view === 'blackhole') {
-    const requestedRecords = selectedRecords.filter(({ id }) => requestedStarIds.has(id))
-    if (requestedRecords.length > 0) {
-      batchRecords = requestedRecords.slice(0, limit)
-    } else {
-      const candidates = selectedRecords.filter(({ id }) => !excludedStarIds.has(id))
-      const pool = candidates.length > 0 ? candidates : [...selectedRecords]
-      for (let index = pool.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(Math.random() * (index + 1))
-        ;[pool[index], pool[swapIndex]] = [pool[swapIndex]!, pool[index]!]
+      const allConnections: GalaxyStarConnection[] = [...pairCounts].map(([key, count]) => {
+        const [sourceStarId = '', targetStarId = ''] = key.split(':')
+        return { sourceStarId, targetStarId, count }
+      })
+      const visibleConnections = allConnections
+      const connectionCounts = new Map<string, number>()
+      visibleConnections.forEach(({ sourceStarId, targetStarId, count }) => {
+        connectionCounts.set(sourceStarId, (connectionCounts.get(sourceStarId) ?? 0) + count)
+        connectionCounts.set(targetStarId, (connectionCounts.get(targetStarId) ?? 0) + count)
+      })
+      const selectedRecords = records
+      const totalCount = selectedRecords.length
+      let batchRecords = selectedRecords
+      if (view === 'blackhole') {
+        const requestedRecords = selectedRecords.filter(({ id }) => requestedStarIds.has(id))
+        if (requestedRecords.length > 0) {
+          batchRecords = requestedRecords.slice(0, limit)
+        } else {
+          const candidates = selectedRecords.filter(({ id }) => !excludedStarIds.has(id))
+          const pool = candidates.length > 0 ? candidates : [...selectedRecords]
+          for (let index = pool.length - 1; index > 0; index -= 1) {
+            const swapIndex = Math.floor(Math.random() * (index + 1))
+            ;[pool[index], pool[swapIndex]] = [pool[swapIndex]!, pool[index]!]
+          }
+          batchRecords = pool.slice(0, limit)
+        }
       }
-      batchRecords = pool.slice(0, limit)
-    }
-  }
-  const stars: GalaxyStarView[] = batchRecords.map(
-    ({
-      _id: _recordId,
-      userTag: ownerTag,
-      day: _day,
-      unreadCommentAt: _unreadCommentAt,
-      unreadCommentIds: _unreadCommentIds,
-      unreadCommentNotifications: _unreadCommentNotifications,
-      votes = [],
-      links: _links,
-      likeCount = 0,
-      dislikeCount = 0,
-      comments = [],
-      ...star
-    }) => ({
-      ...star,
-      ...(!userTag ? { content: '' } : {}),
-      likeCount,
-      dislikeCount,
-      connectionCount: connectionCounts.get(star.id) ?? 0,
-      comments: userTag
-        ? comments.map(
-            ({
-              userTag: commentUserTag,
-              anonymousDay: _anonymousDay,
-              votes: commentVotes = [],
-              likeCount: commentLikes = 0,
-              dislikeCount: commentDislikes = 0,
-              ...comment
-            }) => ({
-              ...comment,
-              likeCount: commentLikes,
-              dislikeCount: commentDislikes,
-              myVote: commentVotes.find(({ userTag: voterTag }) => voterTag === userTag)?.vote,
-              isOwn: commentUserTag === userTag,
-            }),
-          )
-        : [],
-      isOwn: Boolean(userTag && ownerTag === userTag),
-      myVote: userTag ? votes.find((entry) => entry.userTag === userTag)?.vote : undefined,
-    }),
-  )
-    return response(res, BamblooStatusCode.Success, undefined, {
-      stars,
-      connections: visibleConnections,
-      hiddenStarIds: [],
-      blackHoleEntries: [],
-      totalCount,
+      const stars: GalaxyStarView[] = batchRecords.map(
+        ({
+          _id: _recordId,
+          userTag: ownerTag,
+          day: _day,
+          unreadCommentAt: _unreadCommentAt,
+          unreadCommentIds: _unreadCommentIds,
+          unreadCommentNotifications: _unreadCommentNotifications,
+          votes = [],
+          links: _links,
+          likeCount = 0,
+          dislikeCount = 0,
+          comments = [],
+          ...star
+        }) => ({
+          ...star,
+          ...(!userTag ? { content: '' } : {}),
+          likeCount,
+          dislikeCount,
+          connectionCount: connectionCounts.get(star.id) ?? 0,
+          comments: userTag
+            ? comments.map(
+                ({
+                  userTag: commentUserTag,
+                  anonymousDay: _anonymousDay,
+                  votes: commentVotes = [],
+                  likeCount: commentLikes = 0,
+                  dislikeCount: commentDislikes = 0,
+                  ...comment
+                }) => ({
+                  ...comment,
+                  likeCount: commentLikes,
+                  dislikeCount: commentDislikes,
+                  myVote: commentVotes.find(({ userTag: voterTag }) => voterTag === userTag)?.vote,
+                  isOwn: commentUserTag === userTag,
+                }),
+              )
+            : [],
+          isOwn: Boolean(userTag && ownerTag === userTag),
+          myVote: userTag ? votes.find((entry) => entry.userTag === userTag)?.vote : undefined,
+        }),
+      )
+      return response(res, BamblooStatusCode.Success, undefined, {
+        stars,
+        connections: visibleConnections,
+        hiddenStarIds: [],
+        blackHoleEntries: [],
+        totalCount,
+      })
     })
-  })
 }
 
 function getListView(value: unknown): GalaxyStarListView {
@@ -1120,13 +1123,13 @@ function syncBlackHoleEntriesForStar(
   const upsertEntries =
     entries.length > 0
       ? blackHoleCollection.bulkWrite(
-      entries.map(({ _id, id, ...entry }) => ({
-        updateOne: {
-          filter: { _id },
-          update: { $set: { ...entry, id }, $setOnInsert: { _id } },
-          upsert: true,
-        },
-      })),
+          entries.map(({ _id, id, ...entry }) => ({
+            updateOne: {
+              filter: { _id },
+              update: { $set: { ...entry, id }, $setOnInsert: { _id } },
+              upsert: true,
+            },
+          })),
         )
       : Promise.resolve()
   return upsertEntries.then(() =>
@@ -1146,13 +1149,13 @@ function reconcileBlackHoleEntries(
   const upsertEntries =
     entries.length > 0
       ? blackHoleCollection.bulkWrite(
-      entries.map(({ _id, id, ...entry }) => ({
-        updateOne: {
-          filter: { _id },
-          update: { $set: { ...entry, id }, $setOnInsert: { _id } },
-          upsert: true,
-        },
-      })),
+          entries.map(({ _id, id, ...entry }) => ({
+            updateOne: {
+              filter: { _id },
+              update: { $set: { ...entry, id }, $setOnInsert: { _id } },
+              upsert: true,
+            },
+          })),
         )
       : Promise.resolve()
   return upsertEntries.then(() =>

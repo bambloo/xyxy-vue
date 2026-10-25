@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import GalaxyStarDetailsDialog from '@/components/dialogs/GalaxyStarDetailsDialog.vue'
 import type {
   GalaxyBlackHoleEntry,
   GalaxyStarComment,
@@ -36,6 +37,7 @@ const sceneError = ref('')
 const sentStars = ref<GalaxyStarView[]>([])
 const selectedStar = ref<GalaxyStarView>()
 const listLoading = ref(false)
+const sourceStarColorLoading = ref(false)
 const blackHoleListLoaded = ref(false)
 const statusLoading = ref(false)
 const voteLoading = ref(false)
@@ -56,6 +58,7 @@ const blackHolePointerStart = ref<{ x: number; y: number }>()
 const blackHoleSwipeHandled = ref(false)
 const commentNotifications = ref<Array<{ starId: string; commentId: string }>>([])
 const commentNotificationLoading = ref(false)
+const sourceStarColors = new Map<string, string>()
 const hasSentToday = computed(() => Boolean(todayStarId.value))
 const canViewStarDetails = computed(() => auth.isLoggedIn && auth.isSessionValidated)
 const blackHoleWaveSize = 20
@@ -134,10 +137,6 @@ function createBlackHoleEntryRandom(id: string, index: number, layoutSeed: strin
   }
 }
 
-function meetsBlackHoleThreshold(likeCount = 0, dislikeCount = 0) {
-  return dislikeCount > 8 && dislikeCount > likeCount * 1.5
-}
-
 function isCommentNotification(value: unknown): value is { starId: string; commentId: string } {
   if (!value || typeof value !== 'object') return false
   const notification = value as Record<string, unknown>
@@ -147,6 +146,46 @@ function isCommentNotification(value: unknown): value is { starId: string; comme
 function updateCommentNotificationQueue(notifications: Array<{ starId: string; commentId: string }>) {
   commentNotifications.value = notifications
   announceGalaxyStarCommentQueue(commentNotifications.value.length)
+}
+
+function rememberSourceStarColors(stars: GalaxyStarView[]) {
+  stars.forEach((star) => sourceStarColors.set(star.id, star.color))
+}
+
+function withSourceStarColors(star: GalaxyStarView): GalaxyStarView {
+  return {
+    ...star,
+    comments: star.comments.map((comment) => ({
+      ...comment,
+      sourceStarColor: comment.sourceStarId
+        ? sourceStarColors.get(comment.sourceStarId)
+        : undefined,
+    })),
+  }
+}
+
+async function resolveSourceStarColors(star: GalaxyStarView) {
+  const missingSourceStarIds = [
+    ...new Set(
+      star.comments
+        .map((comment) => comment.sourceStarId)
+        .filter(
+          (sourceStarId): sourceStarId is string =>
+            sourceStarId !== undefined && !sourceStarColors.has(sourceStarId),
+        ),
+    ),
+  ]
+  if (missingSourceStarIds.length) {
+    const packet = await post('/wpi/user/galaxy-star/list', sourceStarColorLoading, {
+      view: 'normal',
+    })
+    const data = packet.data as Partial<GalaxyStarListResponse> | undefined
+    if (!Array.isArray(data?.stars)) {
+      throw new Error('来源星星颜色数据格式无效')
+    }
+    rememberSourceStarColors(data.stars)
+  }
+  return withSourceStarColors(star)
 }
 
 async function refreshCommentNotificationQueue() {
@@ -193,13 +232,14 @@ async function openNextCommentedStar() {
     if (typeof data.selectedCommentId !== 'string') {
       throw new Error('评论通知目标无效')
     }
-    sentStars.value = sentStars.value.map((star) => (star.id === data.star?.id ? data.star : star))
-    if (!sentStars.value.some((star) => star.id === data.star?.id)) {
-      sentStars.value = [...sentStars.value, data.star]
+    const star = await resolveSourceStarColors(data.star)
+    sentStars.value = sentStars.value.map((candidate) => (candidate.id === star.id ? star : candidate))
+    if (!sentStars.value.some((candidate) => candidate.id === star.id)) {
+      sentStars.value = [...sentStars.value, star]
     }
     galaxyScene?.setSentStars(sentStars.value)
-    galaxyScene?.navigateToSentStar(data.star.id)
-    selectedStar.value = data.star
+    galaxyScene?.navigateToSentStar(star.id)
+    selectedStar.value = star
     selectedCommentId.value = data.selectedCommentId
     selectedBlackHoleEntryKind.value = undefined
     voteError.value = ''
@@ -287,7 +327,8 @@ function applyGalaxyData(data: Partial<GalaxyStarListResponse>) {
   ) {
     throw new Error('星星数据格式无效')
   }
-  sentStars.value = data.stars
+  rememberSourceStarColors(data.stars)
+  sentStars.value = data.stars.map(withSourceStarColors)
   hiddenStarIds.value = data.hiddenStarIds
   blackHoleEntries.value = data.blackHoleEntries
   blackHoleTotalCount.value = data.totalCount
@@ -575,7 +616,7 @@ async function openBlackHoleEntry(entry: GalaxyBlackHoleEntry) {
     })
     const data = packet.data as { star?: GalaxyStarView; selectedCommentId?: string } | undefined
     if (!data?.star) throw new Error('黑洞内容详情格式无效')
-    selectedStar.value = data.star
+    selectedStar.value = await resolveSourceStarColors(data.star)
     selectedCommentId.value = data.selectedCommentId ?? ''
     selectedBlackHoleEntryKind.value = entry.kind
     voteError.value = ''
@@ -652,9 +693,10 @@ async function voteForComment(
     })
     const data = packet.data as { star?: GalaxyStarView } | undefined
     if (!data?.star) throw new Error('评论评价数据格式无效')
-    selectedStar.value = data.star
+    const updatedStar = await resolveSourceStarColors(data.star)
+    selectedStar.value = updatedStar
     sentStars.value = sentStars.value.map((candidate) =>
-      candidate.id === data.star?.id ? data.star : candidate,
+      candidate.id === updatedStar.id ? updatedStar : candidate,
     )
     if (props.blackHoleView) {
       const listPacket = await post(
@@ -716,38 +758,6 @@ async function commentOnStar(star: GalaxyStarView, parentCommentId?: string) {
   }
 }
 
-function commentThreads(comments: GalaxyStarComment[]) {
-  const flattened: (GalaxyStarComment & { depth: number; replyToTitle?: string })[] = []
-  const appendReplies = (parentCommentId: string, depth: number, parentTitle: string) => {
-    comments
-      .filter((comment) => comment.parentCommentId === parentCommentId)
-      .forEach((comment) => {
-        flattened.push({ ...comment, depth, replyToTitle: parentTitle || '匿名用户' })
-        appendReplies(comment.id, depth + 1, comment.sourceStarTitle ?? '匿名用户')
-      })
-  }
-  comments
-    .filter((comment) => !comment.parentCommentId)
-    .forEach((comment) => {
-      flattened.push({ ...comment, depth: 0 })
-      appendReplies(comment.id, 1, comment.sourceStarTitle ?? '匿名用户')
-    })
-  return flattened
-}
-
-const selectedCommentThreads = computed(() =>
-  selectedStar.value ? commentThreads(selectedStar.value.comments) : [],
-)
-const visibleCommentThreads = computed(() =>
-  props.blackHoleView
-    ? selectedCommentThreads.value.filter(
-      (comment) =>
-        !meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount) ||
-        comment.id === selectedCommentId.value,
-    )
-    : selectedCommentThreads.value,
-)
-
 function toggleCommentReply(comment: GalaxyStarComment) {
   replyingToCommentId.value = replyingToCommentId.value === comment.id ? '' : comment.id
   commentText.value = ''
@@ -762,14 +772,6 @@ watch(
     void loadGalaxyStars()
     if (!enabled) void refreshCommentNotificationQueue()
   },
-)
-
-watch(
-  selectedStar,
-  (star) => {
-    document.body.classList.toggle('star-dialog-open', Boolean(star))
-  },
-  { immediate: true },
 )
 
 watch(canViewStarDetails, (canView, previousCanView) => {
@@ -847,7 +849,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.body.classList.remove('star-dialog-open')
   if (dailyResetTimer !== undefined) window.clearTimeout(dailyResetTimer)
   if (commentNotificationTimer !== undefined) window.clearInterval(commentNotificationTimer)
   window.removeEventListener(GALAXY_STAR_SENT_EVENT, handleStarSent)
@@ -876,7 +877,7 @@ onBeforeUnmount(() => {
       </p>
       <p v-else-if="blackHoleWave.length === 0" class="black-hole-empty">暂无符合条件的内容</p>
       <template v-else>
-        <Transition name="black-hole-wave">
+        <Transition name="black-hole-wave" :css="!voteLoading">
           <div :key="blackHoleWaveKey" class="black-hole-content-list">
             <div v-for="(entry, index) in blackHoleWave" :key="entry.id" class="black-hole-content-entry"
               :style="blackHoleEntryStyles[index]">
@@ -893,125 +894,26 @@ onBeforeUnmount(() => {
     <section ref="canvasHost" class="galaxy-canvas" @pointerdown="handlePointerDown" @pointermove="handlePointerMove"
       @pointerup="handlePointerUp" @pointercancel="handlePointerUp" @wheel.prevent="handleWheel"></section>
     <p v-if="sceneError" class="galaxy-scene-error" role="alert">{{ sceneError }}</p>
-    <div v-if="selectedStar" class="sent-star-dialog-overlay" :style="{ '--star-color': selectedStar.color }"
-      @click.self="selectedStar = undefined">
-      <section class="sent-star-dialog" role="dialog" aria-modal="true" aria-labelledby="sent-star-dialog-title">
-        <header class="sent-star-dialog-header">
-          <div>
-            <span class="sent-star-dialog-eyebrow">星际回响</span>
-            <h2 id="sent-star-dialog-title">{{ selectedStar.title }}</h2>
-            <p class="sent-star-created-at">
-              发送时间：<time>{{ selectedStar.createdAt }}</time>
-            </p>
-          </div>
-
-        </header>
-        <div class="sent-star-dialog-scroll">
-          <p v-if="!props.blackHoleView || selectedBlackHoleEntryKind === 'star'" id="sent-star-black-hole-content"
-            class="sent-star-content" :class="{ 'selected-black-hole-content': selectedBlackHoleEntryKind === 'star' }">
-            <template v-if="
-              !props.blackHoleView &&
-              meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
-            ">
-              该内容因被踩过多已隐藏，可在黑洞星域查看。
-            </template>
-            <template v-else>{{ selectedStar.content }}</template>
-          </p>
-          <div v-if="
-            props.blackHoleView
-              ? selectedBlackHoleEntryKind === 'star'
-              : !meetsBlackHoleThreshold(selectedStar.likeCount, selectedStar.dislikeCount)
-          " class="sent-star-votes">
-            <button type="button" :class="{ selected: selectedStar.myVote === 'like' }"
-              :aria-pressed="selectedStar.myVote === 'like'" :disabled="voteLoading"
-              @click="voteForStar(selectedStar, 'like')">
-              赞 <strong>{{ selectedStar.likeCount }}</strong>
-            </button>
-            <button type="button" :class="{ selected: selectedStar.myVote === 'dislike' }"
-              :aria-pressed="selectedStar.myVote === 'dislike'" :disabled="voteLoading"
-              @click="voteForStar(selectedStar, 'dislike')">
-              踩 <strong>{{ selectedStar.dislikeCount }}</strong>
-            </button>
-            <span v-if="!props.blackHoleView" class="sent-star-comment-count">
-              {{ selectedStar.comments.length }} 条评论
-            </span>
-          </div>
-          <p v-if="selectedStar.isOwn" class="sent-star-permission-hint">这是你寄出的星星</p>
-          <p v-else-if="!hasSentToday" class="sent-star-permission-hint">
-            寄出星星前的评论将匿名显示；寄出后会自动关联到你的星星
-          </p>
-          <p v-if="voteError" class="sent-star-vote-error" role="alert">{{ voteError }}</p>
-
-          <section class="sent-star-comment-section" aria-labelledby="sent-star-comments-title">
-            <h3 id="sent-star-comments-title">星际讨论</h3>
-            <p v-if="!visibleCommentThreads.length" class="sent-star-empty-comments">
-              {{ props.blackHoleView ? '没有其他正常评论。' : '还没有评论，来留下第一条回响吧。' }}
-            </p>
-            <ul v-else class="sent-star-comments">
-              <li v-for="comment in visibleCommentThreads" :key="comment.id" class="sent-star-comment"
-                :class="{ 'selected-comment': comment.id === selectedCommentId }"
-                :style="{ '--thread-depth': Math.min(comment.depth, 5) }" :id="`sent-star-comment-${comment.id}`">
-                <div class="sent-star-comment-author">
-                  <strong>{{ comment.sourceStarTitle || '匿名用户' }}</strong>
-                  <time>{{ comment.createdAt }}</time>
-                </div>
-                <p v-if="comment.replyToTitle" class="sent-star-reply-context">
-                  回复 {{ comment.replyToTitle }}
-                </p>
-                <p class="sent-star-comment-content">
-                  <template v-if="
-                    !props.blackHoleView &&
-                    meetsBlackHoleThreshold(comment.likeCount, comment.dislikeCount)
-                  ">
-                    该评论因被踩过多已隐藏，可在黑洞星域查看。
-                  </template>
-                  <template v-else>{{ comment.content }}</template>
-                </p>
-                <div class="sent-star-comment-actions">
-                  <div class="sent-star-comment-votes">
-                    <button type="button" :class="{ selected: comment.myVote === 'like' }"
-                      :aria-pressed="comment.myVote === 'like'" :disabled="voteLoading"
-                      @click="voteForComment(selectedStar, comment, 'like')">
-                      赞 {{ comment.likeCount ?? 0 }}
-                    </button>
-                    <button type="button" :class="{ selected: comment.myVote === 'dislike' }"
-                      :aria-pressed="comment.myVote === 'dislike'" :disabled="voteLoading"
-                      @click="voteForComment(selectedStar, comment, 'dislike')">
-                      踩 {{ comment.dislikeCount ?? 0 }}
-                    </button>
-                  </div>
-                  <button class="sent-star-reply-toggle" type="button" @click="toggleCommentReply(comment)">
-                    {{ replyingToCommentId === comment.id ? '取消回复' : '回复' }}
-                  </button>
-                </div>
-                <form v-if="replyingToCommentId === comment.id" class="sent-star-comment-form sent-star-reply-form"
-                  @submit.prevent="commentOnStar(selectedStar, comment.id)">
-                  <textarea v-model="commentText" maxlength="500" rows="2" :aria-label="`回复${comment.sourceStarTitle}`"
-                    placeholder="写下回复…" :disabled="commentLoading"></textarea>
-                  <button type="submit" :disabled="commentLoading || !commentText.trim()">
-                    {{ commentLoading ? '发送中…' : '发送回复' }}
-                  </button>
-                </form>
-                <p v-if="replyingToCommentId === comment.id && commentError" class="sent-star-vote-error" role="alert">
-                  {{ commentError }}
-                </p>
-              </li>
-            </ul>
-            <p v-if="commentError && !replyingToCommentId" class="sent-star-vote-error" role="alert">
-              {{ commentError }}
-            </p>
-          </section>
-        </div>
-        <form v-if="!replyingToCommentId" class="sent-star-comment-form sent-star-main-comment-form"
-          @submit.prevent="commentOnStar(selectedStar)">
-          <textarea v-model="commentText" maxlength="500" rows="2" aria-label="评论内容" placeholder="参与讨论…"
-            :disabled="commentLoading"></textarea>
-          <button type="submit" :disabled="commentLoading || !commentText.trim()">
-            {{ commentLoading ? '发送中…' : '发送评论' }}
-          </button>
-        </form>
-      </section>
-    </div>
+    <GalaxyStarDetailsDialog
+      :open="Boolean(selectedStar)"
+      :star="selectedStar"
+      :black-hole-view="props.blackHoleView"
+      :selected-black-hole-entry-kind="selectedBlackHoleEntryKind"
+      :selected-comment-id="selectedCommentId"
+      :has-sent-today="hasSentToday"
+      :vote-loading="voteLoading"
+      :vote-error="voteError"
+      :comment-loading="commentLoading"
+      :comment-error="commentError"
+      :comment-text="commentText"
+      :replying-to-comment-id="replyingToCommentId"
+      @close="selectedStar = undefined"
+      @update:comment-text="commentText = $event"
+      @toggle-reply="toggleCommentReply"
+      @vote-star="selectedStar && voteForStar(selectedStar, $event)"
+      @vote-comment="selectedStar && voteForComment(selectedStar, $event.comment, $event.vote)"
+      @comment="selectedStar && commentOnStar(selectedStar, $event)"
+    />
   </main>
 </template>
 
@@ -1224,342 +1126,5 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: rgba(30, 9, 22, 0.85);
   color: #ffd9e3;
-}
-
-.sent-star-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  display: grid;
-  place-items: center;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: rgba(1, 5, 14, 0.72);
-  backdrop-filter: blur(12px);
-}
-
-.sent-star-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(760px, 100%);
-  max-height: min(860px, 100%);
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--star-color) 60%, transparent);
-  border-radius: 22px;
-  background: linear-gradient(155deg, rgba(12, 27, 50, 0.98), rgba(4, 10, 24, 0.99));
-  box-shadow:
-    0 24px 90px rgba(0, 0, 0, 0.58),
-    0 0 34px color-mix(in srgb, var(--star-color) 18%, transparent);
-  color: #eef4ff;
-}
-
-.sent-star-dialog-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 24px 28px 18px;
-  border-bottom: 1px solid rgba(166, 202, 239, 0.14);
-}
-
-.sent-star-dialog-header h2 {
-  margin: 4px 0 0;
-  color: var(--star-color);
-  font-size: 24px;
-}
-
-.sent-star-created-at {
-  margin: 6px 0 0;
-  color: #8098b3;
-  font-size: 11px;
-}
-
-.sent-star-dialog-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--star-color) 38%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--star-color) 9%, transparent);
-  color: color-mix(in srgb, var(--star-color) 68%, white);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  line-height: 1;
-  text-shadow: 0 0 12px color-mix(in srgb, var(--star-color) 45%, transparent);
-}
-
-.sent-star-dialog-eyebrow::before,
-.sent-star-dialog-eyebrow::after {
-  color: var(--star-color);
-  content: '✦';
-  font-size: 9px;
-  letter-spacing: 0;
-}
-
-.sent-star-dialog-eyebrow::after {
-  opacity: 0.65;
-  transform: scale(0.72);
-}
-
-.sent-star-dialog-scroll {
-  overflow-y: auto;
-  padding: 22px 28px;
-}
-
-.sent-star-content {
-  margin: 0;
-  color: #e2edf9;
-  font-size: 16px;
-  line-height: 1.85;
-}
-
-.sent-star-content.selected-black-hole-content {
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--star-color) 16%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--star-color) 65%, transparent),
-    0 0 24px color-mix(in srgb, var(--star-color) 42%, transparent);
-  animation: black-hole-target-highlight 1.2s ease-out 2;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.sent-star-votes {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 20px;
-}
-
-.sent-star-votes button {
-  padding: 9px 16px;
-  border: 1px solid rgba(174, 203, 239, 0.3);
-  border-radius: 999px;
-  background: rgba(86, 121, 168, 0.2);
-  color: #e8f1fb;
-  cursor: pointer;
-}
-
-.sent-star-votes button:disabled {
-  cursor: default;
-}
-
-.sent-star-votes button.selected {
-  border-color: var(--star-color);
-  background: color-mix(in srgb, var(--star-color) 22%, transparent);
-  color: var(--star-color);
-}
-
-.sent-star-comment-count {
-  margin-left: auto;
-  color: #a9bfd9;
-  font-size: 13px;
-}
-
-.sent-star-permission-hint,
-.sent-star-empty-comments {
-  margin: 12px 0 0;
-  color: #9db4cb;
-  font-size: 13px;
-}
-
-.sent-star-vote-error {
-  margin: 10px 0 0;
-  color: #ffb8c5;
-  font-size: 13px;
-}
-
-.sent-star-comment-section {
-  margin-top: 26px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(166, 202, 239, 0.14);
-}
-
-.sent-star-comment-section h3 {
-  margin: 0 0 16px;
-  color: #d9e9fb;
-  font-size: 17px;
-}
-
-.sent-star-comments {
-  display: grid;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sent-star-comment {
-  margin-left: calc(min(var(--thread-depth), 5) * 22px);
-  padding: 16px;
-  border: 1px solid rgba(166, 202, 239, 0.12);
-  border-radius: 14px;
-  background: rgba(86, 121, 168, 0.1);
-}
-
-.sent-star-comment.selected-comment {
-  border-color: color-mix(in srgb, var(--star-color) 72%, transparent);
-  background: color-mix(in srgb, var(--star-color) 14%, rgba(86, 121, 168, 0.1));
-  animation: black-hole-target-highlight 1.2s ease-out 2;
-}
-
-@keyframes black-hole-target-highlight {
-  50% {
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--star-color) 82%, transparent),
-      0 0 30px color-mix(in srgb, var(--star-color) 56%, transparent);
-  }
-}
-
-.sent-star-comment-author {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.sent-star-comment-author strong {
-  color: var(--star-color);
-  font-size: 13px;
-}
-
-.sent-star-comment-author time {
-  flex: none;
-  color: #8098b3;
-  font-size: 11px;
-}
-
-.sent-star-reply-context {
-  margin: 8px 0 0;
-  color: #8fa6c1;
-  font-size: 12px;
-}
-
-.sent-star-comment-content {
-  margin: 9px 0 0;
-  color: #e3edf8;
-  font-size: 14px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.sent-star-comment-actions,
-.sent-star-comment-votes {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.sent-star-comment-actions {
-  justify-content: space-between;
-  margin-top: 10px;
-}
-
-.sent-star-comment-votes button {
-  padding: 4px 9px;
-  border: 1px solid rgba(174, 203, 239, 0.2);
-  border-radius: 999px;
-  background: rgba(86, 121, 168, 0.12);
-  color: #b8c9de;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.sent-star-comment-votes button:disabled {
-  cursor: default;
-}
-
-.sent-star-comment-votes button.selected {
-  border-color: var(--star-color);
-  color: var(--star-color);
-}
-
-.sent-star-reply-toggle {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #9db4cb;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.sent-star-comment-form {
-  display: grid;
-  flex: none;
-  gap: 9px;
-}
-
-.sent-star-main-comment-form {
-  padding: 16px 28px 22px;
-  border-top: 1px solid rgba(166, 202, 239, 0.14);
-}
-
-.sent-star-reply-form {
-  margin-top: 12px;
-}
-
-.sent-star-comment-form textarea {
-  box-sizing: border-box;
-  width: 100%;
-  max-height: 140px;
-  resize: vertical;
-  padding: 10px;
-  border: 1px solid rgba(174, 203, 239, 0.3);
-  border-radius: 10px;
-  background: rgba(4, 12, 27, 0.72);
-  color: #e8f1fb;
-  font: inherit;
-}
-
-.sent-star-comment-form button {
-  justify-self: end;
-  padding: 8px 15px;
-  border: 1px solid color-mix(in srgb, var(--star-color) 48%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--star-color) 15%, transparent);
-  color: #edf5ff;
-  cursor: pointer;
-}
-
-.sent-star-comment-form button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-@media (max-width: 600px) {
-  .sent-star-dialog-overlay {
-    padding: 10px;
-  }
-
-  .sent-star-dialog {
-    max-height: 100%;
-    border-radius: 17px;
-  }
-
-  .sent-star-dialog-header {
-    padding: 19px 18px 15px;
-  }
-
-  .sent-star-dialog-scroll {
-    padding: 18px;
-  }
-
-  .sent-star-main-comment-form {
-    padding: 13px 18px 17px;
-  }
-
-  .sent-star-comment-author {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .sent-star-comment {
-    margin-left: calc(min(var(--thread-depth), 4) * 10px);
-  }
 }
 </style>
