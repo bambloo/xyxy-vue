@@ -95,6 +95,7 @@ watch(blackHoleWaveKey, () => {
   blackHoleLayoutSeed.value = Math.random().toString(36).slice(2)
 })
 let galaxyScene: GalaxyScene | undefined
+let starNavigationRequestId = 0
 let dailyResetTimer: number | undefined
 let commentNotificationTimer: number | undefined
 
@@ -370,25 +371,117 @@ function handleStarSent(event: Event) {
   sentStars.value = [...sentStars.value, ownedStar]
   todayStarId.value = star.id
   galaxyScene?.setSentStars(sentStars.value)
+  animateSentStarIntoGalaxy(star)
   galaxyScene?.setDownvotedStarIds(hiddenStarIds.value)
   void refreshGalaxyAfterStarSent()
+}
+
+function animateSentStarIntoGalaxy(star: SentGalaxyStar) {
+  if (props.blackHoleView || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const button = document.querySelector<HTMLButtonElement>('.star-compose-submit')
+  const destination = galaxyScene?.sentStarScreenPosition(star.id)
+  if (!button || !destination) return
+
+  const source = button.getBoundingClientRect()
+  const bounds = canvasHost.value?.getBoundingClientRect()
+  if (!bounds) return
+  const startX = source.left + source.width / 2
+  const startY = source.top + source.height / 2
+  const endX = Math.min(bounds.right, Math.max(bounds.left, destination.x))
+  const endY = Math.min(bounds.bottom, Math.max(bounds.top, destination.y))
+  const deltaX = endX - startX
+  const deltaY = endY - startY
+  const distance = Math.max(1, Math.hypot(deltaX, deltaY))
+  const arc = Math.min(140, distance * 0.24)
+  const controlX = (startX + endX) / 2 - (deltaY / distance) * arc
+  const controlY = (startY + endY) / 2 + (deltaX / distance) * arc
+  const trail = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  trail.setAttribute('viewBox', `0 0 ${window.innerWidth} ${window.innerHeight}`)
+  Object.assign(trail.style, {
+    position: 'fixed',
+    inset: '0',
+    zIndex: '1999',
+    width: '100vw',
+    height: '100vh',
+    overflow: 'visible',
+    pointerEvents: 'none',
+  })
+  const trailPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  trailPath.setAttribute(
+    'd',
+    `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`,
+  )
+  trailPath.setAttribute('fill', 'none')
+  trailPath.setAttribute('stroke', star.color)
+  trailPath.setAttribute('stroke-width', '3')
+  trailPath.setAttribute('stroke-linecap', 'round')
+  trailPath.setAttribute('opacity', '0.72')
+  trailPath.style.filter = `drop-shadow(0 0 5px ${star.color})`
+  trail.append(trailPath)
+  document.body.append(trail)
+
+  const flight = document.createElement('span')
+  flight.textContent = '★'
+  Object.assign(flight.style, {
+    position: 'fixed',
+    zIndex: '2000',
+    left: '0',
+    top: '0',
+    color: star.color,
+    fontSize: '28px',
+    lineHeight: '1',
+    pointerEvents: 'none',
+    textShadow: `0 0 8px ${star.color}, 0 0 20px ${star.color}`,
+    transform: `translate(${startX}px, ${startY}px) translate(-50%, -50%) scale(0.55)`,
+  })
+  document.body.append(flight)
+  const pathLength = trailPath.getTotalLength()
+  const tailLength = Math.min(48, pathLength * 0.22)
+  trailPath.setAttribute('stroke-dasharray', `${tailLength} ${pathLength}`)
+  const startTime = performance.now()
+  const duration = 1400
+  const animate = (now: number) => {
+    const progress = Math.min(1, (now - startTime) / duration)
+    const easedProgress = 1 - Math.pow(1 - progress, 2.4)
+    const point = trailPath.getPointAtLength(pathLength * easedProgress)
+    trailPath.setAttribute('stroke-dashoffset', `${-pathLength * easedProgress}`)
+    flight.style.left = `${point.x}px`
+    flight.style.top = `${point.y}px`
+    flight.style.opacity = String(Math.min(1, progress * 7) * (1 - Math.max(0, progress - 0.82) / 0.18))
+    const scale = 0.55 + Math.min(1, progress * 7) * 0.45 - easedProgress * 0.65
+    flight.style.transform = `translate(-50%, -50%) scale(${scale})`
+    if (progress < 1) {
+      requestAnimationFrame(animate)
+      return
+    }
+    trail.remove()
+    flight.remove()
+  }
+  requestAnimationFrame(animate)
 }
 
 async function handleNavigateToStar(event: Event) {
   if (props.blackHoleView) return
   const starId = (event as CustomEvent<string>).detail
   if (typeof starId !== 'string' || !starId) return
+  const requestId = ++starNavigationRequestId
   try {
     if (!sentStars.value.some((star) => star.id === starId)) await loadGalaxyStars()
+    if (requestId !== starNavigationRequestId) return
     const star = sentStars.value.find((candidate) => candidate.id === starId)
     if (!star || !galaxyScene?.navigateToSentStar(starId)) {
       throw new Error('未能定位到当天寄出的星星')
     }
-    selectSentStar(star)
   } catch (error) {
+    if (requestId !== starNavigationRequestId) return
     console.error('前往当天寄出的星星失败', error)
     sceneError.value = '前往当天寄出的星星失败，请稍后重试。'
   }
+}
+
+function handleUserInteraction() {
+  starNavigationRequestId += 1
+  galaxyScene?.stopNavigation()
 }
 
 async function refreshGalaxyAfterStarSent() {
@@ -675,6 +768,9 @@ onMounted(() => {
     window.addEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
     window.addEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
     window.addEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
+    document.addEventListener('pointerdown', handleUserInteraction)
+    document.addEventListener('wheel', handleUserInteraction)
+    document.addEventListener('keydown', handleUserInteraction)
     void loadGalaxyStars()
     void refreshCommentNotificationQueue()
     commentNotificationTimer = window.setInterval(() => {
@@ -692,6 +788,9 @@ onBeforeUnmount(() => {
   window.removeEventListener(GALAXY_STAR_COMMENT_OPEN_EVENT, openNextCommentedStar)
   window.removeEventListener(GALAXY_CAMERA_ZOOM_OUT_EVENT, handleCameraZoomOut)
   window.removeEventListener(GALAXY_CAMERA_CENTER_EVENT, handleCameraCenter)
+  document.removeEventListener('pointerdown', handleUserInteraction)
+  document.removeEventListener('wheel', handleUserInteraction)
+  document.removeEventListener('keydown', handleUserInteraction)
   galaxyScene?.destroy()
   galaxyScene = undefined
 })

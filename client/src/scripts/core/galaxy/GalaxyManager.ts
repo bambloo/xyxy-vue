@@ -234,8 +234,8 @@ export class GalaxyManager {
       .clone()
       .addScaledVector(outward, 300)
       .clampLength(GALAXY_CAMERA_CENTER_LIMIT, GALAXY_CAMERA_BOUNDARY)
-    this.cameraTargetPosition = nextPosition
     this.recordInteraction()
+    this.cameraTargetPosition = nextPosition
   }
 
   navigateToSentStar(starId: string) {
@@ -264,6 +264,24 @@ export class GalaxyManager {
     )
     this.targetRollVelocity = 0
     return true
+  }
+
+  sentStarScreenPosition(starId: string) {
+    const visual = this.sentStars.get(starId)
+    if (!visual) return undefined
+
+    const { camera, galaxy, host } = this.options
+    galaxy.updateMatrixWorld(true)
+    const projected = galaxy.localToWorld(visual.star.position.clone()).project(camera)
+    const bounds = host.getBoundingClientRect()
+    return {
+      x: bounds.left + ((projected.x + 1) / 2) * bounds.width,
+      y: bounds.top + ((1 - projected.y) / 2) * bounds.height,
+    }
+  }
+
+  stopNavigation() {
+    this.recordInteraction()
   }
 
   update(time: number) {
@@ -318,6 +336,7 @@ export class GalaxyManager {
     this.lastInteractionTime = performance.now()
     this.wanderTarget = undefined
     this.wanderVelocity.set(0, 0, 0)
+    this.cameraTargetPosition = undefined
     this.targetYaw = this.options.camera.rotation.y
     this.targetPitch = this.options.camera.rotation.x
     this.rollVelocity = 0

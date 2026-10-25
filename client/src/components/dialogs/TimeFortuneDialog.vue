@@ -535,24 +535,18 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="fortune-dialog">
-      <div
-        v-if="dialogOpen && !profileDialogOpen && !siteInfoOpen"
-        class="fortune-overlay"
-        :class="{
-          'fortune-overlay-centered': centeredAfterComposer,
-          'fortune-overlay-paired': composerOpen,
-          'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'composer',
-        }"
-        :style="{
-          '--paired-fortune-top': pairedFortuneTop === undefined ? '50%' : `${pairedFortuneTop}px`,
-          '--paired-fortune-max-height':
-            pairedFortuneMaxHeight === undefined ? '48vh' : `${pairedFortuneMaxHeight}px`,
-        }"
-        @click.self="handleOverlayClick"
-      >
+      <div v-if="dialogOpen && !profileDialogOpen && !siteInfoOpen" class="fortune-overlay" :class="{
+        'fortune-overlay-centered': centeredAfterComposer,
+        'fortune-overlay-paired': composerOpen,
+        'fortune-overlay-paired-active': composerOpen && pairedDialogView === 'composer',
+      }" :style="{
+        '--paired-fortune-top': pairedFortuneTop === undefined ? '50%' : `${pairedFortuneTop}px`,
+        '--paired-fortune-max-height':
+          pairedFortuneMaxHeight === undefined ? '48vh' : `${pairedFortuneMaxHeight}px`,
+      }" @click.self="handleOverlayClick">
         <Transition name="dialog-switch">
-          <section ref="fortuneDialog" class="fortune-dialog"
-            role="dialog" :aria-modal="!composerOpen" aria-labelledby="fortune-title" @pointerdown="handleDialogPointerDown"
+          <section v-if="dialogOpen" ref="fortuneDialog" class="fortune-dialog" role="dialog"
+            :aria-modal="!composerOpen" aria-labelledby="fortune-title" @pointerdown="handleDialogPointerDown"
             @pointermove="handleDialogPointerMove" @pointerup="clearDialogDrag" @pointercancel="clearDialogDrag">
             <div class="dialog-header-actions">
               <button v-if="details?.history" class="dialog-icon-button dialog-action" type="button"
@@ -565,7 +559,6 @@ onBeforeUnmount(() => {
                 <ion-icon name="settings-outline" aria-hidden="true"></ion-icon>
               </button>
             </div>
-            <p class="dialog-eyebrow">Words From the Stars</p>
             <h2 id="fortune-title">{{ t('timeFortune.title') }}</h2>
             <p v-if="detailsLoading" class="dialog-status">正在读取星辰讯息…</p>
             <p v-else-if="detailsError" class="dialog-status dialog-error" role="alert">
@@ -600,13 +593,11 @@ onBeforeUnmount(() => {
                       <h3 class="current-fortune-period">
                         {{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}：{{ fortune.message }}
                       </h3>
-
                     </article>
                   </section>
                 </template>
               </template>
             </template>
-            <div class="dialog-ornament" aria-hidden="true">✦　✧　✦</div>
           </section>
         </Transition>
       </div>
@@ -827,7 +818,7 @@ onBeforeUnmount(() => {
 .fortune-current-datetime {
   position: absolute;
   top: 14px;
-  right: 20px;
+  right: 44px;
   color: #c3d7ee;
   font-size: 11px;
   text-align: right;

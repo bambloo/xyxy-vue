@@ -126,6 +126,14 @@ export class GalaxyScene {
     return this.manager?.navigateToSentStar(starId) ?? false
   }
 
+  sentStarScreenPosition(starId: string) {
+    return this.manager?.sentStarScreenPosition(starId)
+  }
+
+  stopNavigation() {
+    this.manager?.stopNavigation()
+  }
+
   destroy() {
     cancelAnimationFrame(this.animationFrame)
     this.resizeObserver?.disconnect()

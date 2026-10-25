@@ -80,23 +80,16 @@ describe('user location', () => {
     wrapper.unmount()
   })
 
-  it('provides Chinese province and city choices for China', async () => {
+  it('lets users type a city name for China', async () => {
     const wrapper = mount(LocationPicker, { global: { plugins: [i18n] } })
-    const provinceCode = Object.entries(areaList.province_list).find(
-      ([, name]) => name === '广东省',
-    )?.[0]
-    expect(provinceCode).toBeTruthy()
-
     await wrapper.findAll('select')[1]!.setValue('广东省')
-    const citySelect = wrapper.findAll('select')[2]!
-    const cityOptions = citySelect.findAll('option').map((option) => option.element.value)
-    expect(cityOptions).toContain('深圳市')
-    expect(cityOptions.filter(Boolean).every((name) => /\p{Script=Han}/u.test(name))).toBe(true)
-    await citySelect.setValue('深圳市')
+    const cityField = wrapper.findAll('label')[2]!.find('input')
+    expect(cityField.exists()).toBe(true)
+    await cityField.setValue('深圳')
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({
       countryCode: 'CN',
       region: '广东省',
-      city: '深圳市',
+      city: '深圳',
     })
     wrapper.unmount()
   })
@@ -124,7 +117,7 @@ describe('user location', () => {
     )
   })
 
-  it('keeps city entry as text for countries without a city dataset', async () => {
+  it('lets users type city names for other countries', async () => {
     const wrapper = mount(LocationPicker, { global: { plugins: [i18n] } })
     await wrapper.findAll('select')[0]!.setValue('US')
 

@@ -222,12 +222,23 @@ export class User implements UserProfile {
         : profile
       return db
         .collection('user')
-        .updateOne({ tag: this.tag }, { $set: { ...updatedProfile, updatedAt } })
+        .updateOne(
+          { tag: this.tag },
+          {
+            $set: { ...updatedProfile, updatedAt },
+            ...(profile.city !== undefined && !profile.location ? { $unset: { location: '' } } : {}),
+          },
+        )
         .then((result) => {
           if (!result.matchedCount) {
             throw new BamblooError(BamblooStatusCode.EntityNonexist, '用户不存在')
           }
-          Object.assign(this, updatedProfile, { updatedAt })
+          Object.assign(
+            this,
+            updatedProfile,
+            profile.city !== undefined && !profile.location ? { location: undefined } : {},
+            { updatedAt },
+          )
         })
     })
   }

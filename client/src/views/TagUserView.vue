@@ -165,52 +165,23 @@ onMounted(async () => {
     <p class="eyebrow">{{ t('tag.activateEyebrow') }}</p>
     <h1>{{ t('tag.activateTitle') }}</h1>
     <form class="activation-form" @submit.prevent="activate">
-      <label class="full-width"
-        ><span>{{ t('tag.tagLabel') }}</span
-        ><input :value="tag" type="text" readonly aria-readonly="true"
-      /></label>
-      <label
-        ><span>{{ t('common.name') }}</span
-        ><input v-model="user.name" required type="text" maxlength="100"
-      /></label>
-      <label
-        ><span>{{ t('common.phone') }}</span
-        ><input v-model="user.phone" type="tel" inputmode="numeric" maxlength="11" required
-      /></label>
-      <label
-        ><span>{{ t('login.passwordLabel') }}</span
-        ><input
-          v-model="user.password"
-          required
-          type="password"
-          autocomplete="new-password"
-          :placeholder="t('login.passwordPlaceholder')"
-      /></label>
-      <label
-        ><span>{{ t('password.confirm') }}</span
-        ><input
-          v-model="user.confirmPassword"
-          required
-          type="password"
-          autocomplete="new-password"
-          :placeholder="t('password.confirmPlaceholder')"
-      /></label>
-      <label
-        ><span>{{ t('profile.email') }}</span
-        ><input v-model="user.email" type="email"
-      /></label>
-      <label
-        ><span>{{ t('profile.birthday') }}</span
-        ><input v-model="user.birthday" type="date" required
-      /></label>
+      <label class="full-width"><span>{{ t('tag.tagLabel') }}</span><input :value="tag" type="text" readonly
+          aria-readonly="true" /></label>
+      <label><span>{{ t('common.name') }}</span><input v-model="user.name" required type="text"
+          maxlength="100" /></label>
+      <label><span>{{ t('common.phone') }}</span><input v-model="user.phone" type="tel" inputmode="numeric"
+          maxlength="11" required /></label>
+      <label><span>{{ t('login.passwordLabel') }}</span><input v-model="user.password" required type="password"
+          autocomplete="new-password" :placeholder="t('login.passwordPlaceholder')" /></label>
+      <label><span>{{ t('password.confirm') }}</span><input v-model="user.confirmPassword" required type="password"
+          autocomplete="new-password" :placeholder="t('password.confirmPlaceholder')" /></label>
+      <label><span>{{ t('profile.email') }}</span><input v-model="user.email" type="email" /></label>
+      <label><span>{{ t('profile.birthday') }}</span><input v-model="user.birthday" type="date" required /></label>
       <div class="full-width activation-hobbies-field">
         <span>{{ t('profile.hobbies') }}</span>
         <HobbiesPicker v-model="user.hobbies" />
       </div>
-      <label class="full-width"
-        ><span>{{ t('tag.avatar') }}</span
-        ><input v-model="user.avatar" type="url"
-      /></label>
+      <label class="full-width"><span>{{ t('tag.avatar') }}</span><input v-model="user.avatar" type="url" /></label>
       <p v-if="activationMessage" class="error-message" role="alert">{{ activationMessage }}</p>
       <button class="full-width" type="submit" :disabled="activationLoading">
         {{ activationLoading ? t('tag.activating') : t('tag.activateButton') }}
@@ -218,38 +189,21 @@ onMounted(async () => {
     </form>
   </section>
 
-  <div
-    v-else-if="loginRequired"
-    class="login-modal"
-    role="dialog"
-    aria-modal="true"
-    :aria-label="t('login.title')"
-    @click.self="loginRequired = false"
-  >
+  <div v-else-if="loginRequired" class="login-modal" role="dialog" aria-modal="true" :aria-label="t('login.title')"
+    @click.self="loginRequired = false">
     <form class="login-dialog" @submit.prevent="submitLogin">
       <p class="eyebrow">{{ t('login.kicker') }}</p>
       <h1>{{ t('login.title') }}</h1>
       <p class="login-intro">{{ t('login.intro') }}</p>
 
       <label for="tag-login-account">{{ t('login.accountLabel') }}</label>
-      <input
-        id="tag-login-account"
-        v-model="account"
-        type="text"
-        autocomplete="username"
-        readonly
-        :placeholder="t('login.accountPlaceholder')"
-      />
+      <input id="tag-login-account" v-model="account" type="text" autocomplete="username" readonly
+        :placeholder="t('login.accountPlaceholder')" />
       <p v-if="accountError" class="field-error" role="alert">{{ accountError }}</p>
 
       <label for="tag-login-password">{{ t('login.passwordLabel') }}</label>
-      <input
-        id="tag-login-password"
-        v-model="password"
-        type="password"
-        autocomplete="current-password"
-        :placeholder="t('login.passwordPlaceholder')"
-      />
+      <input id="tag-login-password" v-model="password" type="password" autocomplete="current-password"
+        :placeholder="t('login.passwordPlaceholder')" />
       <p v-if="passwordError" class="field-error" role="alert">{{ passwordError }}</p>
 
       <p v-if="loginError" class="error-message" role="alert">{{ loginError }}</p>

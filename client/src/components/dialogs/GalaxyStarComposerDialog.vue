@@ -32,6 +32,7 @@ const error = ref('')
 const title = ref('')
 const content = ref('')
 const color = ref('#7ec8ff')
+let submitPointerStart: { id: number; x: number; y: number } | undefined
 
 async function openComposer(event?: Event) {
   const options =
@@ -137,6 +138,31 @@ function handleStarEdgeTabClick() {
   setPairedDialogView('composer')
 }
 
+function handleSubmitPointerDown(event: PointerEvent) {
+  if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+  submitPointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  if (event.isTrusted && event.currentTarget instanceof HTMLButtonElement) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+}
+
+function handleSubmitPointerUp(event: PointerEvent) {
+  if (!submitPointerStart || submitPointerStart.id !== event.pointerId) return
+  const deltaX = event.clientX - submitPointerStart.x
+  const deltaY = submitPointerStart.y - event.clientY
+  submitPointerStart = undefined
+  if (sending.value || deltaY < 40 || deltaY <= Math.abs(deltaX)) return
+
+  event.preventDefault()
+  if (event.currentTarget instanceof HTMLButtonElement) {
+    event.currentTarget.form?.requestSubmit()
+  }
+}
+
+function clearSubmitPointer() {
+  submitPointerStart = undefined
+}
+
 function handlePairedDialogView(event: Event) {
   pairedDialogView.value = (event as CustomEvent<PairedDialogView>).detail
 }
@@ -220,41 +246,25 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="fortune-dialog">
-      <div
-        v-if="isOpen"
-        class="star-compose-overlay"
-        :class="{
-          'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen,
-          'star-compose-overlay-paired-active':
-            pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'composer',
-          'star-compose-overlay-paired-inactive':
-            pairedWithFortune && fortuneDialogOpen && pairedDialogView !== 'composer',
-        }"
-        @click.self="requestTopDialogClose"
-      >
-        <button
-          v-if="pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'fortune'"
-          class="dialog-edge-tab dialog-edge-tab-star"
-          type="button"
+      <div v-if="isOpen" class="star-compose-overlay" :class="{
+        'star-compose-overlay-paired': pairedWithFortune && fortuneDialogOpen,
+        'star-compose-overlay-paired-active':
+          pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'composer',
+        'star-compose-overlay-paired-inactive':
+          pairedWithFortune && fortuneDialogOpen && pairedDialogView !== 'composer',
+      }" @click.self="requestTopDialogClose">
+        <button v-if="pairedWithFortune && fortuneDialogOpen && pairedDialogView === 'fortune'"
+          class="dialog-edge-tab dialog-edge-tab-star" type="button"
           :aria-label="canSend === false ? '前往今天寄出的星星' : '打开寄出星星'"
           :style="{ '--sent-star-color': canSend === false ? sentStarColor : '#f5d58e' }"
-          @click.stop="handleStarEdgeTabClick"
-        >
-          <ion-icon
-            :name="canSend === false ? 'star' : 'star-outline'"
-            aria-hidden="true"
-          ></ion-icon>
+          @click.stop="handleStarEdgeTabClick">
+          <ion-icon :name="canSend === false ? 'star' : 'star-outline'" aria-hidden="true"></ion-icon>
           {{ canSend === false ? '定位星星' : '寄出星星' }}
         </button>
         <Transition name="dialog-switch">
-          <section
-            v-if="!pairedWithFortune || !fortuneDialogOpen || pairedDialogView === 'composer'"
-            class="star-compose-dialog"
-            ref="composerDialog"
-            role="dialog"
-            :aria-modal="!pairedWithFortune || !fortuneDialogOpen"
-            aria-labelledby="star-compose-title"
-          >
+          <section v-if="!pairedWithFortune || !fortuneDialogOpen || pairedDialogView === 'composer'"
+            class="star-compose-dialog" ref="composerDialog" role="dialog"
+            :aria-modal="!pairedWithFortune || !fortuneDialogOpen" aria-labelledby="star-compose-title">
             <p v-if="statusLoading" class="star-compose-status">正在确认今日发送机会…</p>
             <p v-else-if="error" class="star-compose-status star-compose-error" role="alert">
               {{ error }}
@@ -267,41 +277,25 @@ onBeforeUnmount(() => {
               <div class="star-compose-title-color-row">
                 <input v-model="title" maxlength="40" required placeholder="为这颗星星取个名字" />
                 <div class="star-compose-color-picker">
-                  <label
-                    class="star-compose-color-swatch"
-                    :style="{ '--swatch-color': color }"
-                    aria-label="选择星星颜色"
-                  >
-                    <input
-                      id="star-compose-color"
-                      v-model="color"
-                      class="star-compose-color-input"
-                      type="color"
-                      aria-label="星星颜色"
-                    />
+                  <label class="star-compose-color-swatch" :style="{ '--swatch-color': color }" aria-label="选择星星颜色">
+                    <input id="star-compose-color" v-model="color" class="star-compose-color-input" type="color"
+                      aria-label="星星颜色" />
                   </label>
                 </div>
               </div>
               <div class="star-compose-content-row">
-                <textarea
-                  v-model="content"
-                  maxlength="500"
-                  required
-                  rows="3"
-                  placeholder="写下想送往银河的话"
-                ></textarea>
-                <button
-                  class="star-compose-submit"
-                  type="submit"
-                  :disabled="sending"
-                  :aria-label="sending ? '正在发送星星' : '发送星星'"
-                  :title="sending ? '正在发送星星' : '发送星星'"
-                >
-                  <ion-icon
-                    :name="sending ? 'hourglass-outline' : 'star-outline'"
-                    aria-hidden="true"
-                  ></ion-icon>
-                </button>
+                <textarea v-model="content" maxlength="500" required rows="3" placeholder="写下想送往银河的话"></textarea>
+                <div class="star-compose-submit-control">
+                  <span class="star-compose-swipe-hint" aria-hidden="true">
+                    <ion-icon name="chevron-up" aria-hidden="true"></ion-icon>
+                  </span>
+                  <button class="star-compose-submit" type="button" :disabled="sending"
+                    :aria-label="sending ? '正在发送星星' : '上划发送星星'" :title="sending ? '正在发送星星' : '上划发送星星'"
+                    @pointerdown="handleSubmitPointerDown" @pointerup="handleSubmitPointerUp"
+                    @pointercancel="clearSubmitPointer">
+                    <ion-icon :name="sending ? 'hourglass-outline' : 'star-outline'" aria-hidden="true"></ion-icon>
+                  </button>
+                </div>
               </div>
               <p v-if="error" class="star-compose-status star-compose-error" role="alert">
                 {{ error }}
@@ -348,10 +342,8 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: min(460px, 100%);
   height: auto;
-  max-height: min(
-    520px,
-    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
-  );
+  max-height: min(520px,
+      var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px)));
   overflow: auto;
   scrollbar-width: none;
   pointer-events: auto;
@@ -372,23 +364,13 @@ onBeforeUnmount(() => {
 .star-compose-overlay.fortune-dialog-leave-active .star-compose-dialog {
   position: fixed;
   top: auto;
-  bottom: calc(
-    var(--portal-control-bottom, clamp(112px, 13vh, 168px)) +
-      var(--portal-control-size, 61.6px) + 16px
-  );
+  bottom: calc(var(--portal-control-bottom, clamp(112px, 13vh, 168px)) + var(--portal-control-size, 61.6px) + 16px);
   left: 50%;
   width: min(460px, calc(100vw - 48px));
   height: auto;
-  max-height: min(
-    520px,
-    max(
-      120px,
-      calc(
-        50vh - var(--portal-control-bottom, clamp(112px, 13vh, 168px)) -
-          var(--portal-control-size, 61.6px) - 32px
-      )
-    )
-  );
+  max-height: min(520px,
+      max(120px,
+        calc(50vh - var(--portal-control-bottom, clamp(112px, 13vh, 168px)) - var(--portal-control-size, 61.6px) - 32px)));
   margin: 0;
   padding: 24px clamp(20px, 5vw, 32px);
   transform: translateX(-50%);
@@ -446,6 +428,7 @@ onBeforeUnmount(() => {
 }
 
 @keyframes dialog-edge-tab-pulse {
+
   0%,
   100% {
     opacity: 0.72;
@@ -459,11 +442,23 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .dialog-edge-tab,
   .dialog-switch-enter-active,
   .dialog-switch-leave-active {
     animation: none;
     transition: none;
+  }
+
+  .star-compose-submit::before {
+    animation: none;
+    opacity: 0.82;
+  }
+
+  .star-compose-swipe-hint {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -511,7 +506,7 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.star-compose-title-color-row > input {
+.star-compose-title-color-row>input {
   min-width: 0;
   flex: 1;
 }
@@ -547,6 +542,41 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+}
+
+.star-compose-submit-control {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.star-compose-swipe-hint {
+  display: grid;
+  justify-items: center;
+  color: #f5d58e;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(255, 217, 112, 0.72);
+  animation: star-compose-swipe-hint 1.1s ease-in-out infinite;
+}
+
+.star-compose-swipe-hint ion-icon {
+  font-size: 15px;
+}
+
+@keyframes star-compose-swipe-hint {
+
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateY(3px);
+  }
+
+  55% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 .star-compose-color-picker {
@@ -592,6 +622,8 @@ onBeforeUnmount(() => {
 }
 
 .star-compose-submit {
+  position: relative;
+  isolation: isolate;
   display: grid;
   width: 32px;
   height: 32px;
@@ -602,9 +634,42 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #edc981;
   cursor: pointer;
+  touch-action: none;
+}
+
+.star-compose-submit::before {
+  position: absolute;
+  z-index: -1;
+  inset: -7px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 7 61 37 94 38 68 57 78 90 50 71 22 90 32 57 6 38 39 37Z' fill='none' stroke='%23ffdf91' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E") center / 70% 70% no-repeat;
+  filter: blur(2px) drop-shadow(0 0 0px rgba(255, 217, 112, 0.9)) drop-shadow(0 0 12px rgba(255, 198, 91, 0.72));
+  content: '';
+  pointer-events: none;
+  animation: star-compose-submit-glow 1.6s ease-in-out infinite;
+}
+
+.star-compose-submit:disabled::before {
+  animation: none;
+  opacity: 0.45;
+}
+
+@keyframes star-compose-submit-glow {
+
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(0.78);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
 }
 
 .star-compose-submit ion-icon {
+  position: relative;
+  z-index: 1;
   font-size: 28px;
 }
 

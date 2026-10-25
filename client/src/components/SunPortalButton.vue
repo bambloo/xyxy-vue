@@ -190,8 +190,9 @@ onBeforeUnmount(() => effect?.destroy())
   filter: drop-shadow(var(--glow-x) var(--glow-y) 16px rgba(255, 235, 174, 0.96));
 }
 
-.sun-portal-button:focus {
-  outline: none;
+.sun-portal-button:focus,
+.sun-portal-button:focus-visible {
+  outline: 0;
   box-shadow: none;
 }
 

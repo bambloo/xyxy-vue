@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, type AuthUser } from '@/stores/auth'
 import { requestTopDialogClose } from '@/events/dialog-stack'
 import { post } from '@/scripts/request'
-import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH } from '../../../../common/entity/user'
 import {
   is_at_least_five_years_old,
   is_valid_email,
@@ -17,24 +17,18 @@ const emit = defineEmits<{ close: [] }>()
 
 const auth = useAuthStore()
 const { t } = useI18n()
-const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
 const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 const loading = ref(false)
 const statusMessage = ref('')
-const emptyLocation = (): UserLocation => ({
-  countryCode: 'CN',
-  country: '中国',
-  region: '',
-  city: '',
-  custom: '',
-})
+const saveSuccessVisible = ref(false)
+let saveSuccessTimer: number | undefined
 const form = reactive({
   name: '',
   phone: '',
   email: '',
   birthday: '',
   hobbies: '',
-  location: emptyLocation(),
+  city: '',
 })
 
 watch(
@@ -47,13 +41,25 @@ watch(
     form.email = currentUser.email || ''
     form.birthday = currentUser.birthday || ''
     form.hobbies = currentUser.hobbies || ''
-    form.location = currentUser.location ?? {
-      ...emptyLocation(),
-      custom: currentUser.city || '',
-    }
+    form.city =
+      currentUser.location?.city || currentUser.location?.custom || currentUser.city || ''
     statusMessage.value = ''
+    saveSuccessVisible.value = false
+    if (saveSuccessTimer !== undefined) {
+      window.clearTimeout(saveSuccessTimer)
+      saveSuccessTimer = undefined
+    }
   },
 )
+
+function showSaveSuccessMessage() {
+  saveSuccessVisible.value = true
+  if (saveSuccessTimer !== undefined) window.clearTimeout(saveSuccessTimer)
+  saveSuccessTimer = window.setTimeout(() => {
+    saveSuccessVisible.value = false
+    saveSuccessTimer = undefined
+  }, 2500)
+}
 
 async function saveProfile() {
   if (!is_valid_name(form.name)) {
@@ -84,60 +90,51 @@ async function saveProfile() {
       email: form.email,
       birthday: form.birthday,
       hobbies: form.hobbies,
-      location: form.location,
+      city: form.city,
     })
     const profile = packet.data as AuthUser | undefined
     if (!profile?.tag) throw new Error(t('profile.saveFailed'))
     auth.updateUserProfile(profile)
-    statusMessage.value = t('profile.saved')
+    showSaveSuccessMessage()
   } catch (error) {
     const result = error as { msg?: string; message?: string }
     statusMessage.value = result.msg || result.message || t('profile.saveFailed')
   }
 }
+
+onBeforeUnmount(() => {
+  if (saveSuccessTimer !== undefined) window.clearTimeout(saveSuccessTimer)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="profile-editor">
       <div v-if="open" class="profile-editor-overlay" @click.self="requestTopDialogClose">
-        <section
-          class="profile-editor-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="profile-editor-title"
-        >
-          <p class="profile-editor-eyebrow">{{ t('profile.eyebrow') }}</p>
+        <section class="profile-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
           <h2 id="profile-editor-title">{{ t('profile.title') }}</h2>
           <form @submit.prevent="saveProfile">
             <div class="profile-editor-fields">
-              <label>
+              <label class="profile-editor-row">
                 <span>{{ t('profile.username') }}</span>
                 <input v-model="form.name" type="text" autocomplete="name" required />
               </label>
-              <label>
+              <label class="profile-editor-row">
                 <span>{{ t('common.phone') }}</span>
-                <input
-                  v-model="form.phone"
-                  type="tel"
-                  inputmode="numeric"
-                  autocomplete="tel"
-                  maxlength="11"
-                  required
-                />
+                <input v-model="form.phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="11" required />
               </label>
-              <label>
+              <label class="profile-editor-row">
                 <span>{{ t('profile.email') }}</span>
                 <input v-model="form.email" type="email" autocomplete="email" />
               </label>
-              <label>
+              <label class="profile-editor-row">
                 <span>{{ t('profile.birthday') }}</span>
                 <input v-model="form.birthday" type="date" required />
               </label>
-              <div class="profile-editor-full-width">
-                <p class="profile-editor-field-title">{{ t('profile.city') }}</p>
-                <LocationPicker v-model="form.location" />
-              </div>
+              <label class="profile-editor-row profile-editor-full-width">
+                <span>{{ t('profile.city') }}</span>
+                <input v-model="form.city" type="text" maxlength="500" />
+              </label>
               <label class="profile-editor-full-width">
                 <span>{{ t('profile.hobbies') }}</span>
                 <HobbiesPicker v-model="form.hobbies" />
@@ -147,9 +144,12 @@ async function saveProfile() {
               {{ statusMessage }}
             </p>
             <div class="profile-editor-actions">
-              <button type="button" class="profile-editor-secondary" @click="emit('close')">
-                {{ t('common.cancel') }}
-              </button>
+              <Transition name="profile-success">
+                <p v-if="saveSuccessVisible" class="profile-save-success" role="status">
+                  <ion-icon name="checkmark-circle" aria-hidden="true"></ion-icon>
+                  {{ t('profile.saved') }}
+                </p>
+              </Transition>
               <button type="submit" class="profile-editor-primary" :disabled="loading">
                 {{ loading ? t('common.loading') : t('profile.save') }}
               </button>
@@ -173,14 +173,39 @@ async function saveProfile() {
   backdrop-filter: blur(3px);
 }
 
+.profile-save-success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 0 0;
+  color: #dff7e7;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.profile-save-success ion-icon {
+  flex: 0 0 auto;
+  color: #8fe3ae;
+  font-size: 17px;
+}
+
+.profile-success-enter-active,
+.profile-success-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.profile-success-enter-from,
+.profile-success-leave-to {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+
 .profile-editor-dialog {
   position: relative;
   box-sizing: border-box;
   width: min(520px, 100%);
-  height: min(
-    720px,
-    var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px))
-  );
+  height: min(720px,
+      var(--dialog-available-height, calc(100vh - 24px - clamp(112px, 13vh, 168px) - 104px)));
   overflow: auto;
   scrollbar-width: none;
   padding: 34px clamp(24px, 6vw, 48px) 24px;
@@ -214,8 +239,7 @@ h2 {
 
 .profile-editor-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 label {
@@ -254,12 +278,29 @@ textarea {
   grid-column: 1 / -1;
 }
 
-.profile-editor-field-title {
-  margin: 0 0 7px;
-  color: #c3d5e7;
-  font-size: 13px;
-  font-weight: 600;
+.profile-editor-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.6fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(195, 213, 231, 0.42);
 }
+
+.profile-editor-row input {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 0;
+  background: transparent;
+  text-align: right;
+}
+
+.profile-editor-row input:focus {
+  outline: none;
+}
+
+
 
 .profile-editor-status {
   margin: 14px 0 0;

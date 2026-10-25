@@ -39,19 +39,6 @@ const regions = computed(() => {
     .map((state) => ({ code: state.code, name: state.name }))
 })
 
-const chinaProvinceCode = computed(
-  () => regions.value.find((item) => item.name === region.value)?.code,
-)
-
-const cities = computed(() => {
-  if (countryCode.value !== 'CN' || !chinaProvinceCode.value) return []
-  const prefix = chinaProvinceCode.value.slice(0, 2)
-  return Object.entries(areaList.city_list)
-    .filter(([code]) => code.startsWith(prefix))
-    .map(([, name]) => name)
-    .sort((first, second) => first.localeCompare(second, 'zh-CN'))
-})
-
 const selectedCountry = computed(() =>
   countries.find((country) => country.code === countryCode.value),
 )
@@ -181,21 +168,12 @@ function setCustom(value: string) {
         @input="selectRegion(($event.target as HTMLInputElement).value)"
       />
     </label>
-    <label>
+    <label class="location-city">
       <span>{{ t('location.city') }}</span>
-      <select
-        v-if="countryCode === 'CN'"
-        :value="city"
-        :disabled="disabled || !region"
-        @change="selectCity(($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">{{ t('location.selectCity') }}</option>
-        <option v-for="name in cities" :key="name" :value="name">{{ name }}</option>
-      </select>
       <input
-        v-else
         :value="city"
-        :disabled="disabled || !countryCode"
+        type="text"
+        :disabled="disabled"
         maxlength="120"
         :placeholder="t('location.selectCity')"
         @input="selectCity(($event.target as HTMLInputElement).value)"
@@ -252,6 +230,28 @@ input:disabled {
 
 .location-custom {
   grid-column: 1 / -1;
+}
+
+.location-city {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 0 0 7px;
+  border-bottom: 1px solid rgba(195, 213, 231, 0.42);
+}
+
+.location-city input {
+  border: 0;
+  border-radius: 0;
+  padding: 8px 0;
+  background: transparent;
+  text-align: right;
+}
+
+.location-city input:focus {
+  outline: none;
 }
 
 @media (max-width: 560px) {

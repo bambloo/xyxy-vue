@@ -3,7 +3,7 @@ import { defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, type AuthUser } from '../../../stores/auth'
 import { post } from '../../../scripts/request'
-import { MAX_USER_HOBBIES_LENGTH, type UserLocation } from '../../../../../common/entity/user'
+import { MAX_USER_HOBBIES_LENGTH } from '../../../../../common/entity/user'
 import {
   is_at_least_five_years_old,
   is_valid_email,
@@ -15,16 +15,8 @@ const statusMessage = ref('')
 const loading = ref(false)
 const { t } = useI18n()
 const auth = useAuthStore()
-const LocationPicker = defineAsyncComponent(() => import('@/components/LocationPicker.vue'))
 const HobbiesPicker = defineAsyncComponent(() => import('@/components/HobbiesPicker.vue'))
 
-const emptyLocation = (): UserLocation => ({
-  countryCode: 'CN',
-  country: '中国',
-  region: '',
-  city: '',
-  custom: '',
-})
 const user = reactive({
   account: '',
   name: '',
@@ -32,7 +24,7 @@ const user = reactive({
   email: '',
   birthday: '',
   hobbies: '',
-  location: emptyLocation(),
+  city: '',
 })
 
 watch(() => auth.currentUser, (currentUser) => {
@@ -43,10 +35,7 @@ watch(() => auth.currentUser, (currentUser) => {
   user.email = currentUser.email || ''
   user.birthday = currentUser.birthday || ''
   user.hobbies = currentUser.hobbies || ''
-  user.location = currentUser.location ?? {
-    ...emptyLocation(),
-    custom: currentUser.city || '',
-  }
+  user.city = currentUser.location?.city || currentUser.location?.custom || currentUser.city || ''
 }, { immediate: true })
 
 async function saveProfile() {
@@ -82,7 +71,7 @@ async function saveProfile() {
       email: user.email,
       birthday: user.birthday,
       hobbies: user.hobbies,
-      location: user.location,
+      city: user.city,
     })
     const profile = packet.data as AuthUser | undefined
     if (!profile?.tag) {
@@ -101,7 +90,7 @@ async function saveProfile() {
   <section class="panel">
     <div class="section-head">
       <div>
-        <p class="eyebrow">{{ t('profile.eyebrow') }}</p>
+        <!-- <p class="eyebrow">{{ t('profile.eyebrow') }}</p> -->
         <h2>{{ t('profile.title') }}</h2>
       </div>
       <button class="primary-button" type="button" :disabled="loading" @click="saveProfile">
@@ -114,30 +103,30 @@ async function saveProfile() {
     </div>
 
     <div class="field-grid">
-      <label>
+      <label class="profile-row">
         <span>{{ t('common.account') }}</span>
         <input v-model="user.account" type="text" readonly />
       </label>
-      <label>
+      <label class="profile-row">
         <span>{{ t('profile.username') }}</span>
         <input v-model="user.name" type="text" />
       </label>
-      <label>
+      <label class="profile-row">
         <span>{{ t('common.phone') }}</span>
         <input v-model="user.phone" type="tel" inputmode="numeric" maxlength="11" required />
       </label>
-      <label>
+      <label class="profile-row">
         <span>{{ t('profile.email') }}</span>
         <input v-model="user.email" type="email" />
       </label>
-      <label>
+      <label class="profile-row">
         <span>{{ t('profile.birthday') }}</span>
         <input v-model="user.birthday" type="date" required />
       </label>
-      <div class="full-width location-field">
+      <label class="profile-row">
         <span>{{ t('profile.city') }}</span>
-        <LocationPicker v-model="user.location" />
-      </div>
+        <input v-model="user.city" type="text" maxlength="500" />
+      </label>
       <label class="full-width">
         <span>{{ t('profile.hobbies') }}</span>
         <HobbiesPicker v-model="user.hobbies" />
@@ -196,8 +185,8 @@ h2 {
 
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
 label {
@@ -234,13 +223,26 @@ textarea {
   grid-column: 1 / -1;
 }
 
-.location-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  color: #c3d5e7;
-  font-size: 0.85rem;
-  font-weight: 600;
+.profile-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.6fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(195, 213, 231, 0.42);
+}
+
+.profile-row input {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.5rem 0;
+  background: transparent;
+  text-align: right;
+}
+
+.profile-row input:focus {
+  outline: none;
 }
 
 @media (max-width: 860px) {
