@@ -240,6 +240,12 @@ textarea {
   font: inherit;
 }
 
+input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 1;
+  cursor: pointer;
+}
+
 textarea {
   resize: vertical;
 }
