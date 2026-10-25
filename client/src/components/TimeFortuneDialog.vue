@@ -727,7 +727,11 @@ onBeforeUnmount(() => {
   padding: 18px 20px;
   border: 0;
   border-radius: 16px;
-  background: rgba(137, 177, 226, 0.07);
+  background: transparent;
+}
+
+.daily-fortune-sparkle {
+  background: rgba(137, 177, 226, 0.06);
 }
 
 .fortune-entry + .fortune-entry {

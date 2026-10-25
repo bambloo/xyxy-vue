@@ -36,27 +36,17 @@ function toggleHistoryEntry(event: MouseEvent) {
 </script>
 
 <template>
-  <details
-    v-for="(day, index) in orderedDays(days)"
-    :key="day.date"
-    class="history-day"
-    :open="index === 0"
-  >
+  <details v-for="(day, index) in orderedDays(days)" :key="day.date" class="history-day" :open="index === 0">
     <summary>{{ day.date }}</summary>
-    <details
-      v-if="day.dailyFortune"
-      class="history-entry daily-history-entry daily-fortune-sparkle"
-      @click="toggleHistoryEntry"
-    >
+    <details v-if="day.dailyFortune" class="history-entry daily-history-entry" :open="index === 0"
+      @click="toggleHistoryEntry">
       <summary>每日锦言</summary>
       <p>{{ day.dailyFortune }}</p>
     </details>
-    <details
-      v-for="fortune in orderedTimeFortunes(day.timeFortunes)"
-      :key="fortune.timeName"
-      class="history-entry time-history-entry"
-      @click="toggleHistoryEntry"
-    >
+    <details v-for="(fortune, fortuneIndex) in orderedTimeFortunes(day.timeFortunes)" :key="fortune.timeName"
+      class="history-entry time-history-entry" :class="{
+        'latest-time-history-entry': index === 0 && fortuneIndex === day.timeFortunes.length - 1,
+      }" :open="index === 0 && fortuneIndex === 0" @click="toggleHistoryEntry">
       <summary>{{ fortune.timeName }}（{{ timeFortuneRange(fortune.timeName) }}）</summary>
       <p>{{ fortune.message }}</p>
     </details>
@@ -68,14 +58,14 @@ function toggleHistoryEntry(event: MouseEvent) {
   margin-top: 12px;
 }
 
-.history-day > summary {
+.history-day>summary {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 13px 16px;
   border: 0;
   border-radius: 12px;
-  background: rgba(137, 177, 226, 0.1);
+  background: transparent;
   color: #f4e6bf;
   cursor: pointer;
   font-size: 15px;
@@ -87,13 +77,13 @@ function toggleHistoryEntry(event: MouseEvent) {
     color 220ms ease;
 }
 
-.history-day > summary::-webkit-details-marker,
-.history-entry > summary::-webkit-details-marker {
+.history-day>summary::-webkit-details-marker,
+.history-entry>summary::-webkit-details-marker {
   display: none;
 }
 
-.history-day > summary::before,
-.history-entry > summary::before {
+.history-day>summary::before,
+.history-entry>summary::before {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
@@ -104,14 +94,13 @@ function toggleHistoryEntry(event: MouseEvent) {
   transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.history-day[open] > summary::before,
-.history-entry[open] > summary::before {
+.history-day[open]>summary::before,
+.history-entry[open]>summary::before {
   transform: rotate(135deg);
 }
 
-.history-day[open] > summary {
+.history-day[open]>summary {
   margin-bottom: 12px;
-  background: rgba(137, 177, 226, 0.14);
 }
 
 .history-entry {
@@ -119,23 +108,22 @@ function toggleHistoryEntry(event: MouseEvent) {
   padding: 14px 16px;
   border: 0;
   border-radius: 16px;
-  background: rgba(137, 177, 226, 0.07);
+  background: transparent;
   cursor: pointer;
 }
 
 .daily-history-entry,
 .time-history-entry {
   margin-inline-start: 16px;
-  background: rgba(137, 177, 226, 0.045);
 }
 
-.daily-history-entry {
-  background:
-    radial-gradient(ellipse at 50% 50%, rgba(137, 177, 226, 0.09), transparent 76%),
-    rgba(137, 177, 226, 0.045);
+.daily-history-entry>summary,
+.latest-time-history-entry>summary {
+  color: #f5d58e;
+  font-weight: 600;
 }
 
-.history-entry > summary {
+.history-entry>summary {
   display: flex;
   width: 100%;
   box-sizing: border-box;
@@ -148,7 +136,7 @@ function toggleHistoryEntry(event: MouseEvent) {
   list-style: none;
 }
 
-.history-entry[open] > summary {
+.history-entry[open]>summary {
   margin-bottom: 10px;
   color: #f5d58e;
 }
@@ -182,9 +170,10 @@ function toggleHistoryEntry(event: MouseEvent) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-day > summary,
-  .history-day > summary::before,
-  .history-entry > summary::before,
+
+  .history-day>summary,
+  .history-day>summary::before,
+  .history-entry>summary::before,
   .history-day::details-content,
   .history-entry::details-content {
     transition: none;

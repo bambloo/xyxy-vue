@@ -57,6 +57,37 @@ describe('time fortune periods', () => {
     expect(timeFortuneOrder('亥时')).toBeLessThan(timeFortuneOrder('晚子时'))
   })
 
+  it('opens the newest daily fortune and last generated time fortune by default', () => {
+    const wrapper = mount(TimeFortuneHistory, {
+      props: {
+        days: [
+          {
+            date: '2026-10-15',
+            dailyFortune: '较早的一天',
+            timeFortunes: [{ timeName: '亥时', message: '较早时辰' }],
+          },
+          {
+            date: '2026-10-25',
+            dailyFortune: '最新每日锦言',
+            timeFortunes: [
+              { timeName: '酉时', message: '较早时辰锦言' },
+              { timeName: '戌时', message: '最后一条时辰锦言' },
+            ],
+          },
+        ],
+      },
+    })
+
+    const days = wrapper.findAll('.history-day')
+    expect(days[0]!.element.open).toBe(true)
+    expect(days[1]!.element.open).toBe(false)
+    expect(days[0]!.find('.daily-history-entry').element.open).toBe(true)
+    expect(days[0]!.find('.daily-history-entry p').text()).toBe('最新每日锦言')
+    expect(days[0]!.findAll('.time-history-entry')[0]!.element.open).toBe(false)
+    expect(days[0]!.findAll('.time-history-entry')[1]!.element.open).toBe(true)
+    expect(days[0]!.findAll('.time-history-entry')[1]!.find('p').text()).toBe('最后一条时辰锦言')
+  })
+
   it('toggles a fortune by clicking anywhere on its card', async () => {
     const wrapper = mount(TimeFortuneHistory, {
       props: {
@@ -64,7 +95,10 @@ describe('time fortune periods', () => {
           {
             date: '2026-10-16',
             dailyFortune: '',
-            timeFortunes: [{ timeName: '丑时', message: '保持耐心。' }],
+            timeFortunes: [
+              { timeName: '丑时', message: '保持耐心。' },
+              { timeName: '寅时', message: '继续向前。' },
+            ],
           },
         ],
       },
@@ -75,7 +109,7 @@ describe('time fortune periods', () => {
     await entry.trigger('click')
     expect(entry.element.open).toBe(true)
 
-    await wrapper.get('.history-entry p').trigger('click')
+    await entry.find('p').trigger('click')
     expect(entry.element.open).toBe(false)
   })
 })

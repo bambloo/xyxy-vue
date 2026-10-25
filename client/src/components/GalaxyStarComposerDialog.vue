@@ -226,18 +226,24 @@ onBeforeUnmount(() => {
                   placeholder="写下想送往银河的话"
                 ></textarea>
               </label>
-              <label class="star-compose-color-picker">
-                选择星星颜色
-                <span>{{ color }}</span>
-                <span class="star-compose-color-swatch" :style="{ '--swatch-color': color }">
+              <div class="star-compose-color-picker">
+                <label for="star-compose-color" class="star-compose-color-title">
+                  选择星星颜色
+                </label>
+                <label
+                  class="star-compose-color-swatch"
+                  :style="{ '--swatch-color': color }"
+                  aria-label="选择星星颜色"
+                >
                   <input
+                    id="star-compose-color"
                     v-model="color"
+                    class="star-compose-color-input"
                     type="color"
-                    aria-label="自定义星星颜色"
-                    title="自定义星星颜色"
+                    aria-label="星星颜色"
                   />
-                </span>
-              </label>
+                </label>
+              </div>
               <p v-if="error" class="star-compose-status star-compose-error" role="alert">
                 {{ error }}
               </p>
@@ -430,36 +436,42 @@ onBeforeUnmount(() => {
 .star-compose-color-picker {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   color: #dce8f6;
   font-size: 13px;
 }
 
-.star-compose-color-picker > span:nth-child(2) {
-  color: #9db4cb;
-  font-variant-numeric: tabular-nums;
+.star-compose-color-title {
+  color: #dce8f6;
 }
 
 .star-compose-color-swatch {
   position: relative;
+  box-sizing: border-box;
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   overflow: hidden;
+  border: 2px solid #e8f1fb;
   border-radius: 50%;
   background: var(--swatch-color);
+  box-shadow: 0 0 0 1px rgba(8, 20, 38, 0.9);
   cursor: pointer;
 }
 
-.star-compose-color-swatch input {
+.star-compose-color-input {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  padding: 0 !important;
+  padding: 0;
   border: 0;
+  border-radius: 50%;
+  appearance: none;
   background: transparent;
-  opacity: 0.02;
   cursor: pointer;
+  opacity: 0;
 }
 
 .star-compose-submit {

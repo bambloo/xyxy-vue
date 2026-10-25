@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import TagUserView from '@/views/TagUserView.vue'
 import SunPortalButton from '@/components/SunPortalButton.vue'
 import TimeFortuneDialog from '@/components/TimeFortuneDialog.vue'
-import GalaxyStarComposer from '@/components/GalaxyStarComposer.vue'
+import GalaxyStarComposerDialog from '@/components/GalaxyStarComposerDialog.vue'
 import { GALAXY_CAMERA_CENTER_EVENT, GALAXY_CAMERA_ZOOM_OUT_EVENT } from '@/events/galaxy-camera'
 import {
   GALAXY_STAR_COMMENT_QUEUE_EVENT,
@@ -15,6 +15,7 @@ import {
 import {
   TIME_FORTUNE_CLOSE_EVENT,
   TIME_FORTUNE_DIALOG_STATE_EVENT,
+  TIME_FORTUNE_HISTORY_EVENT,
   TIME_FORTUNE_TOGGLE_EVENT,
 } from '@/events/time-fortune'
 
@@ -139,7 +140,7 @@ function handleFortuneActivate() {
     window.dispatchEvent(new Event(TIME_FORTUNE_CLOSE_EVENT))
     return
   }
-  window.dispatchEvent(new Event(TIME_FORTUNE_TOGGLE_EVENT))
+  window.dispatchEvent(new Event(TIME_FORTUNE_HISTORY_EVENT))
 }
 
 function handleCommentQueueChange(event: Event) {
@@ -173,8 +174,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <template v-if="isTagRoute">
-      <TagUserView v-if="tagState === 'inactive' || tagState === 'active'" :key="`${tag}-${tagState}`" :tag="tag!"
-        :active="tagState === 'active'" />
+      <TagUserView
+        v-if="tagState === 'inactive' || tagState === 'active'"
+        :key="`${tag}-${tagState}`"
+        :tag="tag!"
+        :active="tagState === 'active'"
+      />
       <div v-else class="empty-page" aria-hidden="true"></div>
     </template>
     <RouterView v-else-if="appState === 'ready'" v-slot="{ Component }">
@@ -184,11 +189,20 @@ onBeforeUnmount(() => {
     </RouterView>
     <div v-else class="empty-page" aria-hidden="true"></div>
     <TimeFortuneDialog />
-    <GalaxyStarComposer />
+    <GalaxyStarComposerDialog />
     <Teleport to="body">
-      <SunPortalButton v-if="canShowPortalButton" class="sun-portal-control" :label="portalLabel" :title="portalLabel"
-        :notification="queuedCommentStarCount > 0" @swipe-up="handleCameraCenter" @swipe-down="handleCameraZoomOut"
-        @swipe-left="handleFortuneSwipe" @swipe-right="handleFortuneSwipe" @activate="handleFortuneActivate" />
+      <SunPortalButton
+        v-if="canShowPortalButton"
+        class="sun-portal-control"
+        :label="portalLabel"
+        :title="portalLabel"
+        :notification="queuedCommentStarCount > 0"
+        @swipe-up="handleCameraCenter"
+        @swipe-down="handleCameraZoomOut"
+        @swipe-left="handleFortuneSwipe"
+        @swipe-right="handleFortuneSwipe"
+        @activate="handleFortuneActivate"
+      />
     </Teleport>
   </div>
 </template>
@@ -290,7 +304,6 @@ body.star-dialog-open .sun-portal-control {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .portal-route-enter-active,
   .portal-route-leave-active {
     transition: none;
